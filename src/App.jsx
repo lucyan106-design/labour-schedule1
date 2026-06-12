@@ -517,8 +517,8 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
             <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)} style={{flex:1,background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:5,padding:"5px 8px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none"}}/>
             <button onClick={()=>{onSave(sites);onOpenDetail&&onOpenDetail(s);}} title="Open site detail (scopes & variations)" style={{padding:"4px 9px",background:"#1a3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:12}}>📂</button>
           </div>
-          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={c=>up(s.id,"color",c)}/></div>
-          <select value={s.clientId||""} onChange={e=>up(s.id,"clientId",e.target.value||null)} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
+          <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
         </div>)}
       </div>
     </div>
@@ -531,8 +531,8 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
             <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)} style={{flex:1,background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:5,padding:"5px 8px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none"}}/>
             <button onClick={()=>rm(s.id)} style={{background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,padding:"4px 8px",fontWeight:700}}>Delete</button>
           </div>
-          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={c=>up(s.id,"color",c)}/></div>
-          <select value={s.clientId||""} onChange={e=>up(s.id,"clientId",e.target.value||null)} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
+          <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
         </div>)}
       </div>
     </div>}
@@ -1118,23 +1118,21 @@ function ClientsModal({clients,onSave,onClose}){
           {(c.rates||[]).map(r=>(
             <div key={r.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr auto",gap:7,marginBottom:7,alignItems:"flex-end"}}>
               <div><label style={LBL}>Team / Role Type</label>
-                <select value={r.teamType} onChange={e=>up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,teamType:e.target.value}:x))} style={{...INP,cursor:"pointer",fontSize:11,padding:"4px 7px"}}>
+                <select value={r.teamType} onChange={e=>{const v=e.target.value;up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,teamType:v}:x));}} style={{...INP,cursor:"pointer",fontSize:11,padding:"4px 7px"}}>
                   {TEAM_TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
               <div><label style={LBL}>Day Rate £</label>
-                <input type="number" value={r.dayRate||0} onChange={e=>up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,dayRate:Number(e.target.value)}:x))} style={{...INP,fontSize:11,padding:"4px 7px",textAlign:"right"}}/>
+                <input type="number" value={r.dayRate||0} onChange={e=>{const v=Number(e.target.value);up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,dayRate:v}:x));}} style={{...INP,fontSize:11,padding:"4px 7px",textAlign:"right"}}/>
               </div>
               <div><label style={LBL}>Notes</label>
-                <input value={r.notes||""} onChange={e=>up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,notes:e.target.value}:x))} placeholder="Notes…" style={{...INP,fontSize:11,padding:"4px 7px"}}/>
+                <input value={r.notes||""} onChange={e=>{const v=e.target.value;up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,notes:v}:x));}} placeholder="Notes…" style={{...INP,fontSize:11,padding:"4px 7px"}}/>
               </div>
-              <button onClick={()=>up(c.id,"rates",(c.rates||[]).filter(x=>x.id!==r.id))} style={{padding:"5px 9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
+              <button onClick={()=>{up(c.id,"rates",(c.rates||[]).filter(x=>x.id!==r.id));}} style={{padding:"5px 9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
             </div>
           ))}
-        </div></div>)}
-          </div>
         </div>
-        <ColorPicker value={c.color} onChange={col=>up(c.id,"color",col)}/>
+        <div style={{marginTop:8}}><label style={LBL}>Colour</label><ColorPicker value={c.color} onChange={(col)=>{up(c.id,"color",col);}}/></div>
       </div>)}
     </div>
     <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,borderTop:"1px solid #1e2535",paddingTop:16}}>
