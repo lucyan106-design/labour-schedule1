@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
 const SB_URL = "https://xljglqiifogyxefhszwa.supabase.co";
-const SB_KEY = "sb_publishable_sjP2pkelZOMSDR45qwyH_g_v6KSB41k";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsamdscWlpZm9neXhlZmhzendhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMTY2MTQsImV4cCI6MjA5NjU5MjYxNH0.asql85bUrgL5JuzqYoU0ZtizIWJ1yU6NYTt3yMUW5us";
 const SB_H = { "Content-Type":"application/json","apikey":SB_KEY,"Authorization":`Bearer ${SB_KEY}` };
 async function sbGet(t,f=""){const r=await fetch(`${SB_URL}/rest/v1/${t}?${f}`,{headers:SB_H});if(!r.ok)throw new Error(await r.text());return r.json();}
 async function sbUpsert(t,d){const r=await fetch(`${SB_URL}/rest/v1/${t}`,{method:"POST",headers:{...SB_H,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify(d)});if(!r.ok)throw new Error(await r.text());}
@@ -16,7 +16,14 @@ const ALL_DAYS=[...BASE_DAYS,...WEEKEND_DAYS];
 const POSITIONS=["Welder","Fixer","Fitter","Semiskilled","Supervisor","Labourer","Manager","Driver"];
 const COMPANIES=["Bright Matalwork","Dodi Metalwork","External"];
 const DEFAULT_HOURS=9;
-const PRESET_COLORS=["#3b82f6","#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#f97316","#ec4899","#6366f1","#84cc16","#a78bfa","#14b8a6","#e11d48","#7c3aed","#0284c7","#d97706","#65a30d","#db2777"];
+const PRESET_COLORS=[
+  "#3b82f6","#6366f1","#8b5cf6","#a855f7","#d946ef","#ec4899","#f43f5e","#ef4444",
+  "#f97316","#f59e0b","#eab308","#84cc16","#22c55e","#10b981","#14b8a6","#06b6d4",
+  "#0ea5e9","#0284c7","#1d4ed8","#4f46e5","#7c3aed","#9333ea","#c026d3","#db2777",
+  "#e11d48","#dc2626","#ea580c","#d97706","#ca8a04","#65a30d","#16a34a","#059669",
+  "#0d9488","#0891b2","#0369a1","#1e40af","#374151","#6b7280","#94a3b8","#a78bfa",
+  "#34d399","#60a5fa","#fbbf24","#f87171","#c084fc",
+];
 
 const CERTS=[
   {key:"cscs",label:"CSCS Card",hasExpiry:true},{key:"nvq2",label:"NVQ 2 Fenestration",hasExpiry:false},
@@ -35,19 +42,31 @@ const CERTS=[
 
 // Built-in sites are now fully editable — stored in state, seeded from this default
 const DEFAULT_BUILTIN_SITES=[
-  {id:"b1",name:"003 - STF",color:"#f59e0b",clientId:null,builtin:true},
-  {id:"b2",name:"0066 - UKTOP",color:"#3b82f6",clientId:null,builtin:true},
-  {id:"b3",name:"JAUK - 42 Station Road",color:"#8b5cf6",clientId:null,builtin:true},
-  {id:"b4",name:"JAUK - Pool Street",color:"#06b6d4",clientId:null,builtin:true},
-  {id:"b5",name:"JAUK - Tower 42",color:"#10b981",clientId:null,builtin:true},
-  {id:"b6",name:"BMW",color:"#ef4444",clientId:null,builtin:true},
-  {id:"b7",name:"SB - Camden",color:"#f97316",clientId:null,builtin:true},
-  {id:"b8",name:"DODI",color:"#ec4899",clientId:null,builtin:true},
-  {id:"b9",name:"SS",color:"#6366f1",clientId:null,builtin:true},
-  {id:"b10",name:"XX - OFF",color:"#6b7280",clientId:null,builtin:true},
-  {id:"b11",name:"X - Holiday",color:"#84cc16",clientId:null,builtin:true},
-  {id:"b12",name:"XX - Storage",color:"#a78bfa",clientId:null,builtin:true},
+  {id:"b1",scopes:[],variations:[],name:"003 - STF",color:"#f59e0b",clientId:null,builtin:true},
+  {id:"b2",scopes:[],variations:[],name:"0066 - UKTOP",color:"#3b82f6",clientId:null,builtin:true},
+  {id:"b3",scopes:[],variations:[],name:"JAUK - 42 Station Road",color:"#8b5cf6",clientId:null,builtin:true},
+  {id:"b4",scopes:[],variations:[],name:"JAUK - Pool Street",color:"#06b6d4",clientId:null,builtin:true},
+  {id:"b5",scopes:[],variations:[],name:"JAUK - Tower 42",color:"#10b981",clientId:null,builtin:true},
+  {id:"b6",scopes:[],variations:[],name:"BMW",color:"#ef4444",clientId:null,builtin:true},
+  {id:"b7",scopes:[],variations:[],name:"SB - Camden",color:"#f97316",clientId:null,builtin:true},
+  {id:"b8",scopes:[],variations:[],name:"DODI",color:"#ec4899",clientId:null,builtin:true},
+  {id:"b9",scopes:[],variations:[],name:"SS",color:"#6366f1",clientId:null,builtin:true},
+  {id:"b10",scopes:[],variations:[],name:"XX - OFF",color:"#6b7280",clientId:null,builtin:true},
+  {id:"b11",scopes:[],variations:[],name:"X - Holiday",color:"#84cc16",clientId:null,builtin:true},
+  {id:"b12",scopes:[],variations:[],name:"XX - Storage",color:"#a78bfa",clientId:null,builtin:true},
 ];
+
+// ─── Team Types for Client Day Rates ─────────────────────────────────────────
+const TEAM_TYPES=[
+  {key:"welding",label:"Welding Team (2 Skilled + Semiskilled)"},
+  {key:"erectors",label:"Erectors Team (2 Skilled + Semiskilled)"},
+  {key:"architectural",label:"Architectural Team (2 Skilled + Semiskilled)"},
+  {key:"cladding",label:"Cladding Team (2 Skilled + Semiskilled)"},
+  {key:"plant_op",label:"Plant Operator"},
+  {key:"supervisor",label:"Supervisor"},
+  {key:"manager",label:"Manager"},
+];
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getSiteColor(site,allSites=[]){
@@ -64,7 +83,7 @@ function cSt(cert,w){
   const d=(new Date(v.expiry)-new Date())/86400000;
   return d<0?"expired":d<30?"expiring":"valid";
 }
-function emptyCerts(){return Object.fromEntries(CERTS.map(c=>[c.key,{held:false,expiry:""}]));}
+function emptyCerts(){return Object.fromEntries(CERTS.map(c=>[c.key,{held:false,expiry:"",regNo:"",fileUrl:""}]));}
 function emptyDays(){return Object.fromEntries(ALL_DAYS.map(d=>[d,""]));}
 function emptyHrs(){return Object.fromEntries(ALL_DAYS.map(d=>[d,DEFAULT_HOURS]));}
 function emptyOT(){return Object.fromEntries(ALL_DAYS.map(d=>[d,0]));}
@@ -115,8 +134,8 @@ const INIT_W=[
   mkW({id:"w16",name:"Florentin Firtat",company:"Bright Matalwork",position:"Fitter",days:{...emptyDays(),Mon:"X - Holiday",Tue:"X - Holiday",Wed:"X - Holiday",Thu:"X - Holiday",Fri:"X - Holiday"},scope:"Enjoy"}),
 ];
 const INIT_CLIENTS=[
-  {id:"c1",name:"JAUK Ltd",email:"info@jauk.com",phone:"02012345678",color:"#8b5cf6",notes:""},
-  {id:"c2",name:"STF Projects",email:"info@stf.com",phone:"02087654321",color:"#f59e0b",notes:""}
+  {id:"c1",name:"JAUK Ltd",email:"info@jauk.com",phone:"02012345678",color:"#8b5cf6",notes:"",rates:[]},
+  {id:"c2",name:"STF Projects",email:"info@stf.com",phone:"02087654321",color:"#f59e0b",notes:"",rates:[]}
 ];
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -142,6 +161,18 @@ function FI({label,value,onChange,type="text",placeholder=""}){return <div style
 function FSel({label,value,onChange,options}){return <div style={{marginBottom:11}}><label style={LBL}>{label}</label><select value={value??""} onChange={e=>onChange(e.target.value)} style={{...INP,cursor:"pointer"}}><option value="">— Select —</option>{options.map(o=>typeof o==="string"?<option key={o} value={o}>{o}</option>:<option key={o.value} value={o.value}>{o.label}</option>)}</select></div>;}
 function Sec({title,color="#64748b",children}){return <div style={{background:"#0f1421",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #1e2535"}}><div style={{fontSize:11,color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>{title}</div>{children}</div>;}
 function TabBar({tabs,active,onChange}){return <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:18}}>{tabs.map(([v,l])=><button key={v} onClick={()=>onChange(v)} style={{flex:1,padding:"6px 8px",background:active===v?"#1e3a5f":"transparent",border:active===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:active===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:active===v?700:400}}>{l}</button>)}</div>;}
+
+
+// ─── Color Picker ─────────────────────────────────────────────────────────────
+function ColorPicker({value,onChange}){
+  return <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4}}>
+    {PRESET_COLORS.map(c=><div key={c} onClick={()=>onChange(c)}
+      style={{width:22,height:22,borderRadius:4,background:c,cursor:"pointer",flexShrink:0,
+        border:value===c?"3px solid #fff":"2px solid transparent",boxSizing:"border-box",
+        boxShadow:value===c?"0 0 0 1px "+c:"none"}}
+      title={c}/>)}
+  </div>;
+}
 
 // ─── Inline Cell ──────────────────────────────────────────────────────────────
 function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate}){
@@ -457,7 +488,7 @@ function doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites){
 }
 
 // ─── Manage Sites Modal ───────────────────────────────────────────────────────
-function SitesModal({allSites,clients,onSave,onClose}){
+function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
   const [sites,setSites]=useState(allSites.map(s=>({...s})));
   const [nn,setNn]=useState(""),[nc,setNc]=useState(PRESET_COLORS[0]),[ncl,setNcl]=useState("");
   const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false}]);setNn("");};
@@ -471,7 +502,7 @@ function SitesModal({allSites,clients,onSave,onClose}){
       <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
         <div style={{flex:2,minWidth:160}}><label style={LBL}>Site Name</label><input value={nn} onChange={e=>setNn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="e.g. JAUK - New Road" style={INP}/></div>
         <div style={{flex:1,minWidth:130}}><label style={LBL}>Client</label><select value={ncl} onChange={e=>setNcl(e.target.value)} style={{...INP,cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-        <div><label style={LBL}>Colour</label><div style={{display:"flex",gap:3,flexWrap:"wrap",width:120}}>{PRESET_COLORS.map(c=><div key={c} onClick={()=>setNc(c)} style={{width:18,height:18,borderRadius:3,background:c,cursor:"pointer",border:nc===c?"3px solid #fff":"2px solid transparent",boxSizing:"border-box"}}/>)}</div></div>
+        <div style={{minWidth:260}}><label style={LBL}>Colour</label><ColorPicker value={nc} onChange={setNc}/></div>
         <button onClick={add} style={{...BP,whiteSpace:"nowrap"}}>+ Add</button>
       </div>
       {nn&&<div style={{marginTop:8}}><span style={{fontSize:12,color:"#64748b",marginRight:8}}>Preview:</span><span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:12,fontWeight:600,color:"#fff",background:nc}}>{nn}</span></div>}
@@ -484,8 +515,9 @@ function SitesModal({allSites,clients,onSave,onClose}){
         {builtins.map(s=><div key={s.id} style={{padding:"10px 12px",background:"#0f1421",borderRadius:8,border:`1px solid ${s.color}55`}}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
             <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)} style={{flex:1,background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:5,padding:"5px 8px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none"}}/>
+            <button onClick={()=>{onSave(sites);onOpenDetail&&onOpenDetail(s);}} title="Open site detail (scopes & variations)" style={{padding:"4px 9px",background:"#1a3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:12}}>📂</button>
           </div>
-          <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:7}}>{PRESET_COLORS.map(c=><div key={c} onClick={()=>up(s.id,"color",c)} style={{width:16,height:16,borderRadius:3,background:c,cursor:"pointer",border:s.color===c?"3px solid #fff":"1px solid transparent",boxSizing:"border-box"}}/>)}</div>
+          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={c=>up(s.id,"color",c)}/></div>
           <select value={s.clientId||""} onChange={e=>up(s.id,"clientId",e.target.value||null)} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
         </div>)}
       </div>
@@ -499,7 +531,7 @@ function SitesModal({allSites,clients,onSave,onClose}){
             <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)} style={{flex:1,background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:5,padding:"5px 8px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none"}}/>
             <button onClick={()=>rm(s.id)} style={{background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,padding:"4px 8px",fontWeight:700}}>Delete</button>
           </div>
-          <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:7}}>{PRESET_COLORS.map(c=><div key={c} onClick={()=>up(s.id,"color",c)} style={{width:16,height:16,borderRadius:3,background:c,cursor:"pointer",border:s.color===c?"3px solid #fff":"1px solid transparent",boxSizing:"border-box"}}/>)}</div>
+          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={c=>up(s.id,"color",c)}/></div>
           <select value={s.clientId||""} onChange={e=>up(s.id,"clientId",e.target.value||null)} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
         </div>)}
       </div>
@@ -612,9 +644,17 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
               <span style={{fontSize:12,color:val.held?"#e2e8f0":"#64748b",fontWeight:val.held?600:400,flex:1}}>{cert.label}</span>
               {val.held&&<span style={{fontSize:10,color:SC[status],fontWeight:700,textTransform:"uppercase"}}>{status}</span>}
             </div>
-            {cert.hasExpiry&&val.held&&<div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontSize:11,color:"#64748b",minWidth:48}}>Expiry:</span>
-              <input type="date" value={val.expiry||""} onChange={e=>setC(cert.key,{...val,expiry:e.target.value})} style={{flex:1,background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"3px 6px",color:"#e2e8f0",fontSize:12,outline:"none"}}/>
+            {val.held&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 10px",marginTop:7}}>
+              <div><label style={{...LBL,marginBottom:2}}>Reg / Card No</label>
+                <input value={val.regNo||""} onChange={e=>setC(cert.key,{...val,regNo:e.target.value})} placeholder="e.g. SK123456" style={{...INP,fontSize:11,padding:"4px 7px"}}/>
+              </div>
+              {cert.hasExpiry?<div><label style={{...LBL,marginBottom:2}}>Expiry Date</label>
+                <input type="date" value={val.expiry||""} onChange={e=>setC(cert.key,{...val,expiry:e.target.value})} style={{...INP,fontSize:11,padding:"4px 7px"}}/>
+              </div>:<div/>}
+              <div style={{gridColumn:"1/-1"}}><label style={{...LBL,marginBottom:2}}>Certificate URL / File Link</label>
+                <input value={val.fileUrl||""} onChange={e=>setC(cert.key,{...val,fileUrl:e.target.value})} placeholder="https://drive.google.com/… or any URL" style={{...INP,fontSize:11,padding:"4px 7px"}}/>
+                {val.fileUrl&&<a href={val.fileUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#60a5fa",marginTop:3,display:"block"}}>📎 Open Certificate →</a>}
+              </div>
             </div>}
           </div>;
         })}
@@ -628,6 +668,267 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
 }
 
 // ─── Supporting Views ─────────────────────────────────────────────────────────
+
+// ─── Site Detail Modal ────────────────────────────────────────────────────────
+function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClose}){
+  const [s,setS]=useState({...site,scopes:[...(site.scopes||[])],variations:[...(site.variations||[])]});
+  const [tab,setTab]=useState("scopes");
+  const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
+
+  const addScope=()=>setS(x=>({...x,scopes:[...x.scopes,{id:uid(),description:"",unit:"",qty:0,rate:0}]}));
+  const updScope=(id,k,v)=>setS(x=>({...x,scopes:x.scopes.map(sc=>sc.id===id?{...sc,[k]:v}:sc)}));
+  const delScope=id=>setS(x=>({...x,scopes:x.scopes.filter(sc=>sc.id!==id)}));
+
+  const addVar=()=>setS(x=>({...x,variations:[...x.variations,{id:uid(),description:"",value:0,type:"addition",approved:false}]}));
+  const updVar=(id,k,v)=>setS(x=>({...x,variations:x.variations.map(vr=>vr.id===id?{...vr,[k]:v}:vr)}));
+  const delVar=id=>setS(x=>({...x,variations:x.variations.filter(vr=>vr.id!==id)}));
+
+  const labourCost=useMemo(()=>{let t=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.toUpperCase().includes(site.name.toUpperCase()))t+=b.gross;});});return t;},[workers,activeDays,siteHours,site.name]);
+  const scopeTotal=s.scopes.reduce((a,sc)=>a+(Number(sc.qty||0)*Number(sc.rate||0)),0);
+  const varTotal=s.variations.reduce((a,vr)=>a+(vr.type==="addition"?Number(vr.value||0):-Number(vr.value||0)),0);
+  const contractValue=scopeTotal+varTotal;
+  const profit=contractValue-labourCost;
+
+  return <Overlay onClose={onClose} wide>
+    <MH title={<span style={{display:"flex",alignItems:"center",gap:10}}>
+      <span style={{width:14,height:14,borderRadius:"50%",background:s.color,display:"inline-block"}}/>{s.name} — Site Detail
+    </span>} onClose={onClose}/>
+
+    {/* Summary cards */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+      {[["Contract Value",`£${contractValue.toFixed(2)}`,"#60a5fa"],["Labour Cost",`£${labourCost.toFixed(2)}`,"#f87171"],["Variations",`${varTotal>=0?"+":""}£${varTotal.toFixed(2)}`,"#fbbf24"],["Profit / Loss",`£${profit.toFixed(2)}`,profit>=0?"#34d399":"#f87171"]].map(([l,v,c])=>(
+        <div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:10,padding:"11px 14px"}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+          <div style={{fontSize:18,fontWeight:800,color:c,marginTop:3}}>{v}</div>
+        </div>
+      ))}
+    </div>
+
+    <TabBar tabs={[["scopes","📋 Scopes of Work"],["variations","⚡ Variations"],["workers","👷 Workers"],["costs","💷 Cost Breakdown"]]} active={tab} onChange={setTab}/>
+
+    {tab==="scopes"&&<div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:13,color:"#94a3b8"}}>Agreed scope line items for this site</div>
+        <button onClick={addScope} style={{...BP,padding:"6px 14px",fontSize:12}}>+ Add Scope Item</button>
+      </div>
+      {s.scopes.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No scope items yet. Click "+ Add Scope Item" to start.</div>}
+      {s.scopes.map((sc,i)=>(
+        <div key={sc.id} style={{display:"grid",gridTemplateColumns:"3fr 80px 80px 90px 90px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
+          <div><label style={LBL}>Description</label><input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item description…" style={INP}/></div>
+          <div><label style={LBL}>Unit</label><input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="m², nr…" style={INP}/></div>
+          <div><label style={LBL}>Qty</label><input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
+          <div><label style={LBL}>Rate £</label><input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
+          <div><label style={LBL}>Total</label><div style={{...INP,background:"#1a1f2e",color:"#34d399",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>£{(Number(sc.qty||0)*Number(sc.rate||0)).toFixed(2)}</div></div>
+          <button onClick={()=>delScope(sc.id)} style={{padding:"6px 10px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
+        </div>
+      ))}
+      {s.scopes.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:10,padding:"10px 14px",background:"#0d2218",border:"1px solid #065f46",borderRadius:8}}>
+        <span style={{color:"#94a3b8",marginRight:14}}>Scope Total:</span>
+        <span style={{color:"#34d399",fontSize:17,fontWeight:800}}>£{scopeTotal.toFixed(2)}</span>
+      </div>}
+    </div>}
+
+    {tab==="variations"&&<div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:13,color:"#94a3b8"}}>Variations and change orders</div>
+        <button onClick={addVar} style={{...BP,padding:"6px 14px",fontSize:12}}>+ Add Variation</button>
+      </div>
+      {s.variations.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No variations yet.</div>}
+      {s.variations.map((vr,i)=>(
+        <div key={vr.id} style={{display:"grid",gridTemplateColumns:"3fr 110px 110px 110px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
+          <div><label style={LBL}>Description</label><input value={vr.description} onChange={e=>updVar(vr.id,"description",e.target.value)} placeholder="Variation description…" style={INP}/></div>
+          <div><label style={LBL}>Type</label>
+            <select value={vr.type} onChange={e=>updVar(vr.id,"type",e.target.value)} style={{...INP,cursor:"pointer"}}>
+              <option value="addition">Addition (+)</option>
+              <option value="omission">Omission (−)</option>
+            </select>
+          </div>
+          <div><label style={LBL}>Value £</label><input type="number" value={vr.value} onChange={e=>updVar(vr.id,"value",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
+          <div><label style={LBL}>Approved</label>
+            <select value={vr.approved?"yes":"no"} onChange={e=>updVar(vr.id,"approved",e.target.value==="yes")} style={{...INP,cursor:"pointer",color:vr.approved?"#34d399":"#fbbf24"}}>
+              <option value="no">⏳ Pending</option><option value="yes">✓ Approved</option>
+            </select>
+          </div>
+          <button onClick={()=>delVar(vr.id)} style={{padding:"6px 10px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
+        </div>
+      ))}
+      {s.variations.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:10,padding:"10px 14px",background:"#0d2218",border:"1px solid #065f46",borderRadius:8}}>
+        <span style={{color:"#94a3b8",marginRight:14}}>Variations Net:</span>
+        <span style={{color:varTotal>=0?"#34d399":"#f87171",fontSize:17,fontWeight:800}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span>
+      </div>}
+    </div>}
+
+    {tab==="workers"&&<div style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <thead><tr><th style={TH}>Worker</th><th style={TH}>Position</th>{activeDays.map(d=><th key={d} style={TH}>{d}</th>)}<th style={TH}>Hrs</th><th style={TH}>Cost</th></tr></thead>
+        <tbody>
+          {workers.filter(w=>activeDays.some(d=>(w.days[d]||"").trim()===site.name||(w.days[d]||"").toUpperCase().includes(site.name.toUpperCase()))).map((w,i)=>{
+            const{bd}=calcPay(w,activeDays,siteHours);
+            const onSiteDays=activeDays.filter(d=>bd[d]?.site===site.name||bd[d]?.site?.toUpperCase().includes(site.name.toUpperCase()));
+            const hrs=onSiteDays.reduce((a,d)=>a+(bd[d]?.hours||0),0);
+            const cost=onSiteDays.reduce((a,d)=>a+(bd[d]?.gross||0),0);
+            return <tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+              <td style={{...TD,fontWeight:600,color:"#f1f5f9"}}>{w.name}</td>
+              <td style={{...TD,color:"#94a3b8",fontSize:11}}>{w.position}</td>
+              {activeDays.map(d=><td key={d} style={TD}>{bd[d]&&(bd[d].site===site.name||bd[d].site?.toUpperCase().includes(site.name.toUpperCase()))?<span style={{color:"#34d399",fontSize:11}}>✓ {bd[d].hours}h</span>:<span style={{color:"#374151"}}>—</span>}</td>)}
+              <td style={{...TD,color:"#60a5fa",fontWeight:700}}>{hrs}h</td>
+              <td style={{...TD,color:"#f87171",fontWeight:700}}>£{cost.toFixed(2)}</td>
+            </tr>;
+          })}
+        </tbody>
+      </table>
+      {workers.filter(w=>activeDays.some(d=>(w.days[d]||"").includes(site.name))).length===0&&<div style={{textAlign:"center",padding:28,color:"#374151"}}>No workers allocated to this site this week.</div>}
+    </div>}
+
+    {tab==="costs"&&<div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Income</div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Agreed Scope</span><span style={{fontWeight:700,color:"#60a5fa"}}>£{scopeTotal.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Variations</span><span style={{fontWeight:700,color:varTotal>=0?"#34d399":"#f87171"}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4}}><span style={{color:"#e2e8f0",fontWeight:700}}>Total Contract Value</span><span style={{fontWeight:800,color:"#34d399",fontSize:16}}>£{contractValue.toFixed(2)}</span></div>
+        </div>
+        <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Internal Costs</div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Labour (this week)</span><span style={{fontWeight:700,color:"#f87171"}}>£{labourCost.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4}}>
+            <span style={{color:"#e2e8f0",fontWeight:700}}>{profit>=0?"Profit":"Loss"}</span>
+            <span style={{fontWeight:800,color:profit>=0?"#34d399":"#f87171",fontSize:16}}>£{Math.abs(profit).toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    </div>}
+
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,borderTop:"1px solid #1e2535",paddingTop:16}}>
+      <button onClick={onClose} style={{padding:"8px 18px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer"}}>Cancel</button>
+      <button onClick={()=>onSave(s)} style={BG}>Save Site</button>
+    </div>
+  </Overlay>;
+}
+
+// ─── Bank Import Modal ─────────────────────────────────────────────────────────
+function BankImportModal({allSites,clients,onClose}){
+  const [txns,setTxns]=useState([]);
+  const [fileName,setFileName]=useState("");
+  const INCOME_CATS=["Client Payment","Contract Payment","Variation Payment","Retention Release","Other Income"];
+  const EXPENSE_CATS=["Materials","Plant Hire","Subcontractor","Labour (External)","Transport","Insurance","Tools & Equipment","Professional Fees","Utilities","Office","Other Expense"];
+
+  const handleFile=e=>{
+    const f=e.target.files[0];if(!f)return;setFileName(f.name);
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const wb=XLSX.read(ev.target.result,{type:"binary"});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const data=XLSX.utils.sheet_to_json(ws,{header:1});
+        const rows=data.slice(1).filter(r=>r.some(c=>c!==undefined&&c!==""));
+        setTxns(rows.map(r=>({
+          id:Date.now().toString(36)+Math.random().toString(36).slice(2),
+          date:String(r[0]||""),description:String(r[1]||r[2]||""),
+          amount:Number(r[3]||r[4]||0),
+          type:Number(r[3]||r[4]||0)>=0?"income":"expense",
+          category:"",siteId:"",clientId:"",notes:""
+        })));
+      }catch(err){alert("Error reading file: "+err.message);}
+    };
+    reader.readAsBinaryString(f);
+  };
+
+  const upT=(id,k,v)=>setTxns(t=>t.map(x=>x.id===id?{...x,[k]:v}:x));
+  const income=txns.filter(t=>t.type==="income").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const expense=txns.filter(t=>t.type==="expense").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const categorised=txns.filter(t=>t.category).length;
+
+  const exportCat=()=>{
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+      ["Date","Description","Amount","Type","Category","Site","Client","Notes"],
+      ...txns.map(t=>[t.date,t.description,t.amount,t.type,t.category,
+        allSites.find(s=>s.id===t.siteId)?.name||"",
+        clients.find(c=>c.id===t.clientId)?.name||"",t.notes])
+    ]),"Categorised Transactions");
+    XLSX.writeFile(wb,"Bank_Categorised_"+new Date().toLocaleDateString("en-GB").replace(/\//g,"-")+".xlsx");
+  };
+
+  return <Overlay onClose={onClose} wide>
+    <MH title="🏦 Bank Import & Transaction Categorisation" onClose={onClose}/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:14,marginBottom:18}}>
+      <div style={{background:"#0f1421",border:"1px solid #1e2535",borderRadius:10,padding:14}}>
+        <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Import Bank Statement</div>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:12,lineHeight:1.5}}>Upload your bank export Excel or CSV.<br/><strong style={{color:"#94a3b8"}}>Expected columns:</strong><br/>Date · Description · Amount</p>
+        <label style={{display:"block",padding:"12px 14px",background:"#1e3a5f",border:"2px dashed #3b82f6",borderRadius:8,cursor:"pointer",textAlign:"center",color:"#60a5fa",fontSize:12,fontWeight:600}}>
+          📁 {fileName||"Click to upload Excel / CSV"}
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{display:"none"}}/>
+        </label>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9,alignContent:"start"}}>
+        {[["Transactions",txns.length,"#60a5fa"],["Income","£"+income.toFixed(2),"#34d399"],["Expenses","£"+expense.toFixed(2),"#f87171"],["Categorised",categorised+"/"+txns.length,categorised===txns.length&&txns.length>0?"#34d399":"#fbbf24"]].map(([l,v,c])=>(
+          <div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:9,padding:12}}>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+            <div style={{fontSize:17,fontWeight:800,color:c,marginTop:4}}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {txns.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:10}}>Upload a bank statement to categorise transactions.</div>}
+
+    {txns.length>0&&<>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:13,color:"#94a3b8"}}>{txns.length} transactions · {categorised} categorised</div>
+        <button onClick={exportCat} style={{...BG,padding:"7px 14px",fontSize:12}}>⬇ Export Categorised Excel</button>
+      </div>
+      <div style={{maxHeight:420,overflowY:"auto",border:"1px solid #1e2535",borderRadius:9}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <thead style={{position:"sticky",top:0,zIndex:1}}>
+            <tr>
+              <th style={{...TH,minWidth:85}}>Date</th>
+              <th style={{...TH,minWidth:180}}>Description</th>
+              <th style={{...TH,minWidth:85}}>Amount</th>
+              <th style={{...TH,minWidth:100}}>Type</th>
+              <th style={{...TH,minWidth:155}}>Category</th>
+              <th style={{...TH,minWidth:125}}>Site</th>
+              <th style={{...TH,minWidth:115}}>Client</th>
+              <th style={{...TH,minWidth:100}}>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {txns.map((t,i)=>(
+              <tr key={t.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                <td style={{...TD,color:"#94a3b8",whiteSpace:"nowrap"}}>{t.date}</td>
+                <td style={{...TD,maxWidth:180}}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#e2e8f0"}} title={t.description}>{t.description}</div></td>
+                <td style={{...TD,fontWeight:700,color:t.amount>=0?"#34d399":"#f87171",whiteSpace:"nowrap"}}>£{Math.abs(t.amount).toFixed(2)}</td>
+                <td style={TD}><select value={t.type} onChange={e=>upT(t.id,"type",e.target.value)} style={{...INP,fontSize:10,padding:"2px 5px",cursor:"pointer",color:t.type==="income"?"#34d399":"#f87171",width:"auto",minWidth:90}}>
+                  <option value="income">Income</option><option value="expense">Expense</option>
+                </select></td>
+                <td style={TD}><select value={t.category} onChange={e=>upT(t.id,"category",e.target.value)} style={{...INP,fontSize:10,padding:"2px 5px",cursor:"pointer",width:"auto",minWidth:150}}>
+                  <option value="">— Category —</option>
+                  <optgroup label="Income">{INCOME_CATS.map(c=><option key={c} value={c}>{c}</option>)}</optgroup>
+                  <optgroup label="Expenses">{EXPENSE_CATS.map(c=><option key={c} value={c}>{c}</option>)}</optgroup>
+                </select></td>
+                <td style={TD}><select value={t.siteId} onChange={e=>upT(t.id,"siteId",e.target.value)} style={{...INP,fontSize:10,padding:"2px 5px",cursor:"pointer",width:"auto",minWidth:120}}>
+                  <option value="">— Site —</option>
+                  {allSites.filter(s=>!isOff(s.name)).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                </select></td>
+                <td style={TD}><select value={t.clientId} onChange={e=>upT(t.id,"clientId",e.target.value)} style={{...INP,fontSize:10,padding:"2px 5px",cursor:"pointer",width:"auto",minWidth:110}}>
+                  <option value="">— Client —</option>
+                  {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select></td>
+                <td style={TD}><input value={t.notes} onChange={e=>upT(t.id,"notes",e.target.value)} placeholder="Notes…" style={{...INP,fontSize:10,padding:"2px 5px",minWidth:90}}/></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>}
+
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:18,borderTop:"1px solid #1e2535",paddingTop:14}}>
+      <button onClick={onClose} style={{padding:"8px 18px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer"}}>Close</button>
+    </div>
+  </Overlay>;
+}
+
+
 function CertView({workers}){
   const [fs,setFs]=useState("all");
   const rows=useMemo(()=>workers.map(w=>{const st=CERTS.map(c=>cSt(c,w));return {...w,expired:st.filter(s=>s==="expired").length,expiring:st.filter(s=>s==="expiring").length,valid:st.filter(s=>s==="valid").length};}),[workers]);
@@ -743,13 +1044,17 @@ function ClientCostView({workers,clients,allSites,activeDays,siteHours}){
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:8}}>
           {Object.entries(sites).map(([site,{gross,wIds:sw}])=>(
-            <div key={site} style={{background:"#1a1f2e",border:`1px solid ${getSiteColor(site,allSites)}33`,borderRadius:8,padding:"9px 12px"}}>
+            <div key={site} style={{background:"#1a1f2e",border:`1px solid ${getSiteColor(site,allSites)}33`,borderRadius:8,padding:"9px 12px",cursor:"pointer",transition:"border-color 0.15s"}}
+              onClick={()=>{const so=allSites.find(s=>site===s.name||site.toUpperCase().includes(s.name.toUpperCase()));if(so)setModal({type:"siteDetail",site:so});}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=getSiteColor(site,allSites)+"88"}
+              onMouseLeave={e=>e.currentTarget.style.borderColor=getSiteColor(site,allSites)+"33"}>
               <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
                 <span style={{width:7,height:7,borderRadius:"50%",background:getSiteColor(site,allSites),flexShrink:0}}/>
                 <span style={{fontSize:11,color:"#cbd5e1",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{site}</span>
               </div>
               <div style={{fontSize:18,fontWeight:800,color:"#34d399"}}>£{gross.toFixed(2)}</div>
               <div style={{fontSize:10,color:"#64748b"}}>{sw.size} worker{sw.size!==1?"s":""}</div>
+              <div style={{fontSize:10,color:"#60a5fa",marginTop:3}}>📂 Click to open →</div>
             </div>
           ))}
         </div>
@@ -784,7 +1089,7 @@ function ClientsModal({clients,onSave,onClose}){
         <div style={{flex:2,minWidth:140}}><label style={LBL}>Name</label><input value={nn} onChange={e=>setNn(e.target.value)} style={INP}/></div>
         <div style={{flex:1,minWidth:130}}><label style={LBL}>Email</label><input value={ne} onChange={e=>setNe(e.target.value)} type="email" style={INP}/></div>
         <div style={{flex:1,minWidth:110}}><label style={LBL}>Phone</label><input value={np} onChange={e=>setNp(e.target.value)} style={INP}/></div>
-        <div><label style={LBL}>Colour</label><div style={{display:"flex",gap:3,flexWrap:"wrap",width:100}}>{PRESET_COLORS.slice(0,9).map(c=><div key={c} onClick={()=>setNc(c)} style={{width:18,height:18,borderRadius:3,background:c,cursor:"pointer",border:nc===c?"3px solid #fff":"2px solid transparent",boxSizing:"border-box"}}/>)}</div></div>
+        <div style={{minWidth:260}}><label style={LBL}>Colour</label><ColorPicker value={nc} onChange={setNc}/></div>
         <button onClick={add} style={{...BP,whiteSpace:"nowrap"}}>+ Add</button>
       </div>
     </Sec>
@@ -803,20 +1108,33 @@ function ClientsModal({clients,onSave,onClose}){
         </div>
         <div style={{marginBottom:8}}><label style={LBL}>Billing Address</label><input value={c.address||""} onChange={e=>up(c.id,"address",e.target.value)} style={{...INP,fontSize:12,padding:"5px 7px"}}/></div>
         <div style={{marginBottom:8}}><label style={LBL}>Notes</label><input value={c.notes||""} onChange={e=>up(c.id,"notes",e.target.value)} style={{...INP,fontSize:12,padding:"5px 7px"}}/></div>
-        {/* Day rates per position */}
-        <div style={{background:"#111827",borderRadius:8,padding:"10px 12px",marginBottom:8}}>
-          <div style={{fontSize:10,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Agreed Day Rates (£/day) per Trade</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:7}}>
-            {POSITIONS.map(pos=><div key={pos}>
-              <label style={{...LBL,fontSize:10}}>{pos}</label>
-              <div style={{position:"relative"}}>
-                <span style={{position:"absolute",left:7,top:"50%",transform:"translateY(-50%)",color:"#64748b",fontSize:12}}>£</span>
-                <input type="number" min="0" value={c.dayRates?.[pos]||""} onChange={e=>setDayRate(c.id,pos,+e.target.value||"")} placeholder="—" style={{...INP,padding:"5px 6px 5px 18px",fontSize:12,textAlign:"right"}}/>
+        {/* Agreed Day Rates by Team Type */}
+        <div style={{background:"#1a2035",borderRadius:8,padding:12,border:"1px solid #2d3555",marginTop:4}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}>
+            <div style={{fontSize:11,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Agreed Day Rates</div>
+            <button onClick={()=>up(c.id,"rates",[...(c.rates||[]),{id:Date.now().toString(36),teamType:"welding",dayRate:0,notes:""}])} style={{padding:"3px 10px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:700}}>+ Add Rate</button>
+          </div>
+          {(c.rates||[]).length===0&&<div style={{color:"#374151",fontSize:11,textAlign:"center",padding:"6px 0"}}>No rates set. Click "+ Add Rate" to start.</div>}
+          {(c.rates||[]).map(r=>(
+            <div key={r.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr auto",gap:7,marginBottom:7,alignItems:"flex-end"}}>
+              <div><label style={LBL}>Team / Role Type</label>
+                <select value={r.teamType} onChange={e=>up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,teamType:e.target.value}:x))} style={{...INP,cursor:"pointer",fontSize:11,padding:"4px 7px"}}>
+                  {TEAM_TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
               </div>
-            </div>)}
+              <div><label style={LBL}>Day Rate £</label>
+                <input type="number" value={r.dayRate||0} onChange={e=>up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,dayRate:Number(e.target.value)}:x))} style={{...INP,fontSize:11,padding:"4px 7px",textAlign:"right"}}/>
+              </div>
+              <div><label style={LBL}>Notes</label>
+                <input value={r.notes||""} onChange={e=>up(c.id,"rates",(c.rates||[]).map(x=>x.id===r.id?{...x,notes:e.target.value}:x))} placeholder="Notes…" style={{...INP,fontSize:11,padding:"4px 7px"}}/>
+              </div>
+              <button onClick={()=>up(c.id,"rates",(c.rates||[]).filter(x=>x.id!==r.id))} style={{padding:"5px 9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
+            </div>
+          ))}
+        </div></div>)}
           </div>
         </div>
-        <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{PRESET_COLORS.slice(0,12).map(col=><div key={col} onClick={()=>up(c.id,"color",col)} style={{width:14,height:14,borderRadius:3,background:col,cursor:"pointer",border:c.color===col?"2px solid #fff":"1px solid transparent"}}/>)}</div>
+        <ColorPicker value={c.color} onChange={col=>up(c.id,"color",col)}/>
       </div>)}
     </div>
     <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,borderTop:"1px solid #1e2535",paddingTop:16}}>
@@ -1600,6 +1918,10 @@ export default function App(){
     },800);
   },[weekLabel,showWeekend,allSites,clients,siteHours,scopeData,invoices,loading]);
 
+  const saveSiteDetail=(updatedSite)=>{
+    setAllSites(sites=>sites.map(s=>s.id===updatedSite.id?updatedSite:s));
+    setModal(null);
+  };
   const saveWorker=async(w)=>{
     const isNew=!workers.find(x=>x.id===w.id);
     if(isNew) setWorkers(ws=>[...ws,w]); else setWorkers(ws=>ws.map(x=>x.id===w.id?w:x));
@@ -1643,7 +1965,7 @@ export default function App(){
     return{total:workers.length,onHol,off,alerts,...pay};
   },[workers,activeDays,siteHours]);
 
-  const VIEWS=[["schedule","📋 Schedule"],["site","📍 By Site"],["certs","🛡 Certs"],["payroll","💷 Payroll"],["costs","👔 Costs"],["budget","📐 Budget"],["invoices","🧾 Invoices"],["finance","📊 Finance"],["stats","🔢 Stats"]];
+  const VIEWS=[["schedule","📋 Schedule"],["site","📍 By Site"],["certs","🛡 Certs"],["payroll","💷 Payroll"],["costs","👔 Costs"],["bank","🏦 Bank"],["budget","📐 Budget"],["invoices","🧾 Invoices"],["finance","📊 Finance"],["stats","🔢 Stats"]];
 
   if(loading) return <div style={{minHeight:"100vh",background:"#0d1117",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
     <div style={{width:48,height:48,background:"linear-gradient(135deg,#3b82f6,#6366f1)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🏗</div>
@@ -1724,6 +2046,12 @@ export default function App(){
       {view==="budget"&&<BudgetView workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} onEditScope={site=>setModal({type:"scope",site})}/>}
       {view==="invoices"&&<InvoicesView invoices={invoices} clients={clients} allSites={allSites} scopeData={scopeData} workers={workers} onNew={()=>setModal({type:"invoice",invoice:emptyInvoice(clients,allSites,invoices)})} onEdit={inv=>setModal({type:"invoice",invoice:inv})} onDelete={delInvoice}/>}
       {view==="finance"&&<FinancialDashboard workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} invoices={invoices}/>}
+      {view==="bank"&&<div style={{padding:"20px 18px"}}><div style={{textAlign:"center",padding:40}}>
+        <div style={{fontSize:40,marginBottom:14}}>🏦</div>
+        <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",marginBottom:8}}>Bank Import & Categorisation</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:20,lineHeight:1.6}}>Import your bank statement Excel or CSV.<br/>Categorise each transaction as income or expense, allocate to sites and clients.</div>
+        <button onClick={()=>setModal({type:"bank"})} style={{...BP,padding:"10px 24px",fontSize:14}}>📂 Open Bank Import Tool</button>
+      </div></div>}
       {view==="stats"&&<div style={{padding:"14px 18px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
         <div><div style={{fontWeight:700,color:"#94a3b8",marginBottom:11,fontSize:13}}>Workers per Site</div><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
           {(()=>{const m={};workers.forEach(w=>activeDays.forEach(d=>{const s=(w.days[d]||"").trim();if(s&&!isOff(s))m[s]=(m[s]||0)+1;}));return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([site,cnt])=>(
@@ -1741,19 +2069,39 @@ export default function App(){
         <div style={{padding:"5px 18px",background:"#0f1421",borderBottom:"1px solid #1e2535",fontSize:11,color:"#64748b"}}>
           💡 <strong style={{color:"#60a5fa"}}>Click any site cell</strong> to edit inline · <strong style={{color:"#60a5fa"}}>Edit</strong> opens full profile · <strong style={{color:"#f87171"}}>📋 Profile</strong> exports worker card · <strong style={{color:"#34d399"}}>💷 Payslip</strong> in Payroll tab
         </div>
-        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr>
-            <th style={{...TH,minWidth:155,position:"sticky",left:0,zIndex:2}}>Worker</th>
-            <th style={TH}>Company</th><th style={TH}>Position</th>
-            {activeDays.map(d=><th key={d} style={{...TH,minWidth:145,color:WEEKEND_DAYS.includes(d)?"#fbbf24":"#64748b"}}>{d}{WEEKEND_DAYS.includes(d)?" 🟡":""}</th>)}
-            <th style={TH}>Rate</th><th style={TH}>Tax</th><th style={TH}>Certs</th><th style={TH}>Actions</th>
-          </tr></thead>
-          <tbody>
-            {filtered.map((w,i)=>{
+        <div style={{overflowX:"auto"}}>
+          {(()=>{
+            const grp={};
+            filtered.forEach(w=>{
+              const cnts={};
+              activeDays.forEach(d=>{const s=w.days[d];if(s&&!isOff(s))cnts[s]=(cnts[s]||0)+1;});
+              const primary=Object.entries(cnts).sort((a,b)=>b[1]-a[1])[0]?.[0]||"Unassigned / Off";
+              if(!grp[primary])grp[primary]=[];
+              grp[primary].push(w);
+            });
+            const order=Object.keys(grp).sort((a,b)=>{if(a==="Unassigned / Off")return 1;if(b==="Unassigned / Off")return -1;return a.localeCompare(b);});
+            return order.map(siteName=>{
+              const siteColor=getSiteColor(siteName,allSites);
+              const siteWorkers=grp[siteName];
+              return <div key={siteName}>
+                <div style={{background:`${siteColor}15`,borderLeft:`4px solid ${siteColor}`,padding:"7px 18px",display:"flex",alignItems:"center",gap:10,borderTop:"1px solid #1e2535",borderBottom:`1px solid ${siteColor}33`}}>
+                  <span style={{width:10,height:10,borderRadius:"50%",background:siteColor,flexShrink:0}}/>
+                  <span style={{fontWeight:800,color:siteColor,fontSize:13,flex:1}}>{siteName}</span>
+                  <span style={{fontSize:11,color:"#64748b"}}>{siteWorkers.length} operative{siteWorkers.length!==1?"s":""}</span>
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr>
+                    <th style={{...TH,minWidth:145,paddingLeft:24}}>Worker</th>
+                    <th style={TH}>Company</th><th style={TH}>Position</th>
+                    {activeDays.map(d=><th key={d} style={{...TH,minWidth:140,color:WEEKEND_DAYS.includes(d)?"#fbbf24":"#64748b"}}>{d}{WEEKEND_DAYS.includes(d)?" 🟡":""}</th>)}
+                    <th style={TH}>Rate</th><th style={TH}>Tax</th><th style={TH}>Certs</th><th style={TH}>Actions</th>
+                  </tr></thead>
+                  <tbody>
+                    {siteWorkers.map((w,i)=>{
               const exp=CERTS.filter(c=>cSt(c,w)==="expired").length;
               const expg=CERTS.filter(c=>cSt(c,w)==="expiring").length;
               return <tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
-                <td style={{...TD,fontWeight:600,color:"#f1f5f9",position:"sticky",left:0,background:i%2===0?"#111827":"#0f1421",zIndex:1}}>
+                <td style={{...TD,fontWeight:600,color:"#f1f5f9",paddingLeft:24}}>
                   <div>{w.name}</div>{w.comments&&<div style={{fontSize:10,color:"#fbbf24"}}>⚑ {w.comments}</div>}
                 </td>
                 <td style={{...TD,color:"#94a3b8",fontSize:11}}>{w.company||"—"}</td>
@@ -1774,9 +2122,12 @@ export default function App(){
                 </div></td>
               </tr>;
             })}
-          </tbody>
-        </table>
-        {filtered.length===0&&<div style={{textAlign:"center",padding:50,color:"#374151"}}>No workers match filters.</div>}
+                  </tbody>
+                </table>
+              </div>;
+            });
+          })()}
+          {filtered.length===0&&<div style={{textAlign:"center",padding:50,color:"#374151"}}>No workers match filters.</div>}
         </div>
       </div>}
     </div>
@@ -1793,8 +2144,10 @@ export default function App(){
 
     {/* Modals */}
     {modal?.type==="worker"&&<WorkerModal worker={modal.worker} onSave={saveWorker} onClose={()=>setModal(null)} allSiteNames={allSiteNames} allSites={allSites} activeDays={activeDays}/>}
-    {modal?.type==="sites"&&<SitesModal allSites={allSites} clients={clients} onSave={s=>{setAllSites(s);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="sites"&&<SitesModal allSites={allSites} clients={clients} onSave={s=>{setAllSites(s);}} onClose={()=>setModal(null)} onOpenDetail={site=>setModal({type:"siteDetail",site})}/>}
     {modal?.type==="clients"&&<ClientsModal clients={clients} onSave={l=>{setClients(l);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="siteDetail"&&<SiteDetailModal site={modal.site} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} onSave={saveSiteDetail} onClose={()=>setModal(null)}/>}
+    {modal?.type==="bank"&&<BankImportModal allSites={allSites} clients={clients} onClose={()=>setModal(null)}/>}
     {modal?.type==="scope"&&<ScopeModal site={modal.site} scopeItems={scopeData[modal.site.id]||[]} onSave={items=>saveScopeForSite(modal.site.id,items)} onClose={()=>setModal(null)}/>}
     {modal?.type==="invoice"&&<InvoiceModal invoice={modal.invoice} clients={clients} allSites={allSites} scopeData={scopeData} workers={workers} invoices={invoices} onSave={saveInvoice} onClose={()=>setModal(null)}/>}
     {modal?.type==="trainingMatrix"&&<TrainingMatrixModal workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} weekLabel={weekLabel} onClose={()=>setModal(null)}/>}
