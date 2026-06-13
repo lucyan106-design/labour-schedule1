@@ -5506,7 +5506,7 @@ const MONTHS    = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","
 function weekMonday(off=0){ const d=new Date(BASE_MON); d.setDate(d.getDate()+off*7); return d; }
 function weekDates(off=0){ const m=weekMonday(off); return Array.from({length:6},(_,i)=>{ const d=new Date(m); d.setDate(d.getDate()+i); return d; }); }
 function weekKey(off=0){ const d=weekMonday(off); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
-function fmtDate(d){ return `${d.getDate()} ${MONTHS[d.getMonth()]}`; }
+function smFmtDate(d){ return `${d.getDate()} ${MONTHS[d.getMonth()]}`; }
 function dateToWK(ds){ const d=new Date(ds); const di=(d.getDay()+6)%7; const m=new Date(d); m.setDate(d.getDate()-di); return `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,"0")}-${String(m.getDate()).padStart(2,"0")}`; }
 function dateToDI(ds){ return (new Date(ds).getDay()+6)%7; }  // 0=Mon…5=Sat
 
@@ -5893,7 +5893,7 @@ function SiteManagerView() {
       <div style={{background:`${NM}18`,border:`1px solid ${NM}30`,borderRadius:10,padding:"10px 14px",marginBottom:18,fontSize:12,color:NM}}>
         🔗 <strong>Labour Schedule sync active.</strong> Site access and labour allocations are managed by your admin in Labour Schedule.
       </div>
-      <h2 style={{color:N,fontSize:21,fontWeight:800,margin:"0 0 3px"}}>My Sites</h2>
+      <h2 style={{color:SM_N,fontSize:21,fontWeight:800,margin:"0 0 3px"}}>My Sites</h2>
       <p style={{color:MU,fontSize:13,margin:"0 0 18px"}}>{SITES.length} sites assigned to you</p>
       {SITES.map(s=>{
         const ss=scopes[s.id]||[];
@@ -5907,7 +5907,7 @@ function SiteManagerView() {
             onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
               <div>
-                <div style={{fontWeight:800,fontSize:15,color:N,marginBottom:2}}>{s.name}</div>
+                <div style={{fontWeight:800,fontSize:15,color:SM_N,marginBottom:2}}>{s.name}</div>
                 <div style={{color:MU,fontSize:12}}>{s.client} · {s.address}</div>
               </div>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -5937,11 +5937,11 @@ function SiteManagerView() {
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name}]}/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-          <div><h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>{site.name}</h2><div style={{color:MU,fontSize:12}}>{site.client} · {site.address}</div></div>
+          <div><h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>{site.name}</h2><div style={{color:MU,fontSize:12}}>{site.client} · {site.address}</div></div>
           <Badge s={site.appStatus}/>
         </div>
         {/* Earned value summary */}
-        <div style={{background:N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+        <div style={{background:SM_N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
           {[["Earned to Date",fmt(earned),OR],["Workers (this wk)",activeW+"/"+workers.length,"#FFF"],["Scopes",siteScopes.length+" active","#FFF"]].map(([l,v,c])=>(
             <div key={l}><div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>{l}</div><div style={{color:c,fontSize:18,fontWeight:800}}>{v}</div></div>
           ))}
@@ -5996,7 +5996,7 @@ function SiteManagerView() {
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Scopes & Budget"}]}/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Scopes & Budget</h2>
+          <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Scopes & Budget</h2>
           <div style={{fontSize:11,color:MU,background:"#F1F5F9",borderRadius:7,padding:"4px 10px",fontWeight:600}}>Profit & overhead excluded from values shown</div>
         </div>
         {siteScopes.map(s=>{
@@ -6012,7 +6012,7 @@ function SiteManagerView() {
               {/* Scope header */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                 <div>
-                  <div style={{fontWeight:800,fontSize:15,color:N,marginBottom:2}}>{s.name}</div>
+                  <div style={{fontWeight:800,fontSize:15,color:SM_N,marginBottom:2}}>{s.name}</div>
                   <div style={{fontSize:11,color:MU}}>Allocated budget (your portion) · {s.completed}% work complete</div>
                 </div>
                 <div style={{textAlign:"right"}}>
@@ -6066,7 +6066,7 @@ function SiteManagerView() {
     return(
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Scopes",fn:()=>go("scopes")},{label:"Assess"}]}/>
-        <div style={{background:N,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+        <div style={{background:SM_N,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
           <div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Scope Assessment</div>
           <div style={{color:"#FFF",fontSize:16,fontWeight:700,marginBottom:14}}>{scope.name}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
@@ -6076,7 +6076,7 @@ function SiteManagerView() {
           </div>
         </div>
         <div style={card}>
-          <div style={{fontWeight:800,fontSize:14,color:N,marginBottom:14}}>Volume of Work Completed</div>
+          <div style={{fontWeight:800,fontSize:14,color:SM_N,marginBottom:14}}>Volume of Work Completed</div>
           <div style={{fontSize:52,fontWeight:900,color:OR,textAlign:"center",lineHeight:1,marginBottom:10}}>{pct}%</div>
           <Bar pct={pct}/>
           <input type="range" min={0} max={100} step={5} value={pct} onChange={e=>setScopePct(Number(e.target.value))} style={{width:"100%",marginTop:12,accentColor:OR,cursor:"pointer"}}/>
@@ -6128,7 +6128,7 @@ function SiteManagerView() {
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Daily Sign-In"}]}/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Daily Sign-In</h2>
+          <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Daily Sign-In</h2>
           <div style={{display:"flex",alignItems:"center",gap:6,background:"#F1F5F9",borderRadius:8,padding:"5px 11px",fontSize:11,color:MU,fontWeight:600}}>
             <span style={{width:7,height:7,background:GN,borderRadius:"50%",display:"inline-block"}}/>
             Costs logged against scope budgets
@@ -6236,7 +6236,7 @@ function SiteManagerView() {
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Labour Schedule"}]}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
-          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Labour Schedule</h2>
+          <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Labour Schedule</h2>
           <div style={{display:"flex",gap:8}}>
             <div style={{display:"flex",alignItems:"center",gap:5,background:"#F1F5F9",borderRadius:8,padding:"5px 11px",fontSize:11,color:MU,fontWeight:600}}>
               <span style={{width:7,height:7,background:GN,borderRadius:"50%",display:"inline-block"}}/>Read only · Labour Schedule
@@ -6244,7 +6244,7 @@ function SiteManagerView() {
             <button style={btn("primary")} onClick={()=>go("signin")}>✅ Sign In Today</button>
           </div>
         </div>
-        <div style={{background:N,borderRadius:12,padding:"14px 18px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+        <div style={{background:SM_N,borderRadius:12,padding:"14px 18px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
           {[["Workers This Week",`${totalW}/${workers.length}`,"#FFF"],["Person-Days",totalPD,OR],["Trades",uniqueT.length,"#FFF"]].map(([l,v,c])=>(
             <div key={l}><div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:19,fontWeight:800}}>{v}</div></div>
           ))}
@@ -6252,9 +6252,9 @@ function SiteManagerView() {
         {uniqueT.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{uniqueT.map(t=><span key={t} style={{background:`${TRADE_COL[t]||NM}18`,color:TRADE_COL[t]||NM,border:`1px solid ${TRADE_COL[t]||NM}40`,borderRadius:999,padding:"3px 10px",fontSize:11,fontWeight:700}}>{t}</span>)}</div>}
         {/* Week nav */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-          <button onClick={()=>setWeekOff(o=>o-1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>‹ {fmtDate(weekMonday(weekOffset-1))}</button>
-          <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:13,color:N}}>Week of {fmtDate(monDate)}</div>{weekOffset===0&&<div style={{fontSize:10,color:OR,fontWeight:700}}>CURRENT WEEK</div>}</div>
-          <button onClick={()=>setWeekOff(o=>o+1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>{fmtDate(weekMonday(weekOffset+1))} ›</button>
+          <button onClick={()=>setWeekOff(o=>o-1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>‹ {smFmtDate(weekMonday(weekOffset-1))}</button>
+          <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:13,color:N}}>Week of {smFmtDate(monDate)}</div>{weekOffset===0&&<div style={{fontSize:10,color:OR,fontWeight:700}}>CURRENT WEEK</div>}</div>
+          <button onClick={()=>setWeekOff(o=>o+1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>{smFmtDate(weekMonday(weekOffset+1))} ›</button>
         </div>
         {/* Grid */}
         <div style={{...card,padding:0,overflow:"hidden"}}>
@@ -6263,7 +6263,7 @@ function SiteManagerView() {
               <thead>
                 <tr style={{background:"#F8FAFC"}}>
                   <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:MU,textTransform:"uppercase",minWidth:170,borderBottom:`1px solid ${BD}`}}>Worker</th>
-                  {dates.map((d,i)=><th key={i} style={{padding:"8px",textAlign:"center",fontSize:10,fontWeight:700,color:i<5?MU:"#94A3B8",minWidth:60,borderBottom:`1px solid ${BD}`,borderLeft:`1px solid ${BD}`}}><div>{DAY_SHORT[i]}</div><div style={{fontWeight:500,color:"#94A3B8"}}>{fmtDate(d)}</div></th>)}
+                  {dates.map((d,i)=><th key={i} style={{padding:"8px",textAlign:"center",fontSize:10,fontWeight:700,color:i<5?MU:"#94A3B8",minWidth:60,borderBottom:`1px solid ${BD}`,borderLeft:`1px solid ${BD}`}}><div>{DAY_SHORT[i]}</div><div style={{fontWeight:500,color:"#94A3B8"}}>{smFmtDate(d)}</div></th>)}
                   <th style={{padding:"8px",textAlign:"center",fontSize:10,fontWeight:700,color:MU,minWidth:44,borderBottom:`1px solid ${BD}`,borderLeft:`1px solid ${BD}`}}>Days</th>
                 </tr>
               </thead>
@@ -6287,14 +6287,14 @@ function SiteManagerView() {
                              :<div style={{width:26,height:26,borderRadius:6,background:"#F8FAFC",border:`1px solid ${BD}`,margin:"0 auto"}}/>}
                         </td>;
                       })}
-                      <td style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><span style={{fontWeight:800,fontSize:12,color:days.length>0?N:MU}}>{days.length}</span></td>
+                      <td style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><span style={{fontWeight:800,fontSize:12,color:days.length>0?SM_N:MU}}>{days.length}</span></td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr style={{background:"#F0F4F8",borderTop:`1px solid ${BD}`}}>
-                  <td style={{padding:"9px 14px",fontSize:11,fontWeight:800,color:N,borderRight:`1px solid ${BD}`}}>Daily Headcount</td>
+                  <td style={{padding:"9px 14px",fontSize:11,fontWeight:800,color:SM_N,borderRight:`1px solid ${BD}`}}>Daily Headcount</td>
                   {dayTotals.map((t,i)=><td key={i} style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><div style={{fontWeight:800,fontSize:12,color:t>0?OR:MU}}>{t}</div><div style={{fontSize:9,color:"#94A3B8"}}>ppl</div></td>)}
                   <td style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><div style={{fontWeight:800,fontSize:12,color:N}}>{totalPD}</div><div style={{fontSize:9,color:"#94A3B8"}}>total</div></td>
                 </tr>
@@ -6312,7 +6312,7 @@ function SiteManagerView() {
     return(<Shell {...shellProps}>
       <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Expenses"}]}/>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <div><h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>Expenses</h2><div style={{color:MU,fontSize:12}}>Total: <strong style={{color:OR}}>{fmt(total)}</strong></div></div>
+        <div><h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>Expenses</h2><div style={{color:MU,fontSize:12}}>Total: <strong style={{color:OR}}>{fmt(total)}</strong></div></div>
         <button style={btn("primary")} onClick={()=>go("expense-new")}>+ New</button>
       </div>
       {siteExp.length===0?<div style={{textAlign:"center",padding:"60px 20px",color:"#9CA3AF"}}><div style={{fontSize:48,marginBottom:10}}>🧾</div><div>No expenses yet.</div></div>
@@ -6321,7 +6321,7 @@ function SiteManagerView() {
         return(<div key={e.id} style={card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
             <div style={{flex:1,marginRight:12}}><div style={{fontWeight:700,fontSize:13,color:TX,marginBottom:2}}>{e.desc}</div><div style={{fontSize:11,color:MU}}>{e.category}{sc?` · ${sc.name}`:""} · {e.date}</div></div>
-            <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:N,marginBottom:4}}>{fmt(e.amount)}</div><Badge s={e.status}/></div>
+            <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:SM_N,marginBottom:4}}>{fmt(e.amount)}</div><Badge s={e.status}/></div>
           </div>
           {e.files.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{e.files.map((f,i)=><Pill key={i} name={f}/>)}</div>}
         </div>);
@@ -6331,7 +6331,7 @@ function SiteManagerView() {
 
   if(view==="expense-new") return(<Shell {...shellProps}>
     <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Expenses",fn:()=>go("expenses")},{label:"New Expense"}]}/>
-    <h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Expense</h2>
+    <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Expense</h2>
     <div style={card}>
       <div style={{marginBottom:12}}><label style={lbl}>Description *</label><input style={inp} placeholder="e.g. Concrete delivery — Pour 3" value={expForm.desc} onChange={e=>setEF(p=>({...p,desc:e.target.value}))}/></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
@@ -6356,7 +6356,7 @@ function SiteManagerView() {
   if(view==="variations") return(<Shell {...shellProps}>
     <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Variations"}]}/>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-      <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Variations</h2>
+      <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Variations</h2>
       <button style={btn("primary")} onClick={()=>go("variation-new")}>+ New</button>
     </div>
     {siteVar.length===0?<div style={{textAlign:"center",padding:"60px 20px",color:"#9CA3AF"}}><div style={{fontSize:48,marginBottom:10}}>📐</div><div>No variations yet.</div></div>
@@ -6364,7 +6364,7 @@ function SiteManagerView() {
       <div key={v.id} style={card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
           <div style={{flex:1,marginRight:12}}><div style={{fontSize:10,color:"#94A3B8",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{v.ref}</div><div style={{fontWeight:700,fontSize:13,color:TX,marginBottom:3}}>{v.title}</div>{v.desc&&<div style={{fontSize:12,color:MU}}>{v.desc}</div>}</div>
-          <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:N,marginBottom:4}}>{fmt(v.amount)}</div><Badge s={v.status}/></div>
+          <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:SM_N,marginBottom:4}}>{fmt(v.amount)}</div><Badge s={v.status}/></div>
         </div>
         {v.files.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{v.files.map((f,i)=><Pill key={i} name={f}/>)}</div>}
       </div>
@@ -6373,7 +6373,7 @@ function SiteManagerView() {
 
   if(view==="variation-new") return(<Shell {...shellProps}>
     <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Variations",fn:()=>go("variations")},{label:"New Variation"}]}/>
-    <h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Variation</h2>
+    <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Variation</h2>
     <div style={card}>
       <div style={{marginBottom:12}}><label style={lbl}>Title *</label><input style={inp} placeholder="Brief description of scope change" value={varForm.title} onChange={e=>setVF(p=>({...p,title:e.target.value}))}/></div>
       <div style={{marginBottom:12}}><label style={lbl}>Details / Justification</label><textarea style={{...inp,height:90,resize:"vertical"}} value={varForm.desc} onChange={e=>setVF(p=>({...p,desc:e.target.value}))}/></div>
@@ -6399,18 +6399,18 @@ function SiteManagerView() {
     const appStat=site?.appStatus||"draft";
     return(<Shell {...shellProps}>
       <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Application"}]}/>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Payment Application</h2><Badge s={appStat}/></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Payment Application</h2><Badge s={appStat}/></div>
       <div style={{...card,padding:0,overflow:"hidden",marginBottom:12}}>
-        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Scope Claims (your allocated values)</div>
+        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:SM_N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Scope Claims (your allocated values)</div>
         {siteScopes.map(s=>{const av=allocVal(s);const ev=earnedVal(s);return(<div key={s.id} style={{padding:"10px 18px",borderBottom:"1px solid #F8FAFC",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:13,fontWeight:600,color:TX}}>{s.name}</div><div style={{fontSize:11,color:MU}}>{s.completed}% complete · allocated {fmt(av)}</div></div><div style={{fontWeight:800,fontSize:13,color:N}}>{fmt(ev)}</div></div>);})}
         <div style={{padding:"11px 18px",background:"#F0F4F8",display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,fontSize:12,color:N}}>Scope Subtotal</span><span style={{fontWeight:800,fontSize:14,color:OR}}>{fmt(scopeTotal)}</span></div>
       </div>
       {approvedVars.length>0&&<div style={{...card,padding:0,overflow:"hidden",marginBottom:12}}>
-        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Approved Variations</div>
+        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:SM_N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Approved Variations</div>
         {approvedVars.map(v=><div key={v.id} style={{padding:"10px 18px",borderBottom:"1px solid #F8FAFC",display:"flex",justifyContent:"space-between"}}><div style={{fontSize:13,fontWeight:600,color:TX}}>{v.ref} — {v.title}</div><div style={{fontWeight:800,color:N}}>{fmt(v.amount)}</div></div>)}
         <div style={{padding:"11px 18px",background:"#F0F4F8",display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,fontSize:12,color:N}}>Variations Subtotal</span><span style={{fontWeight:800,fontSize:14,color:OR}}>{fmt(varTotal)}</span></div>
       </div>}
-      <div style={{background:N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div style={{background:SM_N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div><div style={{color:"#94A3B8",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Manager's Total (excl. margin)</div><div style={{color:"#64748B",fontSize:11,marginTop:1}}>Director will add full margin values before issuing to client</div></div>
         <div style={{color:OR,fontSize:28,fontWeight:900}}>{fmt(scopeTotal+varTotal)}</div>
       </div>
@@ -6658,7 +6658,7 @@ async function saveDoc(doc, existing) {
 // TOKENS
 // ═══════════════════════════════════════════════════════
 
-const BG = "#F5F4F0", DARK = "#111318", HDR = "#0F1117", AMB = "#F5A623",
+const SM_BG = "#F5F4F0", DARK = "#111318", HDR = "#0F1117", AMB = "#F5A623",
   GY1 = "#F3F4F6", GY2 = "#E5E7EB", GY3 = "#D1D5DB",
   GY5 = "#6B7280", GY6 = "#4B5563", GY7 = "#374151", GY8 = "#1F2937",
   GRN = "#15803D", GBG = "#DCFCE7", GRL = "#86EFAC",
@@ -6691,7 +6691,7 @@ function Field({ label, value, onChange, multi, span }) {
   );
 }
 
-function Sec({ title, children }) {
+function SdgSec({ title, children }) {
   return (
     <div style={{ background: "#fff", border: `1px solid ${GY2}`, borderRadius: 10, padding: "14px 17px", marginBottom: 12 }}>
       <p style={{ margin: "0 0 11px", fontSize: 10, fontWeight: 700, color: GY5, textTransform: "uppercase", letterSpacing: "0.08em" }}>{title}</p>
@@ -6833,7 +6833,7 @@ function SiteDocGeneratorView() {
   );
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui, -apple-system, sans-serif", background: BG }}>
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui, -apple-system, sans-serif", background: SDG_BG }}>
       <Sidebar sites={sites} sel={sel} setSel={setSel} sync={sync} syncSt={syncSt} onRep={() => setView("reports")} docsCount={docs.length} />
       <main style={{ flex: 1, padding: "22px 26px", overflowY: "auto" }}>
         <div style={{ marginBottom: 18 }}>
@@ -6903,7 +6903,7 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
   );
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: SDG_BG, minHeight: "100vh" }}>
       <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 13, position: "sticky", top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
         <div style={{ flex: 1 }}>
@@ -6915,7 +6915,7 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
 
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "18px 16px 40px" }}>
         {/* Always: site details */}
-        <Sec title="Site details">
+        <SdgSec title="Site details">
           <Grid>
             <Field label="Site name" value={fd.site} onChange={v => set("site", v)} />
             <Field label="Date" value={fd.date} onChange={v => set("date", v)} />
@@ -6925,53 +6925,53 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
             <Field label="Contact number" value={fd.supPhone} onChange={v => set("supPhone", v)} />
             <Field label="Prepared by" value={fd.preparedBy} onChange={v => set("preparedBy", v)} />
           </Grid>
-        </Sec>
+        </SdgSec>
 
         {/* Inspection: equipment */}
         {isCl && (
-          <Sec title="Equipment details">
+          <SdgSec title="Equipment details">
             <Grid cols={3}>
               <Field label="Equipment ID / serial" value={fd.equipmentId} onChange={v => set("equipmentId", v)} />
               <Field label="Make" value={fd.make} onChange={v => set("make", v)} />
               <Field label="Model" value={fd.model} onChange={v => set("model", v)} />
             </Grid>
-          </Sec>
+          </SdgSec>
         )}
 
         {/* Daily Safe Start */}
         {dt.id === "daily_safe_start" && (
-          <Sec title="Briefing content">
+          <SdgSec title="Briefing content">
             <Grid cols={1}>
               <Field label="Hazards identified" value={fd.hazards} onChange={v => set("hazards", v)} multi />
               <Field label="Control measures in place" value={fd.controls} onChange={v => set("controls", v)} multi />
               <Field label="PPE required" value={fd.ppe} onChange={v => set("ppe", v)} />
               <Field label="Emergency procedure / muster point" value={fd.emergencyProc} onChange={v => set("emergencyProc", v)} />
             </Grid>
-          </Sec>
+          </SdgSec>
         )}
 
         {/* Toolbox Talk */}
         {dt.id === "toolbox_talk" && (
-          <Sec title="Talk content">
+          <SdgSec title="Talk content">
             <Grid cols={1}>
               <Field label="Topic / title" value={fd.topic} onChange={v => set("topic", v)} />
               <Field label="Key points covered" value={fd.hazards} onChange={v => set("hazards", v)} multi />
               <Field label="Actions arising / follow-up" value={fd.controls} onChange={v => set("controls", v)} multi />
             </Grid>
-          </Sec>
+          </SdgSec>
         )}
 
         {/* PUWER */}
         {dt.id === "puwer" && (<>
-          <Sec title="Equipment">
+          <SdgSec title="Equipment">
             <Grid>
               <Field label="Equipment / machine" value={fd.equipment} onChange={v => set("equipment", v)} />
               <Field label="Equipment ID / ref" value={fd.equipmentId} onChange={v => set("equipmentId", v)} />
               <Field label="Make" value={fd.make} onChange={v => set("make", v)} />
               <Field label="Model" value={fd.model} onChange={v => set("model", v)} />
             </Grid>
-          </Sec>
-          <Sec title="Risk assessment & controls">
+          </SdgSec>
+          <SdgSec title="Risk assessment & controls">
             <Grid cols={1}>
               <Field label="Hazards associated with equipment" value={fd.hazards} onChange={v => set("hazards", v)} multi />
               <Field label="Risk level (High / Medium / Low)" value={fd.riskLevel} onChange={v => set("riskLevel", v)} />
@@ -6980,12 +6980,12 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="Maintenance schedule" value={fd.maintenance} onChange={v => set("maintenance", v)} />
               <Field label="Inspection frequency" value={fd.frequency} onChange={v => set("frequency", v)} />
             </Grid>
-          </Sec>
+          </SdgSec>
         </>)}
 
         {/* LOLER */}
         {dt.id === "loler" && (<>
-          <Sec title="Lifting equipment">
+          <SdgSec title="Lifting equipment">
             <Grid>
               <Field label="Equipment type" value={fd.liftingEquip} onChange={v => set("liftingEquip", v)} />
               <Field label="SWL / WLL" value={fd.swl} onChange={v => set("swl", v)} />
@@ -6994,19 +6994,19 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="Last examination date" value={fd.examDate} onChange={v => set("examDate", v)} />
               <Field label="Next examination due" value={fd.nextExam} onChange={v => set("nextExam", v)} />
             </Grid>
-          </Sec>
-          <Sec title="Lift plan">
+          </SdgSec>
+          <SdgSec title="Lift plan">
             <Grid cols={1}>
               <Field label="Lift description / method" value={fd.liftPlan} onChange={v => set("liftPlan", v)} multi />
               <Field label="Lifting equipment to be used" value={fd.resources} onChange={v => set("resources", v)} multi />
               <Field label="Hazards / special precautions" value={fd.hazards} onChange={v => set("hazards", v)} multi />
             </Grid>
-          </Sec>
+          </SdgSec>
         </>)}
 
         {/* COSHH */}
         {dt.id === "coshh" && (<>
-          <Sec title="Substance">
+          <SdgSec title="Substance">
             <Grid>
               <Field label="Substance name" value={fd.substance} onChange={v => set("substance", v)} />
               <Field label="Supplier / manufacturer" value={fd.supplier} onChange={v => set("supplier", v)} />
@@ -7014,20 +7014,20 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="WEL (workplace exposure limit)" value={fd.exposureLimits} onChange={v => set("exposureLimits", v)} />
               <Field label="Health effects of exposure" value={fd.healthEffects} onChange={v => set("healthEffects", v)} span multi />
             </Grid>
-          </Sec>
-          <Sec title="Controls">
+          </SdgSec>
+          <SdgSec title="Controls">
             <Grid cols={1}>
               <Field label="Exposure routes (inhalation / dermal / ingestion)" value={fd.exposureRoutes} onChange={v => set("exposureRoutes", v)} />
               <Field label="Engineering / substitution controls" value={fd.cohhControls} onChange={v => set("cohhControls", v)} multi />
               <Field label="PPE required" value={fd.cohhPpe} onChange={v => set("cohhPpe", v)} />
               <Field label="Emergency actions (spillage / fire / first aid)" value={fd.emergencyActions} onChange={v => set("emergencyActions", v)} multi />
             </Grid>
-          </Sec>
+          </SdgSec>
         </>)}
 
         {/* Task Briefing */}
         {dt.id === "task_briefing" && (
-          <Sec title="Task details">
+          <SdgSec title="Task details">
             <Grid cols={1}>
               <Field label="Task description" value={fd.taskDesc} onChange={v => set("taskDesc", v)} multi />
               <Field label="Method statement reference" value={fd.methodRef} onChange={v => set("methodRef", v)} />
@@ -7035,20 +7035,20 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="Task-specific risks" value={fd.taskRisks} onChange={v => set("taskRisks", v)} multi />
               <Field label="Controls / safe working methods" value={fd.taskControls} onChange={v => set("taskControls", v)} multi />
             </Grid>
-          </Sec>
+          </SdgSec>
         )}
 
         {/* PAT Testing */}
         {dt.id === "pat_testing" && (<>
-          <Sec title="Appliance details">
+          <SdgSec title="Appliance details">
             <Grid>
               <Field label="Appliance description" value={fd.applianceDesc} onChange={v => set("applianceDesc", v)} />
               <Field label="Asset / inventory number" value={fd.assetNo} onChange={v => set("assetNo", v)} />
               <Field label="Location on site" value={fd.location} onChange={v => set("location", v)} />
               <Field label="Tested by" value={fd.testedBy} onChange={v => set("testedBy", v)} />
             </Grid>
-          </Sec>
-          <Sec title="Test results">
+          </SdgSec>
+          <SdgSec title="Test results">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead><tr style={{ background: GY1 }}>
                 <th style={{ padding: "7px 10px", textAlign: "left", fontWeight: 600, color: GY7 }}>Test</th>
@@ -7069,20 +7069,20 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               ))}
             </div>
             <div style={{ marginTop: 10 }}><Field label="Next test date" value={fd.nextTestDate} onChange={v => set("nextTestDate", v)} /></div>
-          </Sec>
+          </SdgSec>
         </>)}
 
         {/* Thorough Examination */}
         {dt.id === "thorough_exam" && (<>
-          <Sec title="Equipment">
+          <SdgSec title="Equipment">
             <Grid>
               <Field label="Equipment type" value={fd.examEquipment} onChange={v => set("examEquipment", v)} />
               <Field label="Equipment ID / serial" value={fd.examId} onChange={v => set("examId", v)} />
               <Field label="SWL / WLL" value={fd.examSWL} onChange={v => set("examSWL", v)} />
               <Field label="Examination reference" value={fd.examRef} onChange={v => set("examRef", v)} />
             </Grid>
-          </Sec>
-          <Sec title="Examination details">
+          </SdgSec>
+          <SdgSec title="Examination details">
             <Grid>
               <Field label="Examiner name" value={fd.examiner} onChange={v => set("examiner", v)} />
               <Field label="Examination body / company" value={fd.examBody} onChange={v => set("examBody", v)} />
@@ -7096,18 +7096,18 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
                 <button key={o.v} onClick={() => set("safeForUse", o.v)} style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${fd.safeForUse === o.v ? BLU : GY2}`, background: fd.safeForUse === o.v ? BBG : "#fff", color: fd.safeForUse === o.v ? BLU : GY5, fontWeight: fd.safeForUse === o.v ? 600 : 400, cursor: "pointer", fontSize: 12 }}>{o.l}</button>
               ))}
             </div>
-          </Sec>
+          </SdgSec>
         </>)}
 
         {/* QA Handover */}
         {dt.id === "qa_handover" && (<>
-          <Sec title="Contract details">
+          <SdgSec title="Contract details">
             <Grid>
               <Field label="Contract reference" value={fd.contractRef} onChange={v => set("contractRef", v)} />
               <Field label="Work package" value={fd.workPackage} onChange={v => set("workPackage", v)} />
             </Grid>
-          </Sec>
-          <Sec title="Quality checklist">
+          </SdgSec>
+          <SdgSec title="Quality checklist">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead><tr style={{ background: GY1 }}>
                 <th style={{ padding: "7px 10px", textAlign: "left", fontWeight: 600, color: GY7 }}>Item</th>
@@ -7133,12 +7133,12 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               </tbody>
             </table>
             <div style={{ marginTop: 10 }}><Field label="Deficiencies / outstanding items" value={fd.deficiencies} onChange={v => set("deficiencies", v)} multi /></div>
-          </Sec>
+          </SdgSec>
         </>)}
 
         {/* NCR */}
         {dt.id === "ncr" && (
-          <Sec title="Non-conformance details">
+          <SdgSec title="Non-conformance details">
             <Grid>
               <Field label="NCR reference number" value={fd.ncrRef} onChange={v => set("ncrRef", v)} />
               <Field label="Target closure date" value={fd.targetDate} onChange={v => set("targetDate", v)} />
@@ -7147,20 +7147,20 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="Corrective action required" value={fd.correctiveAction} onChange={v => set("correctiveAction", v)} span multi />
               <Field label="Closed by" value={fd.closedBy} onChange={v => set("closedBy", v)} />
             </Grid>
-          </Sec>
+          </SdgSec>
         )}
 
         {/* Early Delay / Delay Notice */}
         {(dt.id === "early_delay" || dt.id === "delay_notice") && (<>
-          <Sec title="Contract details">
+          <SdgSec title="Contract details">
             <Grid>
               <Field label="Contract number" value={fd.contractNo} onChange={v => set("contractNo", v)} />
               <Field label="Programme reference" value={fd.programmeRef} onChange={v => set("programmeRef", v)} />
               <Field label="Employer" value={fd.employer} onChange={v => set("employer", v)} />
               <Field label="Contractor" value={fd.contractor} onChange={v => set("contractor", v)} />
             </Grid>
-          </Sec>
-          <Sec title="Event details">
+          </SdgSec>
+          <SdgSec title="Event details">
             <Grid>
               <Field label="Date of event" value={fd.eventDate} onChange={v => set("eventDate", v)} />
               <Field label="Reply required by" value={fd.replyBy} onChange={v => set("replyBy", v)} />
@@ -7169,12 +7169,12 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               {dt.id === "delay_notice" && <Field label="Cost impact (£)" value={fd.costImpact} onChange={v => set("costImpact", v)} />}
               <Field label="Programme impact / consequences" value={fd.delayImpact} onChange={v => set("delayImpact", v)} span multi />
             </Grid>
-          </Sec>
+          </SdgSec>
         </>)}
 
         {/* Inspection checklist */}
         {isCl && cl && (<>
-          <Sec title="Inspection checklist">
+          <SdgSec title="Inspection checklist">
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead><tr style={{ background: GY1 }}>
@@ -7205,8 +7205,8 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
                 </tbody>
               </table>
             </div>
-          </Sec>
-          <Sec title="Overall result">
+          </SdgSec>
+          <SdgSec title="Overall result">
             <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
               {[
                 { v: "safe",   l: "✓ Safe to use",         bg: GBG,      c: GRN },
@@ -7217,12 +7217,12 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               ))}
             </div>
             <div style={{ marginTop: 10 }}><Field label="Additional notes" value={fd.notes} onChange={v => set("notes", v)} multi /></div>
-          </Sec>
+          </SdgSec>
         </>)}
 
         {/* Attendees & responsible signatories */}
         {!noAtt && fd.attendees?.length > 0 && (
-          <Sec title="Team & responsible signatories">
+          <SdgSec title="Team & responsible signatories">
             <p style={{ margin: "0 0 9px", fontSize: 11, color: GY5 }}>Tick who is present. Mark as responsible the person(s) who sign off this document.</p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))", gap: 8 }}>
               {fd.attendees.map(a => (
@@ -7246,7 +7246,7 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
                 </div>
               ))}
             </div>
-          </Sec>
+          </SdgSec>
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, paddingTop: 4 }}>
@@ -7298,13 +7298,13 @@ function Preview({ dt, fd, onBack, onNew, onRep }) {
     );
   }
 
-  function Badge({ val, pass = "pass", fail = "fail" }) {
+  function SdgBadge({ val, pass = "pass", fail = "fail" }) {
     const isP = val === pass, isF = val === fail;
     return <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: isP ? GBG : isF ? RBG : GY1, color: isP ? GRN : isF ? RED : GY5 }}>{val?.toUpperCase() || "—"}</span>;
   }
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: SDG_BG, minHeight: "100vh" }}>
       <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
         <span style={{ color: "#fff", fontSize: 14, fontWeight: 700, flex: 1 }}>{dt.label}</span>
@@ -7577,7 +7577,7 @@ function Reports({ docs, sites, onBack, onView }) {
     .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: SDG_BG, minHeight: "100vh" }}>
       <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
         <span style={{ color: "#fff", fontSize: 15, fontWeight: 700, flex: 1 }}>Document reports</span>
