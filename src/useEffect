@@ -1,0 +1,21 @@
+// Add this inside your Labour Schedule App component
+useEffect(() => {
+  const payload = {
+    sites: sites.map(site => ({
+      id: site.id,
+      name: site.name,
+      address: site.address || "",
+      scope: site.scope || "",
+      supervisor: {
+        name: site.supervisorName || site.supervisor || "",
+        phone: site.supervisorPhone || site.phone || "",
+      },
+      workers: (site.workers || site.allocatedWorkers || []).map(w => ({
+        id: w.id,
+        name: w.name,
+        role: w.role || w.trade || w.position || "",
+      })),
+    })),
+  };
+  window.storage.set("labour_schedule_data", JSON.stringify(payload));
+}, [sites]); // runs every time sites/workers change
