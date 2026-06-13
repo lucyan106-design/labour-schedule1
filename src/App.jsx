@@ -669,6 +669,182 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
 
 // ─── Supporting Views ─────────────────────────────────────────────────────────
 
+
+// ─── Open-In-New-Window helpers (works for both interfaces) ─────────────────
+function openWorkerWindow(w, allSites, weekLabel, activeDays, siteHours) {
+  const {gross,net,stdH,otH,bd}=calcPay(w,activeDays||BASE_DAYS,siteHours||{});
+  const held=Object.entries(w.certs||{}).filter(([,v])=>v.held).map(([k,v])=>({...v,key:k,label:CERTS.find(c=>c.key===k)?.label||k}));
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Worker — ${w.name}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0d1117;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;padding:24px;}
+.hdr{display:flex;align-items:center;gap:14px;padding-bottom:16px;border-bottom:2px solid #1e2535;margin-bottom:20px;}
+.av{width:52px;height:52px;background:linear-gradient(135deg,#3b82f6,#6366f1);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;flex-shrink:0;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
+.card{background:#1a1f2e;border:1px solid #2d3555;border-radius:10px;padding:14px;}
+.cl{font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;}
+.row{display:flex;gap:8px;margin-bottom:7px;} .rl{font-size:10px;color:#64748b;font-weight:600;min-width:90px;flex-shrink:0;text-transform:uppercase;} .rv{font-size:12px;}
+.stat{background:#0f1421;border-radius:8px;padding:10px 12px;text-align:center;} .sl{font-size:9px;color:#64748b;text-transform:uppercase;} .sv{font-size:18px;font-weight:800;margin-top:3px;}
+table{width:100%;border-collapse:collapse;margin-bottom:16px;} th{padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;border-bottom:2px solid #1e2535;background:#0a0e17;}
+td{padding:6px 10px;border-bottom:1px solid #1a2030;font-size:12px;} tr:nth-child(even) td{background:#111827;} tr:nth-child(odd) td{background:#0f1421;}
+.cert{background:#1a1f2e;border-radius:8px;padding:9px 11px;border-left:3px solid #2d3555;margin-bottom:6px;}
+.ft{margin-top:20px;padding-top:12px;border-top:1px solid #1e2535;display:flex;justify-content:space-between;font-size:10px;color:#374151;}
+@media print{body{padding:12px;}@page{margin:8mm;size:A4;}}</style></head><body>
+<div class="hdr"><div class="av">${(w.name||"?")[0]}</div><div>
+  <div style="font-size:20px;font-weight:800;color:#f1f5f9">${w.name||"—"}</div>
+  <div style="font-size:13px;color:#64748b">${w.position||"—"} · ${w.company||"—"}</div>
+  ${w.comments?`<div style="font-size:11px;color:#fbbf24;margin-top:3px">⚑ ${w.comments}</div>`:""}
+</div>
+<div style="margin-left:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+  ${[["Rate",w.agreedRate?`£${w.agreedRate}/hr`:"—","#34d399"],["Tax",Math.round((w.taxRate||0)*100)+"%","#fbbf24"],["Gross",`£${gross.toFixed(0)}`,"#60a5fa"],["Net",`£${net.toFixed(0)}`,"#a78bfa"]].map(([l,v,c])=>`<div class="stat"><div class="sl">${l}</div><div class="sv" style="color:${c}">${v}</div></div>`).join("")}
+</div></div>
+<div class="grid"><div class="card"><div class="cl">Contact</div>
+${[["Phone",w.contact],["Email",w.email],["DOB",w.dob?fmtDate(w.dob):""],["Address",w.address],["NINO",w.nino],["UTR",w.utr]].filter(([,v])=>v).map(([l,v])=>`<div class="row"><span class="rl">${l}</span><span class="rv">${v}</span></div>`).join("")}
+</div><div class="card"><div class="cl">Bank & Emergency</div>
+${[["Bank",w.bankName],["Account",w.bankAccount],["Sort",w.bankSort],["NOK",w.nextOfKin],["NOK Phone",w.nextOfKinPhone]].filter(([,v])=>v).map(([l,v])=>`<div class="row"><span class="rl">${l}</span><span class="rv">${v}</span></div>`).join("")}
+</div></div>
+<div class="card" style="margin-bottom:16px"><div class="cl">Week ${weekLabel} — Daily Allocation</div>
+<table><thead><tr><th>Day</th><th>Site</th><th>Std Hrs</th><th>OT Hrs</th><th>Day Pay</th></tr></thead><tbody>
+${(activeDays||BASE_DAYS).map(d=>{const b=bd[d];const site=w.days?.[d];return `<tr><td style="font-weight:700;color:#94a3b8">${d}</td><td>${b?`<span style="color:#60a5fa">${b.site}</span>`:`<span style="color:#374151">${site||"—"}</span>`}</td><td>${b?b.hours+"h":"—"}</td><td>${b&&b.ot>0?b.ot+"h":"—"}</td><td>${b?`£${b.gross.toFixed(2)}`:"—"}</td></tr>`;}).join("")}
+</tbody></table></div>
+${held.length>0?`<div class="card" style="margin-bottom:16px"><div class="cl">Certificates (${held.length} held)</div>
+${held.map(c=>{const exp=c.expiry?new Date(c.expiry):null;const days=exp?(exp-new Date())/86400000:null;const st=!exp?"valid":days<0?"expired":days<30?"expiring":"valid";const sc={valid:"#34d399",expiring:"#fbbf24",expired:"#f87171"}[st];return `<div class="cert" style="border-left-color:${sc}"><div style="font-weight:600;color:#e2e8f0;font-size:12px">${c.label}</div>${c.regNo?`<div style="font-size:11px;color:#60a5fa">Reg: ${c.regNo}</div>`:""}${c.expiry?`<div style="font-size:10px;color:#64748b">Expiry: ${c.expiry}</div>`:""}${c.fileUrl?`<div><a href="${c.fileUrl}" target="_blank" style="font-size:10px;color:#60a5fa">📎 View Certificate</a></div>`:""}<div style="font-size:10px;font-weight:700;color:${sc};text-transform:uppercase;margin-top:3px">${st}</div></div>`;}).join("")}
+</div>`:""}
+<div class="ft"><span>Worker Profile — ${w.name}</span><span>WC: ${weekLabel}</span><span>Bright Metalwork Ltd · Confidential</span><span>${new Date().toLocaleDateString("en-GB")}</span></div>
+<script>window.onload=function(){window.print();}<\/script></body></html>`;
+  const blob=new Blob([html],{type:"text/html"});const url=URL.createObjectURL(blob);
+  const win=window.open(url,"_blank","width=960,height=820");
+  if(!win){const a=document.createElement("a");a.href=url;a.download="Worker_"+w.name.replace(/\s+/g,"_")+".html";a.click();}
+  setTimeout(()=>URL.revokeObjectURL(url),6000);
+}
+
+function openSiteWindow(site, clients, workers, activeDays, siteHours) {
+  const client=clients.find(c=>c.id===site.clientId);
+  const sc=(site.scopes||[]),vr=(site.variations||[]);
+  const scopeT=sc.reduce((a,s)=>a+(s.qty*s.rate),0);
+  const varT=vr.reduce((a,v)=>a+(v.type==="addition"?v.value:-v.value),0);
+  let labourT=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays||BASE_DAYS,siteHours||{});Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.includes(site.name))labourT+=b.gross;});});
+  const siteWorkers=workers.filter(w=>(activeDays||BASE_DAYS).some(d=>(w.days?.[d]||"").includes(site.name)));
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Site — ${site.name}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0d1117;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;padding:24px;}
+.hdr{padding-bottom:16px;border-bottom:2px solid ${site.color};margin-bottom:20px;}
+.stat{background:#1a1f2e;border-radius:9px;padding:11px 14px;} .sl{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;} .sv{font-size:20px;font-weight:800;margin-top:3px;}
+table{width:100%;border-collapse:collapse;margin-bottom:16px;} th{padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;border-bottom:2px solid #1e2535;background:#0a0e17;}
+td{padding:7px 10px;border-bottom:1px solid #1a2030;font-size:12px;} tr:nth-child(even) td{background:#111827;} tr:nth-child(odd) td{background:#0f1421;}
+.section{margin-bottom:20px;} .sh{font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:10px;}
+.ft{margin-top:20px;padding-top:12px;border-top:1px solid #1e2535;display:flex;justify-content:space-between;font-size:10px;color:#374151;}
+@media print{@page{margin:8mm;size:A3 landscape;}}</style></head><body>
+<div class="hdr">
+  <div style="display:flex;align-items:center;gap:10;margin-bottom:12px">
+    <span style="width:14px;height:14px;border-radius:50%;background:${site.color};display:inline-block;margin-right:6px"></span>
+    <span style="font-size:22px;font-weight:800;color:#f1f5f9">${site.name}</span>
+    ${client?`<span style="margin-left:12px;font-size:13px;color:${client.color};font-weight:600">${client.name}</span>`:""}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
+    ${[["Contract","£"+(scopeT+varT).toLocaleString(),"#60a5fa"],["Scope Value","£"+scopeT.toLocaleString(),"#34d399"],["Variations","£"+Math.abs(varT).toLocaleString(),"#fbbf24"],["Labour (wk)","£"+labourT.toFixed(0),"#f87171"],["Workers",siteWorkers.length,"#a78bfa"]].map(([l,v,c])=>`<div class="stat"><div class="sl">${l}</div><div class="sv" style="color:${c}">${v}</div></div>`).join("")}
+  </div>
+</div>
+<div class="section"><div class="sh">Scopes of Work (${sc.length})</div>
+<table><thead><tr><th>Description</th><th>Unit</th><th>Qty</th><th>Rate £</th><th>Total £</th></tr></thead><tbody>
+${sc.map(s=>`<tr><td>${s.description||s.desc||""}</td><td>${s.unit||""}</td><td style="text-align:right;color:#60a5fa">${s.qty}</td><td style="text-align:right">£${(s.rate||s.unitIncome||0).toLocaleString()}</td><td style="text-align:right;color:#34d399;font-weight:700">£${((s.qty||0)*(s.rate||s.unitIncome||0)).toLocaleString()}</td></tr>`).join("")}
+${sc.length===0?"<tr><td colspan='5' style='text-align:center;color:#374151'>No scopes defined</td></tr>":""}
+</tbody></table></div>
+<div class="section"><div class="sh">Variations (${vr.length})</div>
+<table><thead><tr><th>Description</th><th>Type</th><th>Value £</th><th>Status</th></tr></thead><tbody>
+${vr.map(v=>`<tr><td>${v.description||v.desc||""}</td><td style="color:${v.type==="addition"?"#34d399":"#f87171"}">${v.type}</td><td style="color:${v.type==="addition"?"#34d399":"#f87171"};font-weight:700">${v.type==="addition"?"+":"-"}£${(v.value||0).toLocaleString()}</td><td style="color:${v.approved?"#34d399":"#fbbf24"}">${v.approved?"Approved":"Pending"}</td></tr>`).join("")}
+${vr.length===0?"<tr><td colspan='4' style='text-align:center;color:#374151'>No variations</td></tr>":""}
+</tbody></table></div>
+<div class="section"><div class="sh">Workers on Site (${siteWorkers.length})</div>
+<table><thead><tr><th>Name</th><th>Position</th><th>Rate</th><th>Tax</th></tr></thead><tbody>
+${siteWorkers.map(w=>`<tr><td style="font-weight:600">${w.name}</td><td>${w.position||"—"}</td><td style="color:#34d399">${w.agreedRate?"£"+w.agreedRate+"/hr":"—"}</td><td>${Math.round((w.taxRate||0)*100)}%</td></tr>`).join("")}
+${siteWorkers.length===0?"<tr><td colspan='4' style='text-align:center;color:#374151'>No workers allocated</td></tr>":""}
+</tbody></table></div>
+<div class="ft"><span>Site Report — ${site.name}</span><span>${client?client.name:""}</span><span>Bright Metalwork Ltd</span><span>${new Date().toLocaleDateString("en-GB")}</span></div>
+<script>window.onload=function(){window.print();}<\/script></body></html>`;
+  const blob=new Blob([html],{type:"text/html"});const url=URL.createObjectURL(blob);
+  const win=window.open(url,"_blank","width=1100,height=820");
+  if(!win){const a=document.createElement("a");a.href=url;a.download="Site_"+site.name.replace(/\s+/g,"_")+".html";a.click();}
+  setTimeout(()=>URL.revokeObjectURL(url),6000);
+}
+
+function openClientWindow(client, allSites, invoices, workers, activeDays, siteHours) {
+  const sites=allSites.filter(s=>s.clientId===client.id);
+  const invs=(invoices||[]).filter(i=>sites.find(s=>s.id===i.siteId));
+  const totalInv=invs.reduce((a,i)=>a+(i.amount||0),0);
+  const paid=invs.filter(i=>i.status==="paid").reduce((a,i)=>a+i.amount,0);
+  let labourT=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays||BASE_DAYS,siteHours||{});Object.values(bd).forEach(b=>{if(sites.find(s=>b.site===s.name||b.site.includes(s.name)))labourT+=b.gross;});});
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Client — ${client.name}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0d1117;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;padding:24px;}
+.hdr{padding-bottom:16px;border-bottom:2px solid ${client.color};margin-bottom:20px;display:flex;align-items:center;gap:14px;}
+.av{width:52px;height:52px;border-radius:12px;background:${client.color}22;border:1px solid ${client.color}44;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:${client.color};}
+.stat{background:#1a1f2e;border-radius:9px;padding:11px 14px;} .sl{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;} .sv{font-size:20px;font-weight:800;margin-top:3px;}
+table{width:100%;border-collapse:collapse;margin-bottom:16px;} th{padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;border-bottom:2px solid #1e2535;background:#0a0e17;}
+td{padding:7px 10px;border-bottom:1px solid #1a2030;font-size:12px;} tr:nth-child(even) td{background:#111827;} tr:nth-child(odd) td{background:#0f1421;}
+.sh{font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:10px;}
+.ft{margin-top:20px;padding-top:12px;border-top:1px solid #1e2535;display:flex;justify-content:space-between;font-size:10px;color:#374151;}
+@media print{@page{margin:8mm;size:A4;}}</style></head><body>
+<div class="hdr"><div class="av">${client.name[0]}</div><div>
+  <div style="font-size:22px;font-weight:800;color:#f1f5f9">${client.name}</div>
+  <div style="font-size:13px;color:#64748b">${client.email||""} · ${client.phone||""}</div>
+  ${client.notes?`<div style="font-size:11px;color:#94a3b8;margin-top:3px">${client.notes}</div>`:""}
+</div>
+<div style="margin-left:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+  ${[["Sites",sites.length,"#60a5fa"],["Labour","£"+labourT.toFixed(0),"#f87171"],["Invoiced","£"+totalInv.toLocaleString(),"#34d399"],["Collected","£"+paid.toLocaleString(),"#a78bfa"]].map(([l,v,c])=>`<div class="stat"><div class="sl">${l}</div><div class="sv" style="color:${c}">${v}</div></div>`).join("")}
+</div></div>
+<div style="margin-bottom:20px"><div class="sh">Agreed Day Rates</div>
+<table><thead><tr><th>Team / Role Type</th><th>Day Rate</th><th>Notes</th></tr></thead><tbody>
+${(client.rates||[]).map(r=>`<tr><td style="font-weight:600">${TEAM_TYPES.find(t=>t.key===r.teamType)?.label||r.teamType||""}</td><td style="color:#34d399;font-weight:700">£${r.dayRate||r.dayrate||0}/day</td><td style="color:#64748b">${r.notes||r.description||""}</td></tr>`).join("")}
+${(client.rates||[]).length===0?"<tr><td colspan='3' style='text-align:center;color:#374151'>No rates configured</td></tr>":""}
+</tbody></table></div>
+<div style="margin-bottom:20px"><div class="sh">Sites (${sites.length})</div>
+<table><thead><tr><th>Site</th><th>Scopes</th><th>Variations</th><th>Contract Value</th></tr></thead><tbody>
+${sites.map(s=>{const sc=(s.scopes||[]).reduce((a,x)=>a+(x.qty||0)*(x.rate||x.unitIncome||0),0);const vt=(s.variations||[]).reduce((a,v)=>a+(v.type==="addition"?v.value:-v.value),0);return `<tr><td style="font-weight:600;color:${s.color}">${s.name}</td><td>${(s.scopes||[]).length}</td><td>${(s.variations||[]).length}</td><td style="color:#34d399;font-weight:700">£${(sc+vt).toLocaleString()}</td></tr>`;}).join("")}
+</tbody></table></div>
+<div class="sh">Invoices (${invs.length})</div>
+<table><thead><tr><th>Invoice</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+${invs.map(i=>{const sc={paid:"#34d399",pending:"#fbbf24",overdue:"#f87171",draft:"#64748b"}[i.status]||"#64748b";return `<tr><td style="font-weight:600;color:#60a5fa">${i.number||i.num||"—"}</td><td>${i.date||""}</td><td style="font-weight:700;color:#34d399">£${(i.amount||i.total||0).toLocaleString()}</td><td style="color:${sc};font-weight:700;text-transform:capitalize">${i.status||""}</td></tr>`;}).join("")}
+${invs.length===0?"<tr><td colspan='4' style='text-align:center;color:#374151'>No invoices</td></tr>":""}
+</tbody></table>
+<div class="ft"><span>Client Report — ${client.name}</span><span>Bright Metalwork Ltd</span><span>${new Date().toLocaleDateString("en-GB")}</span></div>
+<script>window.onload=function(){window.print();}<\/script></body></html>`;
+  const blob=new Blob([html],{type:"text/html"});const url=URL.createObjectURL(blob);
+  const win=window.open(url,"_blank","width=960,height=820");
+  if(!win){const a=document.createElement("a");a.href=url;a.download="Client_"+client.name.replace(/\s+/g,"_")+".html";a.click();}
+  setTimeout(()=>URL.revokeObjectURL(url),6000);
+}
+
+function openInvoiceWindow(inv, client, site) {
+  const {subtotal,vat,total}=calcInvoiceTotals(inv);
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Invoice ${inv.number||inv.num}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0d1117;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;padding:24px;}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #1e2535;}
+table{width:100%;border-collapse:collapse;margin-bottom:16px;} th{padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;border-bottom:2px solid #1e2535;background:#0a0e17;}
+td{padding:8px 10px;border-bottom:1px solid #1a2030;font-size:12px;} tr:nth-child(even) td{background:#111827;} tr:nth-child(odd) td{background:#0f1421;}
+.total{background:#0d2218;border:2px solid #10b981;border-radius:10px;padding:16px 20px;text-align:right;margin-top:10px;}
+.ft{margin-top:20px;padding-top:12px;border-top:1px solid #1e2535;display:flex;justify-content:space-between;font-size:10px;color:#374151;}
+@media print{@page{margin:10mm;size:A4;}}</style></head><body>
+<div class="hdr">
+  <div><div style="font-size:24px;font-weight:900;color:#f1f5f9">${inv.number||inv.num||"INVOICE"}</div>
+  <div style="font-size:12px;color:#64748b;margin-top:4px">Date: ${inv.date||"—"} · ${site?site.name:""}</div>
+  <div style="margin-top:6px;padding:3px 9px;display:inline-block;border-radius:5px;font-size:11px;font-weight:700;text-transform:capitalize;color:${inv.status==="paid"?"#34d399":inv.status==="pending"?"#fbbf24":"#f87171"};background:${inv.status==="paid"?"#0d2218":inv.status==="pending"?"#1a1500":"#2d1515"}">${inv.status||"draft"}</div>
+  </div>
+  <div style="text-align:right"><div style="font-size:13px;font-weight:700;color:#f1f5f9">${client?client.name:"—"}</div><div style="font-size:11px;color:#64748b">${client?.email||""}</div></div>
+</div>
+<table><thead><tr><th style="width:50%">Description</th><th>Qty</th><th>Unit Price</th><th>VAT</th><th>Amount</th></tr></thead><tbody>
+${(inv.lineItems||inv.items||[]).map(li=>`<tr><td>${li.description||li.desc||""}</td><td style="text-align:right">${li.qty||1}</td><td style="text-align:right">£${(li.unitPrice||li.rate||0).toFixed(2)}</td><td style="text-align:right;color:#64748b">${li.vatRate||0}%</td><td style="text-align:right;font-weight:700;color:#34d399">£${(li.lineTotal||li.amount||0).toFixed(2)}</td></tr>`).join("")}
+</tbody></table>
+<div class="total">
+  <div style="display:flex;justify-content:flex-end;gap:20px;margin-bottom:6px"><span style="color:#94a3b8">Subtotal</span><span>£${subtotal.toFixed(2)}</span></div>
+  ${vat>0?`<div style="display:flex;justify-content:flex-end;gap:20px;margin-bottom:6px"><span style="color:#94a3b8">VAT</span><span style="color:#fbbf24">£${vat.toFixed(2)}</span></div>`:""}
+  <div style="display:flex;justify-content:flex-end;gap:20px"><span style="font-size:14px;font-weight:700;color:#e2e8f0">TOTAL</span><span style="font-size:22px;font-weight:900;color:#34d399">£${total.toFixed(2)}</span></div>
+</div>
+<div class="ft"><span>Invoice ${inv.number||inv.num} — ${client?client.name:""}</span><span>Bright Metalwork Ltd</span><span>${new Date().toLocaleDateString("en-GB")}</span></div>
+<script>window.onload=function(){window.print();}<\/script></body></html>`;
+  const blob=new Blob([html],{type:"text/html"});const url=URL.createObjectURL(blob);
+  const win=window.open(url,"_blank","width=900,height=780");
+  if(!win){const a=document.createElement("a");a.href=url;a.download="Invoice_"+(inv.number||inv.num||"").replace(/\//g,"-")+".html";a.click();}
+  setTimeout(()=>URL.revokeObjectURL(url),6000);
+}
+
+
 // ─── Site Detail Modal ────────────────────────────────────────────────────────
 function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClose}){
   const [s,setS]=useState({...site,scopes:[...(site.scopes||[])],variations:[...(site.variations||[])]});
@@ -1054,7 +1230,10 @@ function ClientCostView({workers,clients,allSites,activeDays,siteHours}){
               </div>
               <div style={{fontSize:18,fontWeight:800,color:"#34d399"}}>£{gross.toFixed(2)}</div>
               <div style={{fontSize:10,color:"#64748b"}}>{sw.size} worker{sw.size!==1?"s":""}</div>
-              <div style={{fontSize:10,color:"#60a5fa",marginTop:3}}>📂 Click to open →</div>
+              <div style={{display:"flex",gap:5,marginTop:4}}>
+                <div style={{fontSize:10,color:"#60a5fa"}}>📂 Open detail</div>
+                <div onClick={e=>{e.stopPropagation();const s=allSites.find(x=>site===x.name||site.toUpperCase().includes(x.name.toUpperCase()));if(s)openSiteWindow(s,clients,workers,activeDays,siteHours);}} style={{fontSize:10,color:"#34d399",cursor:"pointer"}}>🔗 New window</div>
+              </div>
             </div>
           ))}
         </div>
@@ -1635,6 +1814,7 @@ function InvoicesView({invoices,clients,allSites,scopeData,workers,onNew,onEdit,
           <span style={{display:"inline-block",padding:"2px 10px",borderRadius:20,background:sc+"22",color:sc,fontWeight:700,fontSize:11,textTransform:"uppercase",border:`1px solid ${sc}`}}>{inv.status}</span>
           <div style={{display:"flex",gap:5}}>
             <button onClick={()=>onEdit(inv)} style={{padding:"5px 10px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:700}}>Edit</button>
+                    <button onClick={()=>{const c=clients.find(x=>x.id===inv.clientId);const s=allSites.find(x=>x.id===inv.siteId);openInvoiceWindow(inv,c,s);}} title="Open in new window" style={{padding:"5px 10px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:11}}>🔗 Open</button>
             <button onClick={()=>{const{subtotal:s,vat:v,total:t,isRC:r}=calcInvoiceTotals(inv);const cl=clients.find(c=>c.id===inv.clientId);const si=allSites.find(ss=>ss.id===inv.siteId);exportBrightInvoicePDF(inv,cl,si,s,v,t,r);}} style={{padding:"5px 10px",background:"#1a2535",border:"1px solid #ef4444",borderRadius:6,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>📄 PDF</button>
             <button onClick={()=>onDelete(inv.id)} style={{padding:"5px 9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:6,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
           </div>
@@ -1763,6 +1943,323 @@ function TrainingMatrixModal({workers,clients,allSites,activeDays,weekLabel,onCl
   </Overlay>;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FINANCIAL OVERVIEW PANEL — matches screenshot design
+// ═══════════════════════════════════════════════════════════════════════════════
+function FinancialOverviewPanel({invoices, clients, allSites, workers, activeDays, siteHours}){
+  const [expanded, setExpanded] = useState(false);
+  const allInv = invoices||[];
+  const totalInvoiced = allInv.reduce((a,i)=>a+(i.amount||calcInvoiceTotals(i).total||0),0);
+  const collected     = allInv.filter(i=>i.status==="paid").reduce((a,i)=>a+(i.amount||calcInvoiceTotals(i).total||0),0);
+  const pending       = allInv.filter(i=>i.status==="pending").reduce((a,i)=>a+(i.amount||calcInvoiceTotals(i).total||0),0);
+  const overdue       = allInv.filter(i=>i.status==="overdue").reduce((a,i)=>a+(i.amount||calcInvoiceTotals(i).total||0),0);
+  const weekLabour    = useMemo(()=>workers.reduce((a,w)=>{const{gross}=calcPay(w,activeDays,siteHours);return a+gross;},0),[workers,activeDays,siteHours]);
+
+  const fmtK = v => v>=1000?`£${(v/1000).toFixed(1)}k`:`£${Math.round(v).toLocaleString()}`;
+
+  const KPI = [
+    {label:"TOTAL INVOICED", value:totalInvoiced, color:"#3b82f6",  bar:1.0},
+    {label:"COLLECTED",      value:collected,      color:"#22c55e",  bar:totalInvoiced>0?collected/totalInvoiced:0},
+    {label:"PENDING",        value:pending,        color:"#f59e0b",  bar:totalInvoiced>0?pending/totalInvoiced:0},
+    {label:"OVERDUE",        value:overdue,        color:"#ef4444",  bar:totalInvoiced>0?overdue/totalInvoiced:0},
+  ];
+
+  return (
+    <div style={{background:"linear-gradient(135deg,#0a1a0a,#0d1f0d)",border:"1px solid #16a34a44",borderRadius:12,marginBottom:16,overflow:"hidden"}}>
+      {/* Header row */}
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",borderBottom:expanded?"1px solid #16a34a22":"none"}}>
+        <div style={{width:32,height:32,background:"linear-gradient(135deg,#16a34a,#059669)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>📊</div>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:"#34d399",letterSpacing:"-0.01em"}}>Financial Overview</div>
+          <div style={{fontSize:11,color:"#374151",marginTop:1}}>Invoice pipeline &amp; cash position</div>
+        </div>
+        <button onClick={()=>setExpanded(e=>!e)}
+          style={{marginLeft:"auto",padding:"4px 12px",background:"#0d2218",border:"1px solid #16a34a66",borderRadius:6,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:700}}>
+          {expanded?"Collapse ▲":"Expand ▼"}
+        </button>
+      </div>
+
+      {/* KPI strip — always visible, matches screenshot exactly */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0,borderBottom:expanded?"1px solid #16a34a22":"none"}}>
+        {KPI.map((k,i)=>(
+          <div key={k.label} style={{padding:"14px 20px",borderRight:i<3?"1px solid #16a34a18":"none"}}>
+            <div style={{fontSize:10,color:"#6b7280",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{k.label}</div>
+            <div style={{fontSize:22,fontWeight:900,color:k.color,letterSpacing:"-0.02em",marginBottom:8}}>£{Math.round(k.value).toLocaleString()}</div>
+            {/* Progress bar — exactly as in screenshot */}
+            <div style={{height:3,background:"#1a2e1a",borderRadius:2,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${Math.min(100,Math.round(k.bar*100))}%`,background:k.color,borderRadius:2,transition:"width 0.5s"}}/>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Expanded detail */}
+      {expanded&&<div style={{padding:"16px 18px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+          {/* Weekly labour */}
+          <div style={{background:"#0a0e17",border:"1px solid #f8717122",borderRadius:9,padding:"12px 14px"}}>
+            <div style={{fontSize:10,color:"#6b7280",fontWeight:700,textTransform:"uppercase",marginBottom:6}}>Labour Cost This Week</div>
+            <div style={{fontSize:22,fontWeight:900,color:"#f87171"}}>£{Math.round(weekLabour).toLocaleString()}</div>
+            <div style={{fontSize:11,color:"#374151",marginTop:3}}>{workers.length} operatives · {activeDays.length} days</div>
+          </div>
+          {/* Net position */}
+          <div style={{background:"#0a0e17",border:`1px solid ${(collected-weekLabour)>=0?"#34d39922":"#f8717122"}`,borderRadius:9,padding:"12px 14px"}}>
+            <div style={{fontSize:10,color:"#6b7280",fontWeight:700,textTransform:"uppercase",marginBottom:6}}>Collected vs Labour (Net)</div>
+            <div style={{fontSize:22,fontWeight:900,color:(collected-weekLabour)>=0?"#34d399":"#f87171"}}>£{Math.abs(Math.round(collected-weekLabour)).toLocaleString()}</div>
+            <div style={{fontSize:11,color:"#374151",marginTop:3}}>{(collected-weekLabour)>=0?"surplus":"deficit"}</div>
+          </div>
+        </div>
+
+        {/* Per-client statement */}
+        <div style={{fontSize:10,color:"#6b7280",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Per Client Statement</div>
+        {clients.map(c=>{
+          const cSites=allSites.filter(s=>s.clientId===c.id);
+          const cInv=allInv.filter(i=>cSites.find(s=>s.id===i.siteId));
+          const cTot=cInv.reduce((a,i)=>a+(i.amount||0),0);
+          const cPaid=cInv.filter(i=>i.status==="paid").reduce((a,i)=>a+i.amount,0);
+          const cPend=cInv.filter(i=>i.status==="pending").reduce((a,i)=>a+i.amount,0);
+          const cOver=cInv.filter(i=>i.status==="overdue").reduce((a,i)=>a+i.amount,0);
+          if(cTot===0&&cInv.length===0) return null;
+          return <div key={c.id} style={{background:"#0a0e17",border:`1px solid ${c.color}22`,borderRadius:9,padding:"11px 14px",marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
+              <span style={{fontWeight:700,color:"#f1f5f9",fontSize:13,flex:1}}>{c.name}</span>
+              <span style={{fontWeight:800,color:"#34d399",fontSize:13}}>£{cTot.toLocaleString()}</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+              {[["Paid",cPaid,"#34d399"],["Pending",cPend,"#fbbf24"],["Overdue",cOver,"#f87171"],["Invoices",cInv.length,"#60a5fa"]].map(([l,v,col])=>(
+                <div key={l} style={{textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#6b7280",textTransform:"uppercase",fontWeight:700}}>{l}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:col,marginTop:2}}>{l==="Invoices"?v:"£"+Math.round(v).toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          </div>;
+        })}
+      </div>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WEEKLY RECORDS SYSTEM — saved snapshots per week
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Weekly Records List Page ──────────────────────────────────────────────────
+function DWeeklyRecords({weeklyRecords,setWeeklyRecords,workers,allSites,clients,siteHours,activeDays,weekLabel,showWeekend,invoices,setPage,setDetailId}){
+  const sorted=[...(weeklyRecords||[])].sort((a,b)=>new Date(b.savedAt)-new Date(a.savedAt));
+
+  function saveCurrentWeek(){
+    if(!window.confirm(`Save snapshot of WC ${weekLabel} to weekly records?\n\nThis creates a permanent saved record of the current week.`)) return;
+    const snap={
+      id:"wk_"+Date.now(),
+      weekLabel,
+      savedAt:new Date().toISOString(),
+      workers:JSON.parse(JSON.stringify(workers)),
+      allSites:JSON.parse(JSON.stringify(allSites)),
+      siteHours:JSON.parse(JSON.stringify(siteHours)),
+      activeDays:showWeekend?[...BASE_DAYS,...WEEKEND_DAYS]:BASE_DAYS,
+      invoices:JSON.parse(JSON.stringify(invoices)),
+      status:"closed",
+    };
+    setWeeklyRecords(recs=>{
+      const existing=recs.find(r=>r.weekLabel===weekLabel);
+      if(existing) return recs.map(r=>r.weekLabel===weekLabel?snap:r);
+      return [...recs,snap];
+    });
+  }
+
+  function deleteRecord(id){
+    if(!window.confirm("Delete this weekly record permanently?")) return;
+    setWeeklyRecords(recs=>recs.filter(r=>r.id!==id));
+  }
+
+  return <div>
+    <DPageHdr title="📅 Weekly Records" sub={`${weeklyRecords.length} saved weeks · click any week to open full detail`}
+      actions={<>
+        <button onClick={saveCurrentWeek} style={{padding:"7px 14px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>💾 Save Current Week ({weekLabel})</button>
+      </>}/>
+    <div style={DS.body}>
+      {weeklyRecords.length===0&&<div style={{textAlign:"center",padding:"60px 24px",border:"1px dashed #1e2535",borderRadius:12}}>
+        <div style={{fontSize:40,marginBottom:14}}>📅</div>
+        <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",marginBottom:8}}>No Weekly Records Yet</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:20}}>Close a week to save a permanent snapshot of workers, schedule, payroll and sites.</div>
+        <button onClick={saveCurrentWeek} style={{padding:"10px 24px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>💾 Save Current Week ({weekLabel})</button>
+      </div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+        {sorted.map(rec=>{
+          const labourTotal=rec.workers.reduce((a,w)=>{const{gross}=calcPay(w,rec.activeDays||BASE_DAYS,rec.siteHours||{});return a+gross;},0);
+          const workingWorkers=rec.workers.filter(w=>(rec.activeDays||BASE_DAYS).some(d=>w.days?.[d]&&!isOff(w.days[d]))).length;
+          const usedSites=[...new Set(rec.workers.flatMap(w=>(rec.activeDays||BASE_DAYS).map(d=>w.days?.[d]||"").filter(s=>s&&!isOff(s))))];
+          return <div key={rec.id}
+            style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:16,cursor:"pointer",transition:"all 0.15s",position:"relative"}}
+            onClick={()=>{setDetailId(rec.id);setPage("weekly_record_detail");}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="#3b82f6";e.currentTarget.style.transform="translateY(-2px)";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="#1e2535";e.currentTarget.style.transform="";}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#3b82f6,#6366f1)",borderRadius:"12px 12px 0 0"}}/>
+            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:800,color:"#f1f5f9"}}>WC: {rec.weekLabel}</div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Saved: {new Date(rec.savedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+              </div>
+              <div style={{display:"flex",gap:5}}>
+                <span style={{padding:"2px 9px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,fontSize:10,fontWeight:700,color:"#34d399",textTransform:"uppercase"}}>✓ Closed</span>
+                <button onClick={e=>{e.stopPropagation();deleteRecord(rec.id);}} style={{padding:"2px 7px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:10,marginLeft:4}}>✕</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:10}}>
+              {[["Workers",rec.workers.length,"#60a5fa"],["Working",workingWorkers,"#34d399"],["Sites",usedSites.length,"#f59e0b"],["Labour","£"+Math.round(labourTotal).toLocaleString(),"#a78bfa"]].map(([l,v,c])=>(
+                <div key={l} style={{background:"#0f1421",borderRadius:7,padding:"7px 9px"}}>
+                  <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",fontWeight:700}}>{l}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:c,marginTop:2}}>{v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {usedSites.slice(0,5).map(s=>{const site=rec.allSites?.find(x=>s===x.name||s.includes(x.name));const col=site?.color||getSiteColor(s,rec.allSites||[]);return<span key={s} style={{fontSize:9,padding:"2px 7px",borderRadius:4,border:`1px solid ${col}44`,background:`${col}12`,color:col}}>{s}</span>;})}
+              {usedSites.length>5&&<span style={{fontSize:9,color:"#374151"}}>+{usedSites.length-5} more</span>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+  </div>;
+}
+
+// ── Weekly Record Detail Page ─────────────────────────────────────────────────
+function DWeeklyRecordDetail({weeklyRecords,recordId,setPage,allSites}){
+  const [tab,setTab]=useState("schedule");
+  const rec=weeklyRecords.find(r=>r.id===recordId);
+  if(!rec) return <div style={DS.body}><div style={{color:"#374151",padding:40,textAlign:"center"}}>Record not found.</div></div>;
+  
+  const days=rec.activeDays||BASE_DAYS;
+  const payRows=rec.workers.map(w=>({...w,...calcPay(w,days,rec.siteHours||{})}));
+  const labourTotal=payRows.reduce((a,r)=>a+r.gross,0);
+  const labourNet=payRows.reduce((a,r)=>a+r.net,0);
+  const workingW=payRows.filter(r=>r.stdH>0||r.otH>0);
+  const usedSites=[...new Set(rec.workers.flatMap(w=>days.map(d=>w.days?.[d]||"").filter(s=>s&&!isOff(s))))];
+
+  function exportWeekExcel(){
+    const wb=XLSX.utils.book_new();
+    // Schedule sheet
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+      [`SCHEDULE — WC: ${rec.weekLabel} (ARCHIVED)`],
+      ["Name","Company","Position",...days,"Scope","Rate"],
+      ...rec.workers.map(w=>[w.name,w.company,w.position,...days.map(d=>w.days?.[d]||""),w.scope,w.agreedRate||""])
+    ]),"Schedule");
+    // Payroll sheet
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+      [`PAYROLL — WC: ${rec.weekLabel} (ARCHIVED)`],
+      ["Name","Rate","Tax%","Std h","OT h","Gross","Tax","Net"],
+      ...payRows.map(r=>[r.name,r.agreedRate||"",Math.round((r.taxRate||0)*100)+"%",r.stdH,r.otH,+r.gross.toFixed(2),+r.tax.toFixed(2),+r.net.toFixed(2)]),
+      ["","TOTALS","",workingW.reduce((a,r)=>a+r.stdH,0),workingW.reduce((a,r)=>a+r.otH,0),+labourTotal.toFixed(2),"",+labourNet.toFixed(2)]
+    ]),"Payroll");
+    XLSX.writeFile(wb,`WeeklyRecord_WC_${rec.weekLabel.replace(/\s+/g,"_")}.xlsx`);
+  }
+
+  return <div>
+    <DPageHdr title={`📅 WC: ${rec.weekLabel}`}
+      sub={`Archived · Saved ${new Date(rec.savedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}`}
+      back="Weekly Records" onBack={()=>setPage("weekly_records")}
+      actions={<>
+        <button onClick={exportWeekExcel} style={{padding:"6px 13px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>⬇ Export Excel</button>
+        <button onClick={()=>exportSchedulePDF(rec.workers,days,rec.weekLabel,rec.allSites||allSites)} style={{padding:"6px 11px",background:"#1a1f2e",border:"1px solid #ef4444",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>📄 PDF</button>
+      </>}/>
+    <div style={DS.body}>
+      {/* Stats */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:18}}>
+        <DStat label="Workers" value={rec.workers.length} color="#60a5fa"/>
+        <DStat label="Working" value={workingW.length} color="#34d399"/>
+        <DStat label="Sites" value={usedSites.length} color="#f59e0b"/>
+        <DStat label="Gross Labour" value={"£"+Math.round(labourTotal).toLocaleString()} color="#f87171"/>
+        <DStat label="Net Pay" value={"£"+Math.round(labourNet).toLocaleString()} color="#a78bfa"/>
+      </div>
+      {/* Tabs */}
+      <div style={{display:"flex",gap:3,background:"#0a0e17",borderRadius:8,padding:3,marginBottom:16,width:"fit-content"}}>
+        {[["schedule","📋 Schedule"],["timesheets","⏱ Timesheets"],["payslips","💷 Payslips"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",background:tab===v?"#1e3a5f":"transparent",border:tab===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:tab===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:tab===v?700:400}}>{l}</button>
+        ))}
+      </div>
+
+      {/* ── Schedule tab ── */}
+      {tab==="schedule"&&<div>
+        <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Worker Allocation — WC {rec.weekLabel}</div>
+        {(()=>{
+          const grp={};
+          rec.workers.forEach(w=>{
+            const cnts={};days.forEach(d=>{const s=w.days?.[d];if(s&&!isOff(s))cnts[s]=(cnts[s]||0)+1;});
+            const primary=Object.entries(cnts).sort((a,b)=>b[1]-a[1])[0]?.[0]||"Unassigned";
+            if(!grp[primary])grp[primary]=[];grp[primary].push(w);
+          });
+          const sitesList=rec.allSites||allSites;
+          return Object.keys(grp).sort().map(siteName=>{
+            const col=getSiteColor(siteName,sitesList);
+            return <div key={siteName} style={{marginBottom:12}}>
+              <div style={{background:`${col}15`,borderLeft:`3px solid ${col}`,padding:"6px 12px",display:"flex",alignItems:"center",gap:8,marginBottom:0,borderRadius:"6px 6px 0 0"}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:col}}/><span style={{fontWeight:700,color:col,fontSize:12}}>{siteName}</span>
+                <span style={{fontSize:10,color:"#64748b"}}>{grp[siteName].length} operative{grp[siteName].length!==1?"s":""}</span>
+              </div>
+              <div style={{border:`1px solid ${col}33`,borderTop:"none",borderRadius:"0 0 6px 6px",overflow:"hidden"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                  <thead><tr><th style={{...DS.th,paddingLeft:16}}>Worker</th><th style={DS.th}>Position</th>{days.map(d=><th key={d} style={{...DS.th,minWidth:100}}>{d}</th>)}<th style={DS.th}>Rate</th></tr></thead>
+                  <tbody>{grp[siteName].map((w,i)=><tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                    <td style={{...DS.td,fontWeight:600,color:"#f1f5f9",paddingLeft:16}}>{w.name}</td>
+                    <td style={{...DS.td,color:"#94a3b8"}}>{w.position}</td>
+                    {days.map(d=>{const s=w.days?.[d];const sc=s?getSiteColor(s,sitesList):"#374151";return<td key={d} style={DS.td}>{s&&!isOff(s)?<span style={{display:"inline-block",padding:"1px 6px",borderRadius:3,fontSize:9,fontWeight:600,background:`${sc}22`,color:sc,border:`1px solid ${sc}44`}}>{s}</span>:<span style={{color:"#374151",fontSize:10}}>—</span>}</td>;})}
+                    <td style={{...DS.td,color:"#34d399",fontWeight:600}}>{w.agreedRate?`£${w.agreedRate}/hr`:"—"}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </div>;
+          });
+        })()}
+      </div>}
+
+      {/* ── Timesheets tab ── */}
+      {tab==="timesheets"&&<div>
+        <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Timesheet Record — WC {rec.weekLabel}</div>
+        <DTable cols={[
+          {key:"name",label:"Worker",w:180,r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:5,background:"#3b82f622",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#60a5fa"}}>{v[0]}</div><div><div style={{fontWeight:600,color:"#f1f5f9",fontSize:12}}>{v}</div><div style={{fontSize:10,color:"#64748b"}}>{r.position}</div></div></div>},
+          {key:"position",label:"Position",r:v=><span style={{fontSize:11,color:"#94a3b8"}}>{v}</span>},
+          {key:"id",label:"Days Worked",r:(_,r)=>{
+            const daysWorked=days.filter(d=>r.days?.[d]&&!isOff(r.days[d])).length;
+            return <span style={{color:"#60a5fa",fontWeight:700}}>{daysWorked}/{days.length}d</span>;
+          }},
+          {key:"stdH",label:"Std Hours",r:(v,r)=>{const{stdH}=calcPay(r,days,rec.siteHours||{});return<span style={{color:"#34d399",fontWeight:700}}>{stdH}h</span>;}},
+          {key:"otH",label:"OT Hours",r:(v,r)=>{const{otH}=calcPay(r,days,rec.siteHours||{});return otH>0?<span style={{color:"#fbbf24",fontWeight:700}}>{otH}h</span>:<span style={{color:"#374151"}}>—</span>;}},
+          {key:"agreedRate",label:"Rate",r:v=>v?<span style={{color:"#34d399",fontWeight:600}}>£{v}/hr</span>:<span style={{color:"#374151"}}>—</span>},
+          {key:"id2",label:"Site(s)",r:(_,r)=>{
+            const sites=[...new Set(days.map(d=>r.days?.[d]||"").filter(s=>s&&!isOff(s)))];
+            return <div style={{display:"flex",flexWrap:"wrap",gap:3}}>{sites.slice(0,2).map(s=>{const col=getSiteColor(s,rec.allSites||allSites);return<span key={s} style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:`${col}18`,color:col,border:`1px solid ${col}33`}}>{s}</span>;})}</div>;
+          }},
+        ]} rows={rec.workers}/>
+      </div>}
+
+      {/* ── Payslips tab ── */}
+      {tab==="payslips"&&<div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+          <DStat label="Total Gross" value={"£"+Math.round(labourTotal).toLocaleString()} color="#34d399"/>
+          <DStat label="Total Tax" value={"£"+Math.round(payRows.reduce((a,r)=>a+r.tax,0)).toLocaleString()} color="#f87171"/>
+          <DStat label="Total Net" value={"£"+Math.round(labourNet).toLocaleString()} color="#a78bfa"/>
+          <DStat label="Payslips" value={workingW.length} color="#60a5fa"/>
+        </div>
+        <DTable cols={[
+          {key:"name",label:"Worker",w:180,r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:5,background:"#3b82f622",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#60a5fa"}}>{v[0]}</div><span style={{fontWeight:600,color:"#f1f5f9",fontSize:12}}>{v}</span></div>},
+          {key:"agreedRate",label:"Rate",r:(v,r)=>{const pr=payRows.find(x=>x.id===r.id);return<span style={{color:"#34d399",fontWeight:600}}>{pr?.agreedRate?`£${pr.agreedRate}/hr`:"—"}</span>;}},
+          {key:"stdH_v",label:"Std h",r:(_,r)=>{const pr=payRows.find(x=>x.id===r.id);return<span style={{color:"#60a5fa",fontWeight:600}}>{pr?.stdH||0}h</span>;}},
+          {key:"otH_v",label:"OT h",r:(_,r)=>{const pr=payRows.find(x=>x.id===r.id);return pr?.otH>0?<span style={{color:"#fbbf24",fontWeight:600}}>{pr.otH}h</span>:<span style={{color:"#374151"}}>—</span>;}},
+          {key:"gross",label:"Gross",r:(_,r)=>{const pr=payRows.find(x=>x.id===r.id);return<span style={{color:"#34d399",fontWeight:700}}>£{(pr?.gross||0).toFixed(2)}</span>;}},
+          {key:"tax",label:"Tax",r:(_,r)=>{const pr=payRows.find(x=>x.id===r.id);return<span style={{color:"#f87171"}}>£{(pr?.tax||0).toFixed(2)}</span>;}},
+          {key:"net",label:"Net Pay",r:(_,r)=>{const pr=payRows.find(x=>x.id===r.id);return<span style={{color:"#a78bfa",fontWeight:800,fontSize:13}}>£{(pr?.net||0).toFixed(2)}</span>;}},
+          {key:"id_act",label:"Export",r:(_,r)=><button onClick={()=>exportPayslip(r,days,rec.weekLabel,rec.siteHours||{})} style={{padding:"3px 8px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>💷 Payslip</button>},
+        ]} rows={rec.workers.filter(w=>payRows.find(pr=>pr.id===w.id&&(pr.stdH>0||pr.otH>0)))}/>
+      </div>}
+    </div>
+  </div>;
+}
+
+
 // ─── Financial Dashboard ──────────────────────────────────────────────────────
 function FinancialDashboard({workers,clients,allSites,activeDays,siteHours,scopeData,invoices}){
   // Compute per-site: income, budget, labour cost
@@ -1879,16 +2376,21 @@ const DS={
 };
 
 const DASH_NAV=[
-  {id:"home",icon:"🏠",label:"Overview"},
-  {id:"workers",icon:"👷",label:"Workers"},
-  {id:"sites",icon:"🏗",label:"Sites"},
-  {id:"clients",icon:"👔",label:"Clients"},
+  {id:"home",    icon:"🏠",label:"Overview"},
+  {id:"workers", icon:"👷",label:"Workers"},
+  {id:"sites",   icon:"🏗",label:"Sites"},
+  {id:"clients", icon:"👔",label:"Clients"},
   {id:"schedule",icon:"📋",label:"Labour Schedule"},
-  {id:"timesheets",icon:"⏱",label:"Timesheets"},
   {id:"payslips",icon:"💷",label:"Payslips"},
   {id:"invoices",icon:"🧾",label:"Invoices"},
-  {id:"certs",icon:"🛡",label:"Certificates"},
-  {id:"payapps",icon:"📐",label:"Payment Applications"},
+  {id:"certs",   icon:"🛡",label:"Certificates"},
+  {id:"budget",  icon:"📐",label:"Budget"},
+  {id:"bank",    icon:"🏦",label:"Bank Import"},
+  {id:"finance", icon:"📊",label:"Finance"},
+  {id:"stats",   icon:"🔢",label:"Stats"},
+  {id:"payapps", icon:"📋",label:"Payment Apps"},
+  {id:"timesheets",icon:"⏱",label:"Timesheets"},
+  {id:"weekly_records",icon:"📅",label:"Weekly Records"},
 ];
 
 function DStat({label,value,color,sub}){
@@ -1937,7 +2439,7 @@ function DStatusBadge({status}){
 }
 
 // ── Dashboard Sidebar ─────────────────────────────────────────────────────────
-function DashSidebar({page,setPage,workers,allSites,clients,invoices,setModal}){
+function DashSidebar({page,setPage,workers,allSites,clients,invoices,setModal,activeDays,siteHours,weekLabel}){
   const expiring=workers.flatMap(w=>Object.values(w.certs||{}).filter(c=>{if(!c.held||!c.expiry)return false;const d=(new Date(c.expiry)-new Date())/86400000;return d>=0&&d<30;})).length;
   const badges={certs:expiring,invoices:invoices.filter(i=>i.status==="pending").length};
   const isActive=(id)=>page===id||page.startsWith(id+"_");
@@ -1960,13 +2462,16 @@ function DashSidebar({page,setPage,workers,allSites,clients,invoices,setModal}){
     <div style={{padding:"10px 12px",borderTop:"1px solid #1e2535"}}>
       <button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:6}}>+ Add Worker</button>
       <button onClick={()=>setModal({type:"sites"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:12,marginBottom:6}}>🏗 Manage Sites</button>
-      <button onClick={()=>setModal({type:"clients"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:12}}>👔 Manage Clients</button>
+      <button onClick={()=>setModal({type:"clients"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:12,marginBottom:6}}>👔 Manage Clients</button>
+      <button onClick={()=>setModal({type:"trainingMatrix"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:12,marginBottom:6}}>🛡 Training Matrix PDF</button>
+      <button onClick={()=>exportSchedulePDF(workers,activeDays,weekLabel,allSites)} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #ef4444",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:12,marginBottom:6}}>📄 Schedule PDF</button>
+      <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites)} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>⬇ Export Excel</button>
     </div>
   </div>;
 }
 
 // ── Dashboard Home ────────────────────────────────────────────────────────────
-function DHome({workers,allSites,clients,invoices,scopeData,activeDays,siteHours,setPage}){
+function DHome({workers,allSites,clients,invoices,scopeData,activeDays,siteHours,weeklyRecords,setPage}){
   const totalLabour=useMemo(()=>workers.reduce((a,w)=>{const{gross}=calcPay(w,activeDays,siteHours);return a+gross;},0),[workers,activeDays,siteHours]);
   const totalInvoiced=invoices.reduce((a,i)=>a+i.amount,0);
   const expiring=workers.flatMap(w=>Object.values(w.certs||{}).filter(c=>{if(!c.held||!c.expiry)return false;const d=(new Date(c.expiry)-new Date())/86400000;return d>=0&&d<30;})).length;
@@ -1987,6 +2492,8 @@ function DHome({workers,allSites,clients,invoices,scopeData,activeDays,siteHours
   return <div>
     <DPageHdr title="🏗 Bright Metalwork" sub="Project Management Overview"/>
     <div style={DS.body}>
+      {/* ── Financial Overview Panel (matches screenshot) ── */}
+      <FinancialOverviewPanel invoices={invoices} clients={clients} allSites={allSites} workers={workers} activeDays={activeDays} siteHours={siteHours}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:24}}>
         <DStat label="Operatives" value={workers.length} color="#60a5fa"/>
         <DStat label="Active Sites" value={allSites.filter(s=>!isOff(s.name)).length} color="#f59e0b"/>
@@ -2054,6 +2561,9 @@ function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDeta
           const s=primary&&allSites.find(x=>primary.includes(x.name));
           return s?<span style={DS.pill(s.color)}>{s.name}</span>:<span style={{color:"#374151",fontSize:11}}>—</span>;
         }},
+              {key:"id",label:"",w:80,r:(_,r)=><div style={{display:"flex",gap:4}}>
+          <button onClick={e=>{e.stopPropagation();openWorkerWindow(r,allSites,formatWeekLabel(new Date()),activeDays,siteHours);}} title="Open in new window" style={{padding:"3px 7px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:10}}>🔗</button>
+        </div>},
       ]} rows={shown} onRow={r=>{setDetailId(r.id);setPage("worker_detail");}}/>
     </div>
   </div>;
@@ -2235,7 +2745,7 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,setPa
 }
 
 // ── Dashboard Clients Page ────────────────────────────────────────────────────
-function DClients({clients,allSites,invoices,setPage,setDetailId,setModal}){
+function DClients({clients,allSites,invoices,workers,activeDays,siteHours,setPage,setDetailId,setModal}){
   return <div>
     <DPageHdr title="👔 Clients" sub={`${clients.length} accounts`}
       actions={<button onClick={()=>setModal({type:"clients"})} style={{padding:"7px 14px",background:"#1e2535",border:"1px solid #8b5cf6",borderRadius:7,color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700}}>👔 Manage Clients</button>}/>
@@ -2251,7 +2761,10 @@ function DClients({clients,allSites,invoices,setPage,setDetailId,setModal}){
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
             <div style={{width:40,height:40,borderRadius:10,background:`${c.color}18`,border:`1px solid ${c.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:c.color}}>{c.name[0]}</div>
             <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800,color:"#f1f5f9"}}>{c.name}</div><div style={{fontSize:11,color:"#64748b"}}>{c.contact}</div></div>
-            <span style={{color:`${c.color}66`,fontSize:16}}>→</span>
+            <div style={{display:"flex",gap:4,alignItems:"center"}}>
+              <button onClick={e=>{e.stopPropagation();openClientWindow(c,allSites,invoices,workers,activeDays,siteHours);}} title="Open client in new window" style={{padding:"3px 8px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:10}}>🔗</button>
+              <span style={{color:`${c.color}66`,fontSize:16}}>→</span>
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
             {[["Sites",sites.length,"#60a5fa"],["Invoiced","£"+totalInv.toLocaleString(),"#34d399"],["Rates",(c.rates||[]).length,"#a78bfa"]].map(([l,v,col])=>(
@@ -2327,12 +2840,136 @@ function DInvoices({invoices,allSites,clients,setModal}){
         {key:"clientId",label:"Client",r:v=>{const c=clients.find(x=>x.id===v);return c?<span style={DS.pill(c.color)}>{c.name}</span>:<span style={{color:"#374151"}}>—</span>;}},
         {key:"amount",label:"Amount",r:v=><span style={{color:"#34d399",fontWeight:700}}>£{v.toLocaleString()}</span>},
         {key:"status",label:"Status",r:v=><DStatusBadge status={v}/>},
-      ]} rows={invoices} onRow={r=>setModal({type:"invoice",invoice:r})}/>
+              {key:"id",label:"",w:100,r:(_,r)=><div style={{display:"flex",gap:4}}>
+          <button onClick={e=>{e.stopPropagation();setModal({type:"invoice",invoice:r});}} style={{padding:"3px 7px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:10}}>✏️ Edit</button>
+          <button onClick={e=>{e.stopPropagation();const c=allSites&&clients.find(x=>x.id===r.clientId);const s=allSites&&allSites.find(x=>x.id===r.siteId);openInvoiceWindow(r,c,s);}} title="Open in new window" style={{padding:"3px 7px",background:"1a1f2e",border:"1px solid #60a5fa",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:10}}>🔗</button>
+        </div>},
+      ]} rows={invoices}/>
     </div>
   </div>;
 }
 
 // ── Coming Soon placeholder ───────────────────────────────────────────────────
+
+// ── Dashboard Payroll Page ────────────────────────────────────────────────────
+function DPayroll({workers,allSites,activeDays,siteHours,weekLabel,setModal}){
+  const rows=workers.map(w=>({...w,...calcPay(w,activeDays,siteHours)}));
+  const tot=rows.reduce((a,r)=>({g:a.g+r.gross,t:a.t+r.tax,n:a.n+r.net}),{g:0,t:0,n:0});
+  return <div>
+    <DPageHdr title="💷 Payroll" sub={`WC: ${weekLabel} · ${workers.length} workers`}
+      actions={<>
+        <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,[],allSites)} style={{padding:"6px 12px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>⬇ Excel</button>
+      </>}/>
+    <div style={DS.body}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:18}}>
+        <DStat label="Gross" value={"£"+tot.g.toFixed(0)} color="#34d399"/>
+        <DStat label="Tax" value={"£"+tot.t.toFixed(0)} color="#f87171"/>
+        <DStat label="Net Pay" value={"£"+tot.n.toFixed(0)} color="#a78bfa"/>
+      </div>
+      <DTable cols={[
+        {key:"name",label:"Worker",w:180,r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:26,height:26,borderRadius:6,background:(r.color||"#3b82f6")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:r.color||"#3b82f6"}}>{v[0]}</div><div><div style={{fontWeight:600,color:"#f1f5f9"}}>{v}</div><div style={{fontSize:10,color:"#64748b"}}>{r.position}</div></div></div>},
+        {key:"agreedRate",label:"Rate",r:v=>v?<span style={{color:"#34d399",fontWeight:600}}>£{v}/hr</span>:<span style={{color:"#374151"}}>—</span>},
+        {key:"stdH",label:"Std h",r:v=><span style={{color:"#60a5fa",fontWeight:600}}>{v}h</span>},
+        {key:"otH",label:"OT h",r:v=>v>0?<span style={{color:"#fbbf24",fontWeight:600}}>{v}h</span>:<span style={{color:"#374151"}}>—</span>},
+        {key:"gross",label:"Gross",r:v=><span style={{color:"#34d399",fontWeight:700}}>£{v.toFixed(2)}</span>},
+        {key:"tax",label:"Tax",r:v=><span style={{color:"#f87171"}}>£{v.toFixed(2)}</span>},
+        {key:"net",label:"Net Pay",r:v=><span style={{color:"#a78bfa",fontWeight:800,fontSize:13}}>£{v.toFixed(2)}</span>},
+        {key:"id",label:"Actions",r:(_,r)=><div style={{display:"flex",gap:5}}>
+          <button onClick={()=>exportPayslip(r,activeDays,weekLabel,siteHours)} style={{padding:"4px 8px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>💷 Payslip</button>
+          <button onClick={()=>openWorkerWindow(r,allSites,weekLabel,activeDays,siteHours)} style={{padding:"4px 8px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:10}}>🔗</button>
+        </div>},
+      ]} rows={rows}/>
+    </div>
+  </div>;
+}
+
+// ── Dashboard Stats Page ──────────────────────────────────────────────────────
+function DStats({workers,allSites,activeDays}){
+  const siteMap={};
+  workers.forEach(w=>activeDays.forEach(d=>{const s=(w.days?.[d]||"").trim();if(s&&!isOff(s))siteMap[s]=(siteMap[s]||0)+1;}));
+  return <div>
+    <DPageHdr title="🔢 Stats" sub="Workers per site · Certificate compliance"/>
+    <div style={DS.body}>
+      <div style={{marginBottom:24}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",marginBottom:12}}>Workers per Site This Week</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+          {Object.entries(siteMap).sort((a,b)=>b[1]-a[1]).map(([site,cnt])=>(
+            <div key={site} style={{background:"#1a1f2e",border:`1px solid ${getSiteColor(site,allSites)}`,borderRadius:10,padding:"10px 14px"}}>
+              <div style={{fontSize:11,color:getSiteColor(site,allSites),fontWeight:700}}>{site}</div>
+              <div style={{fontSize:22,fontWeight:900,color:"#f1f5f9"}}>{cnt}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",marginBottom:12}}>Certificate Compliance</div>
+      {CERTS.slice(0,14).map(c=>{const held=workers.filter(w=>w.certs?.[c.key]?.held).length;const pct=workers.length>0?Math.round((held/workers.length)*100):0;return <div key={c.key} style={{marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#94a3b8",marginBottom:3}}><span>{c.label}</span><span style={{color:pct>50?"#34d399":"#64748b"}}>{held}/{workers.length} ({pct}%)</span></div>
+        <div style={{height:5,background:"#1e2535",borderRadius:3}}><div style={{height:"100%",borderRadius:3,background:pct>70?"#34d399":pct>30?"#fbbf24":"#f87171",width:`${pct}%`,transition:"width 0.4s"}}/></div>
+      </div>;})}
+    </div>
+  </div>;
+}
+
+// ── Dashboard Bank Import Page ────────────────────────────────────────────────
+function DBank({allSites,clients,setModal}){
+  return <div>
+    <DPageHdr title="🏦 Bank" sub="Import bank statement and categorise transactions"/>
+    <div style={DS.body}>
+      <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:32,textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:14}}>🏦</div>
+        <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",marginBottom:8}}>Bank Import & Categorisation</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:20,lineHeight:1.6}}>Upload your bank Excel or CSV · categorise each transaction as income or expense · allocate to sites and clients</div>
+        <button onClick={()=>setModal({type:"bank"})} style={{padding:"10px 24px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:14,fontWeight:700}}>📂 Open Bank Import Tool</button>
+      </div>
+    </div>
+  </div>;
+}
+
+// ── Dashboard Budget Page ─────────────────────────────────────────────────────
+function DBudget({workers,clients,allSites,activeDays,siteHours,scopeData,setModal}){
+  return <div>
+    <DPageHdr title="📐 Budget" sub="Site budgets, scopes and financial overview"/>
+    <div style={DS.body}>
+      {allSites.filter(s=>!isOff(s.name)).map(site=>{
+        const sc=(site.scopes||[]);const vr=(site.variations||[]);
+        const scopeT=sc.reduce((a,s)=>a+(s.qty*s.rate),0);
+        const varT=vr.reduce((a,v)=>a+(v.type==="addition"?v.value:-v.value),0);
+        let labourT=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.includes(site.name))labourT+=b.gross;});});
+        const profit=scopeT+varT-labourT;
+        const client=clients.find(c=>c.id===site.clientId);
+        return <div key={site.id} style={{background:"#111827",border:`1px solid ${site.color}33`,borderRadius:10,padding:"13px 16px",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{width:9,height:9,borderRadius:"50%",background:site.color,flexShrink:0}}/>
+            <span style={{fontWeight:700,color:site.color,fontSize:14,flex:1}}>{site.name}</span>
+            {client&&<span style={DS.pill(client.color)}>{client.name}</span>}
+            <button onClick={()=>setModal({type:"siteDetail",site})} style={{padding:"4px 10px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11}}>✏️ Edit</button>
+            <button onClick={()=>openSiteWindow(site,clients,workers,activeDays,siteHours)} style={{padding:"4px 10px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11}}>🔗 Open</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+            {[["Scope",`£${scopeT.toLocaleString()}`,"#60a5fa"],["Variations",(varT>=0?"+":"")+"£"+Math.abs(varT).toLocaleString(),"#fbbf24"],["Contract","£"+(scopeT+varT).toLocaleString(),"#34d399"],["Labour","£"+labourT.toFixed(0),"#f87171"],[profit>=0?"Profit":"Loss","£"+Math.abs(profit).toFixed(0),profit>=0?"#34d399":"#f87171"]].map(([l,v,c])=>(
+              <div key={l} style={{background:"#0f1421",borderRadius:7,padding:"7px 9px"}}>
+                <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",fontWeight:700}}>{l}</div>
+                <div style={{fontSize:14,fontWeight:800,color:c,marginTop:2}}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+// ── Dashboard Finance Page ────────────────────────────────────────────────────  
+function DFinance({workers,clients,allSites,activeDays,siteHours,scopeData,invoices}){
+  return <div>
+    <DPageHdr title="📊 Finance" sub="Full financial overview — mirroring the Schedule Finance tab"/>
+    <div style={DS.body}>
+      <FinancialDashboard workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} invoices={invoices}/>
+    </div>
+  </div>;
+}
+
+
 function DComingSoon({icon,title,sub}){
   return <div>
     <DPageHdr title={`${icon} ${title}`} sub={sub}/>
@@ -2346,31 +2983,37 @@ function DComingSoon({icon,title,sub}){
 }
 
 // ─── DashboardView — the complete dashboard shell ─────────────────────────────
-function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,dashPage,setDashPage,dashDetailId,setDashDetailId}){
+function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,showWeekend,dashPage,setDashPage,dashDetailId,setDashDetailId}){
   const nav=(page,id)=>{setDashPage(page);if(id!==undefined)setDashDetailId(id);};
   const goBack=(page)=>setDashPage(page);
 
   const renderPage=()=>{
     switch(dashPage){
-      case "home":          return <DHome workers={workers} allSites={allSites} clients={clients} invoices={invoices} scopeData={scopeData} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+      case "home":          return <DHome workers={workers} allSites={allSites} clients={clients} invoices={invoices} scopeData={scopeData} activeDays={activeDays} siteHours={siteHours} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
       case "workers":       return <DWorkers workers={workers} allSites={allSites} clients={clients} activeDays={activeDays} siteHours={siteHours} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
       case "worker_detail": return <DWorkerDetail workers={workers} allSites={allSites} clients={clients} activeDays={activeDays} siteHours={siteHours} workerId={dashDetailId} setPage={setDashPage} setModal={setModal}/>;
       case "sites":         return <DSites allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
       case "site_detail":   return <DSiteDetail allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} siteId={dashDetailId} setPage={setDashPage} setDetailId={setDashDetailId} setModal={setModal}/>;
-      case "clients":       return <DClients clients={clients} allSites={allSites} invoices={invoices} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
+      case "clients":       return <DClients clients={clients} allSites={allSites} invoices={invoices} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
       case "invoices":      return <DInvoices invoices={invoices} allSites={allSites} clients={clients} setModal={setModal}/>;
       case "certs":         return <DCerts workers={workers} setPage={nav} setDetailId={setDashDetailId}/>;
-      case "schedule":      return <DComingSoon icon="📋" title="Labour Schedule" sub="Switch to Schedule view to manage the weekly labour schedule"/>;
-      case "timesheets":    return <DComingSoon icon="⏱" title="Timesheets" sub="Timesheet management coming soon"/>;
-      case "payslips":      return <DComingSoon icon="💷" title="Payslips" sub="Switch to Schedule → Payroll tab to generate payslips"/>;
-      case "payapps":       return <DComingSoon icon="📐" title="Payment Applications" sub="Use the Budget tab in Schedule view for payment applications"/>;
+      case "schedule":     return <DComingSoon icon="📋" title="Labour Schedule" sub="Switch to 📋 Schedule mode via the toggle in the header to access the full weekly schedule"/>;
+      case "weekly_records": return <DWeeklyRecords weeklyRecords={weeklyRecords} setWeeklyRecords={setWeeklyRecords} workers={workers} allSites={allSites} clients={clients} siteHours={siteHours} activeDays={activeDays} weekLabel={weekLabel} showWeekend={showWeekend} invoices={invoices} setPage={setDashPage} setDetailId={setDashDetailId}/>;
+      case "weekly_record_detail": return <DWeeklyRecordDetail weeklyRecords={weeklyRecords} recordId={dashDetailId} setPage={setDashPage} allSites={allSites}/>;
+      case "timesheets":return <DComingSoon icon="⏱" title="Timesheets" sub="Timesheet management — coming soon"/>;
+      case "payslips":  return <DPayroll workers={workers} allSites={allSites} activeDays={activeDays} siteHours={siteHours} weekLabel={weekLabel} setModal={setModal}/>;
+      case "payapps":   return <DComingSoon icon="📐" title="Payment Applications" sub="Use the Budget tab for site-level scope tracking"/>;
+      case "stats":     return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
+      case "bank":      return <DBank allSites={allSites} clients={clients} setModal={setModal}/>;
+      case "budget":    return <DBudget workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} setModal={setModal}/>;
+      case "finance":   return <DFinance workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} invoices={invoices}/>;
       default:              return <DHome workers={workers} allSites={allSites} clients={clients} invoices={invoices} scopeData={scopeData} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
     }
   };
 
   return (
     <div style={{display:"flex",minHeight:"calc(100vh - 60px)",background:"#080d14"}}>
-      <DashSidebar page={dashPage} setPage={p=>{setDashPage(p);setDashDetailId(null);}} workers={workers} allSites={allSites} clients={clients} invoices={invoices} setModal={setModal}/>
+      <DashSidebar page={dashPage} setPage={p=>{setDashPage(p);setDashDetailId(null);}} workers={workers} allSites={allSites} clients={clients} invoices={invoices} setModal={setModal} activeDays={activeDays} siteHours={siteHours} weekLabel={weekLabel}/>
       <div style={{flex:1,overflowY:"auto",minHeight:"calc(100vh - 60px)"}}>
         {renderPage()}
       </div>
@@ -2395,6 +3038,7 @@ export default function App(){
   const saveTimer=useRef(null);
   const [scopeData,setScopeData]=useState({});
   const [invoices,setInvoices]=useState([]);
+  const [weeklyRecords,setWeeklyRecords]=useState([]); // saved weekly snapshots
   // ── View mode toggle: "schedule" = original app, "dashboard" = project dashboard
   const [appMode,setAppMode]=useState("schedule"); // "schedule" | "dashboard"
   const [dashPage,setDashPage]=useState("home");
@@ -2416,6 +3060,7 @@ export default function App(){
         if(cfg.site_hours) setSiteHours(cfg.site_hours);
         if(cfg.scope_data) setScopeData(cfg.scope_data);
         if(cfg.invoices) setInvoices(cfg.invoices);
+        if(cfg.weekly_records) setWeeklyRecords(cfg.weekly_records);
       } catch(e){ console.error("Load error:",e); setSyncStatus("error"); setWorkers(INIT_W); }
       finally { setLoading(false); }
     }
@@ -2433,6 +3078,7 @@ export default function App(){
           {key:"all_sites",value:allSites},{key:"clients",value:clients},
           {key:"site_hours",value:siteHours},{key:"scope_data",value:scopeData},
           {key:"invoices",value:invoices},
+          {key:"weekly_records",value:weeklyRecords},
         ]);
         setSyncStatus("saved");
       } catch(e){ setSyncStatus("error"); }
@@ -2525,6 +3171,26 @@ export default function App(){
             {syncStatus==="saved"?"☁ Saved":syncStatus==="error"?"⚠ Error":"Saving…"}
           </div>
           <button onClick={()=>setShowWeekend(s=>!s)} style={{padding:"6px 11px",background:showWeekend?"#1a3020":"#1a1f2e",border:`1px solid ${showWeekend?"#10b981":"#2d3555"}`,borderRadius:7,color:showWeekend?"#34d399":"#64748b",cursor:"pointer",fontSize:11,fontWeight:700}}>{showWeekend?"✓ Weekend":"+ Weekend"}</button>
+          <button onClick={()=>{
+            if(!window.confirm(`Save snapshot of WC ${weekLabel} to weekly records?\n\nThis saves the current workers, schedule, payroll data and creates a permanent record.`)) return;
+            const snap={
+              id:"wk_"+Date.now(),
+              weekLabel,
+              savedAt:new Date().toISOString(),
+              workers:JSON.parse(JSON.stringify(workers)),
+              allSites:JSON.parse(JSON.stringify(allSites)),
+              siteHours:JSON.parse(JSON.stringify(siteHours)),
+              activeDays:showWeekend?[...BASE_DAYS,...WEEKEND_DAYS]:BASE_DAYS,
+              invoices:JSON.parse(JSON.stringify(invoices)),
+              status:"closed",
+            };
+            setWeeklyRecords(recs=>{
+              const existing=recs.find(r=>r.weekLabel===weekLabel);
+              if(existing) return recs.map(r=>r.weekLabel===weekLabel?snap:r);
+              return [...recs,snap];
+            });
+            alert(`✓ Week WC ${weekLabel} saved to records.`);
+          }} style={{padding:"6px 11px",background:"#0d2218",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:700}}>💾 Close Week</button>
           <button onClick={()=>setModal({type:"sites"})} style={{padding:"6px 11px",background:"#1a1f2e",border:"1px solid #f59e0b",borderRadius:7,color:"#fbbf24",cursor:"pointer",fontSize:11,fontWeight:700}}>🏗 Sites</button>
           <button onClick={()=>setModal({type:"clients"})} style={{padding:"6px 11px",background:"#1a1f2e",border:"1px solid #8b5cf6",borderRadius:7,color:"#a78bfa",cursor:"pointer",fontSize:11,fontWeight:700}}>👔 Clients</button>
           <button onClick={()=>setModal({type:"trainingMatrix"})} style={{padding:"6px 11px",background:"#1a1f2e",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:700}}>🛡 Matrix PDF</button>
@@ -2548,6 +3214,8 @@ export default function App(){
       saveWorker={saveWorker} delWorker={delWorker}
       setAllSites={setAllSites} setClients={setClients}
       setModal={setModal}
+      weeklyRecords={weeklyRecords} setWeeklyRecords={setWeeklyRecords}
+      showWeekend={showWeekend}
       dashPage={dashPage} setDashPage={setDashPage}
       dashDetailId={dashDetailId} setDashDetailId={setDashDetailId}
     />}
@@ -2656,6 +3324,7 @@ export default function App(){
                 </div></td>
                 <td style={TD}><div style={{display:"flex",gap:4,flexWrap:"nowrap"}}>
                   <button onClick={()=>setModal({type:"worker",worker:w})} style={{padding:"4px 8px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:600}}>Edit</button>
+                  <button onClick={()=>openWorkerWindow(w,allSites,weekLabel,activeDays,siteHours)} title="Open full profile in new window" style={{padding:"4px 8px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11}}>🔗</button>
                   <button onClick={()=>exportWorkerProfile(w,allSites,weekLabel)} title="Export worker profile PDF" style={{padding:"4px 8px",background:"#1a2535",border:"1px solid #8b5cf6",borderRadius:5,color:"#a78bfa",cursor:"pointer",fontSize:11,fontWeight:600}}>📋</button>
                   <button onClick={()=>exportPayslip(w,activeDays,weekLabel,siteHours)} title="Generate payslip PDF" style={{padding:"4px 8px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:600}}>💷</button>
                   <button onClick={()=>delWorker(w.id)} style={{padding:"4px 8px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:600}}>✕</button>
