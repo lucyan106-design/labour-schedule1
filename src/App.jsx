@@ -493,59 +493,178 @@ function doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites){
 // ─── Manage Sites Modal ───────────────────────────────────────────────────────
 function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
   const [sites,setSites]=useState(allSites.map(s=>({...s})));
-  const [nn,setNn]=useState(""),[nc,setNc]=useState(PRESET_COLORS[0]),[ncl,setNcl]=useState("");
-  const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,lat:null,lng:null}]);setNn("");};
+  const [nn,setNn]=useState("");
+  const [nc,setNc]=useState(PRESET_COLORS[0]);
+  const [ncl,setNcl]=useState("");
   const [locating,setLocating]=useState({});
-  const useMyLocation=(id)=>{setLocating(l=>({...l,[id]:true}));navigator.geolocation.getCurrentPosition(pos=>{up(id,"lat",+pos.coords.latitude.toFixed(6));up(id,"lng",+pos.coords.longitude.toFixed(6));setLocating(l=>({...l,[id]:false}));},()=>{alert("Could not get location. Please type coordinates manually.");setLocating(l=>({...l,[id]:false}));},{enableHighAccuracy:true,timeout:10000});};
-  const GpsFields=({s})=><div style={{marginTop:8,background:"#0a0e1a",borderRadius:7,padding:"8px 10px",border:"1px solid #1e2535"}}><div style={{fontSize:9,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:6}}>📍 GPS — Worker Sign In/Out</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Latitude</div><input type="number" step="0.000001" value={s.lat||""} onChange={e=>up(s.id,"lat",+e.target.value||null)} placeholder="e.g. 51.509865" style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Longitude</div><input type="number" step="0.000001" value={s.lng||""} onChange={e=>up(s.id,"lng",+e.target.value||null)} placeholder="e.g. -0.118092" style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Radius (m)</div><input type="number" min="10" max="2000" step="10" value={s.radius||100} onChange={e=>up(s.id,"radius",+e.target.value||100)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div></div><div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={()=>useMyLocation(s.id)} disabled={locating[s.id]} style={{padding:"4px 10px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700,opacity:locating[s.id]?0.6:1}}>{locating[s.id]?"Getting…":"📍 Use My Location"}</button>{s.lat&&s.lng?<span style={{fontSize:10,color:"#34d399"}}>✓ GPS set · {s.radius||100}m perimeter</span>:<span style={{fontSize:10,color:"#f87171",fontWeight:700}}>🔒 No GPS — workers CANNOT sign in</span>}</div></div>;
-  const rm=id=>{if(window.confirm("Delete this site?"))setSites(s=>s.filter(x=>x.id!==id));};
+  const [expanded,setExpanded]=useState(null); // which site card is expanded
+
   const up=(id,k,v)=>setSites(s=>s.map(x=>x.id===id?{...x,[k]:v}:x));
+  const rm=id=>{if(window.confirm("Delete this site?"))setSites(s=>s.filter(x=>x.id!==id));};
+  const add=()=>{
+    const n=nn.trim();
+    if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;
+    const newSite={id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,
+      lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9};
+    setSites(s=>[...s,newSite]);
+    setNn("");
+    setExpanded(newSite.id); // auto-expand new site
+  };
+  const useMyLocation=(id)=>{
+    setLocating(l=>({...l,[id]:true}));
+    navigator.geolocation.getCurrentPosition(
+      pos=>{up(id,"lat",+pos.coords.latitude.toFixed(6));up(id,"lng",+pos.coords.longitude.toFixed(6));setLocating(l=>({...l,[id]:false}));},
+      ()=>{alert("Could not get location. Please type coordinates manually.");setLocating(l=>({...l,[id]:false}));},
+      {enableHighAccuracy:true,timeout:10000}
+    );
+  };
+
+  const SiteCard=({s,canDelete=false})=>{
+    const isOpen=expanded===s.id;
+    const hasGps=!!(s.lat&&s.lng);
+    return <div style={{background:"#0f1421",borderRadius:10,border:`1px solid ${s.color}55`,marginBottom:8,overflow:"hidden"}}>
+      {/* Header row — always visible */}
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 13px",cursor:"pointer"}}
+        onClick={()=>setExpanded(isOpen?null:s.id)}>
+        <div style={{width:10,height:10,borderRadius:"50%",background:s.color,flexShrink:0}}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>{s.name}</div>
+          <div style={{fontSize:10,color:"#64748b",marginTop:1,display:"flex",gap:8}}>
+            <span>{clients.find(c=>c.id===s.clientId)?.name||"No client"}</span>
+            <span style={{color:hasGps?"#34d399":"#f87171"}}>{hasGps?`📍 GPS ✓ · ${s.radius||100}m`:"🔒 No GPS"}</span>
+            <span>⏱ {s.stdHours||9}h/day · starts {s.startTime||"07:30"}</span>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center"}}>
+          {canDelete&&<button onClick={e=>{e.stopPropagation();rm(s.id);}} style={{padding:"3px 8px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>Del</button>}
+          <button onClick={e=>{e.stopPropagation();onSave(sites);onOpenDetail&&onOpenDetail(s);}} title="Open site detail" style={{padding:"3px 8px",background:"#1a3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11}}>📂</button>
+          <span style={{color:"#64748b",fontSize:13}}>{isOpen?"▲":"▼"}</span>
+        </div>
+      </div>
+
+      {/* Expanded settings */}
+      {isOpen&&<div style={{borderTop:"1px solid #1e2535",padding:"12px 13px"}}>
+
+        {/* Name + colour */}
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Site Name</div>
+          <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)}
+            style={{width:"100%",background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:6,padding:"7px 10px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none",boxSizing:"border-box"}}/>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Colour</div>
+          <ColorPicker value={s.color} onChange={c=>up(s.id,"color",c)}/>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Client</div>
+          <select value={s.clientId||""} onChange={e=>up(s.id,"clientId",e.target.value||null)}
+            style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:6,padding:"7px 9px",color:s.clientId?"#e2e8f0":"#64748b",fontSize:12,outline:"none",boxSizing:"border-box",cursor:"pointer"}}>
+            <option value="">No client</option>
+            {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+
+        {/* ── Working Hours & OT ── */}
+        <div style={{background:"#0a0e1a",borderRadius:8,padding:"10px 12px",marginBottom:10,border:"1px solid #1e2535"}}>
+          <div style={{fontSize:9,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>⏱ Working Hours & Overtime</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Start Time</div>
+              <input type="time" value={s.startTime||"07:30"} onChange={e=>up(s.id,"startTime",e.target.value)}
+                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Std Hours/Day</div>
+              <input type="number" min="1" max="24" step="0.5" value={s.stdHours||9} onChange={e=>up(s.id,"stdHours",+e.target.value||9)}
+                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>OT After (hrs)</div>
+              <input type="number" min="1" max="24" step="0.5" value={s.otThreshold||s.stdHours||9} onChange={e=>up(s.id,"otThreshold",+e.target.value||9)}
+                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+          </div>
+          <div style={{marginTop:8,fontSize:10,color:"#64748b",lineHeight:1.6}}>
+            Start: <span style={{color:"#60a5fa",fontWeight:600}}>{s.startTime||"07:30"}</span> · 
+            Standard day: <span style={{color:"#60a5fa",fontWeight:600}}>{s.stdHours||9}h</span> · 
+            OT kicks in after: <span style={{color:"#fbbf24",fontWeight:600}}>{s.otThreshold||s.stdHours||9}h</span> · 
+            Finish time: <span style={{color:"#34d399",fontWeight:600}}>{(()=>{const[h,m]=(s.startTime||"07:30").split(":").map(Number);const end=h*60+m+(s.stdHours||9)*60;return`${String(Math.floor(end/60)%24).padStart(2,"0")}:${String(end%60).padStart(2,"0")}`;})()}</span>
+          </div>
+        </div>
+
+        {/* ── GPS ── */}
+        <div style={{background:"#0a0e1a",borderRadius:8,padding:"10px 12px",border:"1px solid #1e2535"}}>
+          <div style={{fontSize:9,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>📍 GPS Location — Worker Sign In/Out</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:9}}>
+            <div>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Latitude</div>
+              <input type="number" step="0.000001" value={s.lat||""} onChange={e=>up(s.id,"lat",+e.target.value||null)} placeholder="51.509865"
+                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Longitude</div>
+              <input type="number" step="0.000001" value={s.lng||""} onChange={e=>up(s.id,"lng",+e.target.value||null)} placeholder="-0.118092"
+                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Radius (m)</div>
+              <input type="number" min="10" max="2000" step="10" value={s.radius||100} onChange={e=>up(s.id,"radius",+e.target.value||100)}
+                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:9}}>
+            <button onClick={()=>useMyLocation(s.id)} disabled={locating[s.id]}
+              style={{padding:"6px 12px",background:"#0d2218",border:"1px solid #10b981",borderRadius:6,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:700,opacity:locating[s.id]?0.6:1}}>
+              {locating[s.id]?"📡 Getting location…":"📍 Use My Current Location"}
+            </button>
+            {hasGps
+              ?<span style={{fontSize:10,color:"#34d399",fontWeight:600}}>✓ GPS set · {s.radius||100}m perimeter</span>
+              :<span style={{fontSize:10,color:"#f87171",fontWeight:700}}>🔒 No GPS — workers cannot sign in</span>}
+          </div>
+          {hasGps&&<div style={{marginTop:6,fontSize:10,color:"#64748b"}}>
+            Coords: {s.lat?.toFixed(5)}, {s.lng?.toFixed(5)}
+          </div>}
+        </div>
+      </div>}
+    </div>;
+  };
+
   const builtins=sites.filter(s=>s.builtin);
   const custom=sites.filter(s=>!s.builtin);
+
   return <Overlay onClose={onClose} wide>
     <MH title="🏗 Manage Sites" onClose={onClose}/>
+
+    {/* Add new site */}
     <Sec title="Add New Site">
       <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
-        <div style={{flex:2,minWidth:160}}><label style={LBL}>Site Name</label><input value={nn} onChange={e=>setNn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="e.g. JAUK - New Road" style={INP}/></div>
-        <div style={{flex:1,minWidth:130}}><label style={LBL}>Client</label><select value={ncl} onChange={e=>setNcl(e.target.value)} style={{...INP,cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+        <div style={{flex:2,minWidth:160}}><label style={LBL}>Site Name</label>
+          <input value={nn} onChange={e=>setNn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="e.g. JAUK - New Road" style={INP}/></div>
+        <div style={{flex:1,minWidth:130}}><label style={LBL}>Client</label>
+          <select value={ncl} onChange={e=>setNcl(e.target.value)} style={{...INP,cursor:"pointer"}}>
+            <option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></div>
         <div style={{minWidth:260}}><label style={LBL}>Colour</label><ColorPicker value={nc} onChange={setNc}/></div>
         <button onClick={add} style={{...BP,whiteSpace:"nowrap"}}>+ Add</button>
       </div>
-      {nn&&<div style={{marginTop:8}}><span style={{fontSize:12,color:"#64748b",marginRight:8}}>Preview:</span><span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:12,fontWeight:600,color:"#fff",background:nc}}>{nn}</span></div>}
+      {nn&&<div style={{marginTop:6,fontSize:12,color:"#64748b"}}>Preview: <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:12,fontWeight:600,color:"#fff",background:nc,marginLeft:4}}>{nn}</span></div>}
     </Sec>
 
-    {/* Built-in sites — now fully editable */}
-    <div style={{marginBottom:18}}>
-      <div style={{fontSize:11,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>Built-in Sites — Now Editable ✏️</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        {builtins.map(s=><div key={s.id} style={{padding:"10px 12px",background:"#0f1421",borderRadius:8,border:`1px solid ${s.color}55`}}>
-          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
-            <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)} style={{flex:1,background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:5,padding:"5px 8px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none"}}/>
-            <button onClick={()=>{onSave(sites);onOpenDetail&&onOpenDetail(s);}} title="Open site detail (scopes & variations)" style={{padding:"4px 9px",background:"#1a3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:12}}>📂</button>
-          </div>
-          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
-          <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-          <GpsFields s={s}/>
-        </div>)}
-      </div>
+    <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>Click a site to expand and edit GPS, working hours and overtime settings.</div>
+
+    {/* Built-in sites */}
+    <div style={{marginBottom:16}}>
+      <div style={{fontSize:10,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Built-in Sites</div>
+      {builtins.map(s=><SiteCard key={s.id} s={s} canDelete={false}/>)}
     </div>
 
-    {custom.length>0&&<div>
-      <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>Custom Sites ({custom.length})</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        {custom.map(s=><div key={s.id} style={{padding:"10px 12px",background:"#0f1421",borderRadius:8,border:`1px solid ${s.color}55`}}>
-          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
-            <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)} style={{flex:1,background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:5,padding:"5px 8px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none"}}/>
-            <button onClick={()=>rm(s.id)} style={{background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,padding:"4px 8px",fontWeight:700}}>Delete</button>
-          </div>
-          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
-          <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-        </div>)}
-      </div>
-          <GpsFields s={s}/>
+    {/* Custom sites */}
+    {custom.length>0&&<div style={{marginBottom:16}}>
+      <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Custom Sites ({custom.length})</div>
+      {custom.map(s=><SiteCard key={s.id} s={s} canDelete={true}/>)}
     </div>}
 
-    <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,borderTop:"1px solid #1e2535",paddingTop:16}}>
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end",borderTop:"1px solid #1e2535",paddingTop:16,marginTop:8}}>
       <button onClick={onClose} style={{padding:"8px 18px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer"}}>Cancel</button>
       <button onClick={()=>onSave(sites)} style={BG}>Save All Sites</button>
     </div>
