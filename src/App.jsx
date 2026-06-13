@@ -4234,3 +4234,21 @@ export default function App(){
     </div>
   );
 }
+{
+  "sites": [
+    {
+      "id": "s1",
+      "name": "Paddington Station",
+      "address": "Praed St, London W2 1HQ",
+      "scope": "External façade works – brick replacement",
+      "supervisor": {
+        "name": "Marcus Webb",
+        "phone": "07700 900123"
+      },
+      "workers": [
+        { "id": "w1", "name": "Tom Bradley", "role": "Scaffolder" },
+        { "id": "w2", "name": "Sarah Chen",  "role": "Bricklayer" }
+      ]
+    }
+  ]
+}
