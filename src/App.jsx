@@ -3504,15 +3504,162 @@ function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetail
 }
 
 // ── Dashboard Site Detail ─────────────────────────────────────────────────────
+// ─── Workers On Site — GPS confirmed attendees + scope cost allocation ─────────
+function WorkersOnSite({site,siteWorkers,workers,activeDays,siteHours,scopes,setPage,setDetailId}){
+  const weekLabel=activeDays&&workers[0]?.days?"":"";//just need any ref
+  const TODAY_KEY=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
+
+  // Workers who have GPS-confirmed attendance on this site
+  const confirmedWorkers=useMemo(()=>{
+    return siteWorkers.map(w=>{
+      const logs=(w.attendanceLogs||[]).filter(l=>
+        l.signIn&&l.signOut&&(l.siteId===site.id||l.siteName===site.name)
+      );
+      const totalHrs=logs.reduce((a,l)=>a+hoursFromMs(new Date(l.signOut)-new Date(l.signIn)),0);
+      const grossCost=totalHrs*(w.agreedRate||0);
+      return{...w,confirmedLogs:logs,confirmedHours:totalHrs,confirmedCost:grossCost};
+    }).filter(w=>w.confirmedLogs.length>0||activeDays.some(d=>(w.days?.[d]||"").includes(site.name)));
+  },[siteWorkers,site,activeDays]);
+
+  // Scope assignment state — per worker which scope they are assigned to
+  const [scopeAssignment,setScopeAssignment]=useState(()=>{
+    const m={};
+    siteWorkers.forEach(w=>{if(w.scopeAssignment?.[site.id])m[w.id]=w.scopeAssignment[site.id];});
+    return m;
+  });
+
+  // Cost per scope
+  const costPerScope=useMemo(()=>{
+    const m={};
+    confirmedWorkers.forEach(w=>{
+      const scopeId=scopeAssignment[w.id]||"unassigned";
+      m[scopeId]=(m[scopeId]||0)+w.confirmedCost;
+    });
+    return m;
+  },[confirmedWorkers,scopeAssignment]);
+
+  const totalConfirmedCost=confirmedWorkers.reduce((a,w)=>a+w.confirmedCost,0);
+
+  const fmtH=(h)=>h>0?h.toFixed(1)+"h":"—";
+  const C2={green:"#34d399",blue:"#60a5fa",yellow:"#fbbf24",red:"#f87171",purple:"#a78bfa",muted:"#64748b"};
+
+  return <div>
+    {/* Summary strip */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
+      {[
+        ["GPS Confirmed",confirmedWorkers.filter(w=>w.confirmedLogs.length>0).length+" workers",C2.green],
+        ["Forecast Only",confirmedWorkers.filter(w=>w.confirmedLogs.length===0).length+" workers",C2.yellow],
+        ["Total Conf. Hours",confirmedWorkers.reduce((a,w)=>a+w.confirmedHours,0).toFixed(1)+"h",C2.blue],
+        ["Total Labour Cost","£"+totalConfirmedCost.toFixed(2),C2.red],
+      ].map(([l,v,c])=><div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:9,padding:"10px 13px"}}>
+        <div style={{fontSize:9,color:C2.muted,fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+        <div style={{fontSize:16,fontWeight:800,color:c,marginTop:3}}>{v}</div>
+      </div>)}
+    </div>
+
+    {/* Cost per scope breakdown */}
+    {scopes.length>0&&<div style={{marginBottom:16,background:"#0f1421",borderRadius:10,padding:"12px 14px",border:"1px solid #1e2535"}}>
+      <div style={{fontSize:10,color:C2.muted,fontWeight:700,textTransform:"uppercase",marginBottom:9}}>Labour Cost Per Scope</div>
+      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+        {scopes.map(sc=>{
+          const cost=costPerScope[sc.id]||0;
+          const scopeValue=(Number(sc.qty)||0)*(Number(sc.rate)||0);
+          const pct=scopeValue>0?Math.min(100,cost/scopeValue*100):0;
+          return <div key={sc.id} style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{fontSize:11,color:"#94a3b8",minWidth:200,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={sc.description}>{sc.description||"—"}</div>
+            <div style={{flex:1,height:6,background:"#1e2535",borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",borderRadius:3,background:pct>80?"#f87171":pct>50?"#fbbf24":"#34d399",width:pct+"%"}}/>
+            </div>
+            <div style={{fontSize:11,fontWeight:700,color:"#f87171",minWidth:70,textAlign:"right"}}>£{cost.toFixed(2)}</div>
+            <div style={{fontSize:10,color:C2.muted,minWidth:45,textAlign:"right"}}>{pct.toFixed(0)}%</div>
+          </div>;
+        })}
+        {(costPerScope["unassigned"]||0)>0&&<div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{fontSize:11,color:"#374151",minWidth:200,flex:1,fontStyle:"italic"}}>Unassigned</div>
+          <div style={{flex:1}}/>
+          <div style={{fontSize:11,fontWeight:700,color:"#64748b",minWidth:70,textAlign:"right"}}>£{(costPerScope["unassigned"]||0).toFixed(2)}</div>
+          <div style={{minWidth:45}}/>
+        </div>}
+        <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:"1px solid #1e2535",marginTop:3}}>
+          <span style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>Total Labour</span>
+          <span style={{fontSize:13,fontWeight:900,color:"#f87171"}}>£{totalConfirmedCost.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>}
+
+    {/* Worker rows */}
+    <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <thead><tr>
+          <th style={{...DS.th,textAlign:"left"}}>Worker</th>
+          <th style={{...DS.th,textAlign:"center"}}>Status</th>
+          <th style={{...DS.th,textAlign:"center"}}>Sessions</th>
+          <th style={{...DS.th,textAlign:"right"}}>Conf. Hours</th>
+          <th style={{...DS.th,textAlign:"right"}}>Labour Cost</th>
+          <th style={{...DS.th,textAlign:"left",minWidth:160}}>Assign to Scope</th>
+        </tr></thead>
+        <tbody>
+          {confirmedWorkers.map((w,i)=>{
+            const hasGPS=w.confirmedLogs.length>0;
+            return <tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421",cursor:"pointer"}}
+              onClick={e=>{if(e.target.tagName==="SELECT")return;setDetailId(w.id);setPage("worker_detail");}}>
+              <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:28,height:28,borderRadius:7,background:"#3b82f622",border:"1px solid #3b82f644",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#60a5fa"}}>{(w.name||"?")[0]}</div>
+                  <div>
+                    <div style={{fontWeight:600,color:"#f1f5f9",fontSize:12}}>{w.name}</div>
+                    <div style={{fontSize:10,color:"#64748b"}}>{w.position||"—"}</div>
+                  </div>
+                </div>
+              </td>
+              <td style={{...DS.td,textAlign:"center"}}>
+                {hasGPS
+                  ?<span style={{padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700,background:"#0d221844",color:"#34d399",border:"1px solid #34d39944"}}>✅ GPS</span>
+                  :<span style={{padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700,background:"#1a150044",color:"#fbbf24",border:"1px solid #fbbf2444"}}>📋 Forecast</span>}
+              </td>
+              <td style={{...DS.td,textAlign:"center",color:"#60a5fa",fontWeight:600}}>{w.confirmedLogs.length||"—"}</td>
+              <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:700}}>{fmtH(w.confirmedHours)}</td>
+              <td style={{...DS.td,textAlign:"right",color:"#f87171",fontWeight:700}}>
+                {w.confirmedCost>0?`£${w.confirmedCost.toFixed(2)}`:"—"}
+              </td>
+              <td style={{...DS.td}} onClick={e=>e.stopPropagation()}>
+                <select
+                  value={scopeAssignment[w.id]||""}
+                  onChange={e=>setScopeAssignment(a=>({...a,[w.id]:e.target.value}))}
+                  style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"5px 8px",color:scopeAssignment[w.id]?"#e2e8f0":"#64748b",fontSize:11,outline:"none",cursor:"pointer"}}>
+                  <option value="">— Unassigned —</option>
+                  {scopes.map(sc=><option key={sc.id} value={sc.id}>{sc.description||"Scope item"}</option>)}
+                </select>
+              </td>
+            </tr>;
+          })}
+        </tbody>
+      </table>
+      {confirmedWorkers.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:12}}>
+        No workers allocated or GPS-confirmed on this site yet.
+      </div>}
+    </div>
+  </div>;
+}
+
+function hoursFromMs(ms){return Math.max(0,Math.round((ms/3600000)*100)/100);}
+
 function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoices,payApplications,setPage,setDetailId,setModal}){
   const site=allSites.find(s=>s.id===siteId);
   if(!site) return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Site not found.</div></div>;
   const client=clients.find(c=>c.id===site.clientId);
   const siteWorkers=workers.filter(w=>activeDays.some(d=>(w.days?.[d]||"").includes(site.name)));
   const sc=site.scopes||[], vr=site.variations||[];
+  const isPW=site.contractType==="pricework";
+  const pohPct=Number(site.pohPct)||0;
+  const retPct=Number(site.retentionPct)||0;
   const scopeT=sc.reduce((a,s)=>a+(Number(s.qty)||0)*(Number(s.rate)||0),0);
+  const pohTotal=isPW?scopeT*(pohPct/100):0;
+  const scopeGross=scopeT+pohTotal;
   const varT=vr.reduce((a,v)=>a+(v.type==="addition"?Number(v.value||0):-Number(v.value||0)),0);
-  const contract=scopeT+varT;
+  const contract=scopeGross+varT;
+  const retTotal=isPW?contract*(retPct/100):0;
+  const netCertified=contract-retTotal;
   const labourCost=useMemo(()=>{let t=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.includes(site.name))t+=b.gross;});});return t;},[workers,activeDays,siteHours,site.name]);
   const siteInvs=(invoices||[]).filter(i=>i.siteId===site.id);
   const totalInvoiced=siteInvs.reduce((a,i)=>{const s=(i.lines||[]).reduce((x,l)=>x+(l.qty||0)*(l.rate||0),0);return a+s;},0);
@@ -3617,33 +3764,61 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Scopes */}
       {tab==="scopes"&&<div>
+        {isPW&&(pohPct>0||retPct>0)&&<div style={{display:"flex",gap:10,marginBottom:12,padding:"8px 12px",background:"#0f1421",borderRadius:8,border:"1px solid #2d3555",fontSize:11,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{color:"#64748b",fontWeight:700}}>📐 Price Work:</span>
+          {pohPct>0&&<span style={{color:"#a78bfa",fontWeight:600}}>P&OH: {pohPct}%</span>}
+          {retPct>0&&<span style={{color:"#fbbf24",fontWeight:600}}>Retention: {retPct}%</span>}
+          <span style={{color:"#64748b",marginLeft:"auto"}}>Columns show per-scope breakdown</span>
+        </div>}
         {sc.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
           No scopes yet. Click "✏️ Edit Site" to add scope line items.
         </div>:
-        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
+        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden",overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:isPW?800:500}}>
             <thead><tr>
               <th style={DS.th}>Description</th>
-              <th style={{...DS.th,width:70,textAlign:"center"}}>Unit</th>
-              <th style={{...DS.th,width:70,textAlign:"right"}}>Qty</th>
-              <th style={{...DS.th,width:100,textAlign:"right"}}>Rate £</th>
-              <th style={{...DS.th,width:110,textAlign:"right",color:"#34d399"}}>Total £</th>
+              <th style={{...DS.th,width:60,textAlign:"center"}}>Unit</th>
+              <th style={{...DS.th,width:60,textAlign:"right"}}>Qty</th>
+              <th style={{...DS.th,width:90,textAlign:"right"}}>Net Rate £</th>
+              <th style={{...DS.th,width:100,textAlign:"right",color:"#60a5fa"}}>Net Total</th>
+              {isPW&&pohPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#a78bfa"}}>P&OH ({pohPct}%)</th>}
+              {isPW&&<th style={{...DS.th,width:100,textAlign:"right",color:"#34d399"}}>Gross Total</th>}
+              {isPW&&retPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#fbbf24"}}>Retention ({retPct}%)</th>}
+              {isPW&&retPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#34d399"}}>Net Certified</th>}
+              {!isPW&&<th style={{...DS.th,width:110,textAlign:"right",color:"#34d399"}}>Total £</th>}
             </tr></thead>
             <tbody>
-              {sc.map((s,i)=>(
-                <tr key={s.id||i} style={{background:i%2===0?"#111827":"#0f1421"}}>
+              {sc.map((s,i)=>{
+                const net=(Number(s.qty)||0)*(Number(s.rate)||0);
+                const poh=isPW?net*(pohPct/100):0;
+                const gross=net+poh;
+                const ret=isPW?gross*(retPct/100):0;
+                const cert=gross-ret;
+                return <tr key={s.id||i} style={{background:i%2===0?"#111827":"#0f1421"}}>
                   <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{s.description||"—"}</td>
                   <td style={{...DS.td,textAlign:"center"}}><span style={DS.badge("#94a3b8","#1e2535")}>{s.unit}</span></td>
                   <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:600}}>{s.qty}</td>
                   <td style={{...DS.td,textAlign:"right"}}>£{Number(s.rate).toLocaleString()}</td>
-                  <td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{((s.qty||0)*(s.rate||0)).toLocaleString()}</td>
-                </tr>
-              ))}
+                  <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:600}}>£{net.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                  {isPW&&pohPct>0&&<td style={{...DS.td,textAlign:"right",color:"#a78bfa",fontWeight:600}}>+£{poh.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                  {isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{gross.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                  {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:600}}>-£{ret.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                  {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{cert.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                  {!isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{net.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                </tr>;
+              })}
             </tbody>
-            <tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
-              <td colSpan={4} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTAL SCOPE</td>
-              <td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{Math.round(scopeT).toLocaleString()}</td>
-            </tr></tfoot>
+            <tfoot>
+              <tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
+                <td colSpan={4} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTAL SCOPE</td>
+                <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:800}}>£{scopeT.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                {isPW&&pohPct>0&&<td style={{...DS.td,textAlign:"right",color:"#a78bfa",fontWeight:800}}>+£{pohTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                {isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{scopeGross.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:800}}>-£{retTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{netCertified.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                {!isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{scopeT.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+              </tr>
+            </tfoot>
           </table>
         </div>}
       </div>}
@@ -3716,19 +3891,7 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
       </div>}
 
       {/* Workers */}
-      {tab==="workers"&&<DTable cols={[
-        {key:"name",label:"Worker",r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:28,height:28,borderRadius:7,background:(r.color||"#3b82f6")+"22",border:"1px solid "+(r.color||"#3b82f6")+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:r.color||"#3b82f6"}}>{(v||"?")[0]}</div>
-          <div><div style={{fontWeight:600,color:"#f1f5f9"}}>{v}</div><div style={{fontSize:10,color:"#64748b"}}>{r.position}</div></div>
-        </div>},
-        {key:"company",label:"Company",r:v=><span style={{color:"#94a3b8",fontSize:11}}>{v||"—"}</span>},
-        {key:"agreedRate",label:"Rate",r:v=>v?<span style={{color:"#34d399",fontWeight:600}}>£{v}/hr</span>:<span style={{color:"#374151"}}>—</span>},
-        {key:"taxRate",label:"Tax",r:v=><span style={{color:v===0.30?"#f87171":v===0.20?"#fbbf24":"#34d399",fontWeight:600}}>{Math.round((v||0)*100)}%</span>},
-        {key:"certs",label:"Certs",r:(v,r)=>{
-          const held=Object.values(r.certs||{}).filter(c=>c.held).length;
-          return <span style={{color:"#a78bfa",fontWeight:600}}>{held} held</span>;
-        }},
-      ]} rows={siteWorkers} onRow={r=>{setDetailId(r.id);setPage("worker_detail");}}/>}
+      {tab==="workers"&&<WorkersOnSite site={site} siteWorkers={siteWorkers} workers={workers} activeDays={activeDays} siteHours={siteHours} scopes={sc} setPage={setPage} setDetailId={setDetailId}/>}
 
       {/* Full Costs */}
       {tab==="costs"&&<div>
