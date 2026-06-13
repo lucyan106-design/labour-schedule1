@@ -2975,6 +2975,588 @@ function DFinance({workers,clients,allSites,activeDays,siteHours,scopeData,invoi
 }
 
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIMESHEETS — individual records, saved per worker per week
+// ═══════════════════════════════════════════════════════════════════════════
+function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetRecords,setTimesheetRecords,generateTimesheets,generatePayslips,payslipRecords,setPayslipRecords,setPage}){
+  const weekSheets=timesheetRecords.filter(t=>t.weekLabel===weekLabel);
+  const allWeeks=[...new Set(timesheetRecords.map(t=>t.weekLabel))].sort((a,b)=>new Date(b)-new Date(a));
+  const [selWeek,setSelWeek]=useState(weekLabel);
+  const shown=timesheetRecords.filter(t=>t.weekLabel===selWeek);
+
+  function createTimesheets(){
+    if(!window.confirm(`Generate timesheets for WC ${weekLabel} from current worker data?\n\nThis will create individual timesheet records for each working operative.`)) return;
+    const existing=timesheetRecords.filter(t=>t.weekLabel!==weekLabel);
+    const newSheets=generateTimesheets(weekLabel);
+    if(newSheets.length===0){alert("No working operatives found for this week.");return;}
+    setTimesheetRecords([...existing,...newSheets]);
+    alert(`✓ Created ${newSheets.length} timesheets for WC ${weekLabel}`);
+  }
+
+  function approveAll(){
+    setTimesheetRecords(recs=>recs.map(t=>t.weekLabel===selWeek?{...t,approved:true}:t));
+  }
+
+  function generatePaysFromTimesheets(){
+    if(!window.confirm(`Generate payslips from approved timesheets for WC ${selWeek}?`)) return;
+    const approved=shown.filter(t=>t.approved);
+    if(approved.length===0){alert("No approved timesheets found.");return;}
+    const existing=payslipRecords.filter(p=>p.weekLabel!==selWeek);
+    const newPays=generatePayslips(approved);
+    setPayslipRecords([...existing,...newPays]);
+    alert(`✓ Generated ${newPays.length} payslips for WC ${selWeek}`);
+    setPage("payslips");
+  }
+
+  function updateSheet(id,key,val){
+    setTimesheetRecords(recs=>recs.map(t=>t.id===id?{...t,[key]:val}:t));
+  }
+
+  const totGross=shown.reduce((a,t)=>a+t.gross,0);
+  const totStd=shown.reduce((a,t)=>a+t.stdHours,0);
+  const totOT=shown.reduce((a,t)=>a+t.otHours,0);
+
+  return <div>
+    <DPageHdr title="⏱ Timesheets" sub={`${timesheetRecords.length} total records`}
+      actions={<div style={{display:"flex",gap:7}}>
+        <button onClick={createTimesheets} style={{padding:"6px 13px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ Generate WC {weekLabel}</button>
+        {shown.length>0&&<button onClick={approveAll} style={{padding:"6px 13px",background:"#0d2218",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:12,fontWeight:700}}>✓ Approve All</button>}
+        {shown.some(t=>t.approved)&&<button onClick={generatePaysFromTimesheets} style={{padding:"6px 13px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>💷 → Generate Payslips</button>}
+      </div>}/>
+    <div style={DS.body}>
+      {/* Week selector */}
+      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+        {allWeeks.length===0&&<div style={{color:"#374151",fontSize:12}}>No timesheets yet. Click "+ Generate" to create timesheets from current worker data.</div>}
+        {allWeeks.map(wk=><button key={wk} onClick={()=>setSelWeek(wk)} style={{padding:"5px 12px",background:selWeek===wk?"#1e3a5f":"#1a1f2e",border:`1px solid ${selWeek===wk?"#3b82f6":"#2d3555"}`,borderRadius:7,color:selWeek===wk?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:selWeek===wk?700:400}}>WC {wk} ({timesheetRecords.filter(t=>t.weekLabel===wk).length})</button>)}
+      </div>
+
+      {shown.length>0&&<>
+        {/* Summary */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+          <DStat label="Timesheets" value={shown.length} color="#60a5fa"/>
+          <DStat label="Std Hours" value={totStd+"h"} color="#34d399"/>
+          <DStat label="OT Hours" value={totOT>0?totOT+"h":"—"} color="#fbbf24"/>
+          <DStat label="Gross" value={"£"+totGross.toFixed(0)} color="#a78bfa"/>
+        </div>
+
+        {/* Timesheet table */}
+        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>
+              <th style={DS.th}>Worker</th><th style={DS.th}>Position</th>
+              <th style={DS.th}>Std h</th><th style={DS.th}>OT h</th>
+              <th style={DS.th}>Rate</th><th style={DS.th}>Gross</th>
+              <th style={DS.th}>Tax</th><th style={DS.th}>Net</th>
+              <th style={DS.th}>Status</th><th style={DS.th}>Actions</th>
+            </tr></thead>
+            <tbody>{shown.map((t,i)=>(
+              <tr key={t.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{t.workerName}</td>
+                <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>{t.position}</td>
+                <td style={DS.td}><input type="number" value={t.stdHours} onChange={e=>updateSheet(t.id,"stdHours",Number(e.target.value))} style={{width:55,background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"2px 5px",color:"#34d399",fontSize:11,textAlign:"right",outline:"none"}}/></td>
+                <td style={DS.td}><input type="number" value={t.otHours} onChange={e=>updateSheet(t.id,"otHours",Number(e.target.value))} style={{width:55,background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"2px 5px",color:"#fbbf24",fontSize:11,textAlign:"right",outline:"none"}}/></td>
+                <td style={{...DS.td,color:"#34d399",fontWeight:600}}>{t.rate?`£${t.rate}/hr`:"—"}</td>
+                <td style={{...DS.td,color:"#34d399",fontWeight:700}}>£{t.gross.toFixed(2)}</td>
+                <td style={{...DS.td,color:"#f87171"}}>£{t.tax.toFixed(2)}</td>
+                <td style={{...DS.td,color:"#a78bfa",fontWeight:700}}>£{t.net.toFixed(2)}</td>
+                <td style={DS.td}>
+                  <button onClick={()=>updateSheet(t.id,"approved",!t.approved)}
+                    style={{padding:"3px 9px",background:t.approved?"#0d2218":"#1a1f2e",border:`1px solid ${t.approved?"#10b981":"#2d3555"}`,borderRadius:5,color:t.approved?"#34d399":"#64748b",cursor:"pointer",fontSize:10,fontWeight:700}}>
+                    {t.approved?"✓ Approved":"Pending"}
+                  </button>
+                </td>
+                <td style={DS.td}>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>exportPayslip({...t,agreedRate:t.rate,taxRate:t.taxRate,days:t.days||{},overtimeHours:{},hoursPerDay:{}},activeDays,t.weekLabel,siteHours||{})} style={{padding:"3px 7px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10}}>💷</button>
+                    <button onClick={()=>setTimesheetRecords(recs=>recs.filter(x=>x.id!==t.id))} style={{padding:"3px 7px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:10}}>✕</button>
+                  </div>
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </>}
+    </div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAYSLIPS — individual records, permanent in system
+// ═══════════════════════════════════════════════════════════════════════════
+function DPayslips({workers,allSites,activeDays,siteHours,weekLabel,payslipRecords,setPayslipRecords,timesheetRecords,generatePayslips,setPage}){
+  const allWeeks=[...new Set(payslipRecords.map(p=>p.weekLabel))].sort((a,b)=>new Date(b)-new Date(a));
+  const [selWeek,setSelWeek]=useState(payslipRecords[0]?.weekLabel||weekLabel);
+  const shown=payslipRecords.filter(p=>p.weekLabel===selWeek);
+  const totGross=shown.reduce((a,p)=>a+p.gross,0);
+  const totNet=shown.reduce((a,p)=>a+p.net,0);
+  const totTax=shown.reduce((a,p)=>a+p.tax,0);
+
+  function markIssued(){
+    setPayslipRecords(recs=>recs.map(p=>p.weekLabel===selWeek?{...p,issued:true}:p));
+  }
+
+  function genFromTimesheets(){
+    const sheets=timesheetRecords.filter(t=>t.weekLabel===weekLabel&&t.approved);
+    if(sheets.length===0){alert("No approved timesheets for current week. Go to Timesheets, approve them, then return.");return;}
+    const ex=payslipRecords.filter(p=>p.weekLabel!==weekLabel);
+    const newP=generatePayslips(sheets);
+    setPayslipRecords([...ex,...newP]);
+    alert(`✓ Generated ${newP.length} payslips for WC ${weekLabel}`);
+  }
+
+  return <div>
+    <DPageHdr title="💷 Payslips" sub={`${payslipRecords.length} total · ${payslipRecords.filter(p=>p.issued).length} issued`}
+      actions={<div style={{display:"flex",gap:7}}>
+        <button onClick={genFromTimesheets} style={{padding:"6px 13px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ From Timesheets WC {weekLabel}</button>
+        {shown.length>0&&!shown.every(p=>p.issued)&&<button onClick={markIssued} style={{padding:"6px 13px",background:"#0d2218",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:12,fontWeight:700}}>✓ Mark All Issued</button>}
+      </div>}/>
+    <div style={DS.body}>
+      {/* Week tabs */}
+      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+        {payslipRecords.length===0&&<div style={{color:"#374151",fontSize:12}}>No payslips yet. Generate from approved timesheets.</div>}
+        {allWeeks.map(wk=>{const wkPays=payslipRecords.filter(p=>p.weekLabel===wk);return<button key={wk} onClick={()=>setSelWeek(wk)} style={{padding:"5px 12px",background:selWeek===wk?"#1e3a5f":"#1a1f2e",border:`1px solid ${selWeek===wk?"#3b82f6":"#2d3555"}`,borderRadius:7,color:selWeek===wk?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:selWeek===wk?700:400}}>WC {wk} ({wkPays.length}) {wkPays.every(p=>p.issued)?"✓":""}</button>;})}
+      </div>
+
+      {shown.length>0&&<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+          <DStat label="Payslips" value={shown.length} color="#60a5fa"/>
+          <DStat label="Gross" value={"£"+totGross.toFixed(0)} color="#34d399"/>
+          <DStat label="Tax" value={"£"+totTax.toFixed(0)} color="#f87171"/>
+          <DStat label="Net Pay" value={"£"+totNet.toFixed(0)} color="#a78bfa"/>
+        </div>
+
+        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>
+              <th style={DS.th}>Worker</th><th style={DS.th}>Week</th>
+              <th style={DS.th}>Std h</th><th style={DS.th}>OT h</th>
+              <th style={DS.th}>Gross</th><th style={DS.th}>Tax</th>
+              <th style={DS.th}>Net Pay</th><th style={DS.th}>Status</th><th style={DS.th}>Export</th>
+            </tr></thead>
+            <tbody>{shown.map((p,i)=>(
+              <tr key={p.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{p.workerName}<div style={{fontSize:10,color:"#64748b"}}>{p.position}</div></td>
+                <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>{p.weekLabel}</td>
+                <td style={{...DS.td,color:"#60a5fa",fontWeight:600}}>{p.stdHours}h</td>
+                <td style={{...DS.td,color:"#fbbf24"}}>{p.otHours>0?p.otHours+"h":"—"}</td>
+                <td style={{...DS.td,color:"#34d399",fontWeight:700}}>£{p.gross.toFixed(2)}</td>
+                <td style={{...DS.td,color:"#f87171"}}>£{p.tax.toFixed(2)}</td>
+                <td style={{...DS.td,color:"#a78bfa",fontWeight:800,fontSize:13}}>£{p.net.toFixed(2)}</td>
+                <td style={DS.td}><span style={{padding:"2px 8px",borderRadius:4,fontSize:10,fontWeight:700,color:p.issued?"#34d399":"#fbbf24",background:p.issued?"#0d2218":"#1a1500"}}>{p.issued?"✓ Issued":"Pending"}</span></td>
+                <td style={DS.td}>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>exportPayslip({id:p.workerId,name:p.workerName,position:p.position,agreedRate:p.rate,taxRate:p.taxRate,overtimeMultiplier:1.5,customOTRate:null,days:{},overtimeHours:{},hoursPerDay:{}},activeDays,p.weekLabel,siteHours||{})} style={{padding:"3px 7px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>💷 PDF</button>
+                    <button onClick={()=>setPayslipRecords(recs=>recs.filter(x=>x.id!==p.id))} style={{padding:"3px 7px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:10}}>✕</button>
+                  </div>
+                </td>
+              </tr>
+            ))}</tbody>
+            <tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
+              <td colSpan={4} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTALS</td>
+              <td style={{...DS.td,color:"#34d399",fontWeight:800}}>£{totGross.toFixed(2)}</td>
+              <td style={{...DS.td,color:"#f87171",fontWeight:800}}>£{totTax.toFixed(2)}</td>
+              <td style={{...DS.td,color:"#a78bfa",fontWeight:900,fontSize:14}}>£{totNet.toFixed(2)}</td>
+              <td colSpan={2} style={DS.td}/>
+            </tr></tfoot>
+          </table>
+        </div>
+      </>}
+    </div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BANK IMPORT — save transactions to system
+// ═══════════════════════════════════════════════════════════════════════════
+function DBankFull({allSites,clients,bankTransactions,setBankTransactions,setModal}){
+  const [txns,setTxns]=useState([]);
+  const [fileName,setFileName]=useState("");
+  const INCOME_CATS=["Client Payment","Contract Payment","Variation Payment","Retention Release","Other Income"];
+  const EXPENSE_CATS=["Materials","Plant Hire","Subcontractor","Labour (External)","Transport","Insurance","Tools & Equipment","Professional Fees","Utilities","Office","Other Expense"];
+
+  const handleFile=e=>{
+    const f=e.target.files[0];if(!f)return;setFileName(f.name);
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const wb=XLSX.read(ev.target.result,{type:"binary"});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const data=XLSX.utils.sheet_to_json(ws,{header:1});
+        const rows=data.slice(1).filter(r=>r.some(c=>c!==undefined&&c!==""));
+        setTxns(rows.map(r=>({
+          id:"bt_"+Date.now()+Math.random().toString(36).slice(2),
+          date:String(r[0]||""),description:String(r[1]||r[2]||""),
+          amount:Number(r[3]||r[4]||0),
+          type:Number(r[3]||r[4]||0)>=0?"income":"expense",
+          category:"",siteId:"",clientId:"",notes:"",saved:false,
+        })));
+      }catch(err){alert("Error reading file: "+err.message);}
+    };
+    reader.readAsBinaryString(f);
+  };
+
+  const upT=(id,k,v)=>setTxns(t=>t.map(x=>x.id===id?{...x,[k]:v}:x));
+
+  function saveToSystem(){
+    const toSave=txns.filter(t=>t.category);
+    if(toSave.length===0){alert("Please categorise at least one transaction before saving.");return;}
+    const existing=bankTransactions.filter(bt=>!txns.find(t=>t.id===bt.id));
+    setBankTransactions([...existing,...txns.map(t=>({...t,saved:true}))]);
+    alert(`✓ ${toSave.length} transactions saved to system.`);
+  }
+
+  function exportCat(){
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+      ["Date","Description","Amount","Type","Category","Site","Client","Notes"],
+      ...txns.map(t=>[t.date,t.description,t.amount,t.type,t.category,
+        allSites.find(s=>s.id===t.siteId)?.name||"",
+        clients.find(c=>c.id===t.clientId)?.name||"",t.notes])
+    ]),"Transactions");
+    XLSX.writeFile(wb,"Bank_Categorised_"+new Date().toLocaleDateString("en-GB").replace(/\//g,"-")+".xlsx");
+  }
+
+  const saved=bankTransactions.length;
+  const income=txns.filter(t=>t.type==="income").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const expense=txns.filter(t=>t.type==="expense").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const allSavedIncome=bankTransactions.filter(t=>t.type==="income").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const allSavedExpense=bankTransactions.filter(t=>t.type==="expense").reduce((a,t)=>a+Math.abs(t.amount),0);
+
+  return <div>
+    <DPageHdr title="🏦 Bank Import" sub={`${saved} transactions saved in system`}
+      actions={<div style={{display:"flex",gap:7}}>
+        {txns.length>0&&<button onClick={saveToSystem} style={{padding:"6px 13px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>💾 Save to System ({txns.filter(t=>t.category).length} categorised)</button>}
+        {txns.length>0&&<button onClick={exportCat} style={{padding:"6px 13px",background:"#1a1f2e",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12}}>⬇ Export Excel</button>}
+      </div>}/>
+    <div style={DS.body}>
+      {/* Saved transactions summary */}
+      {saved>0&&<div style={{background:"#0a1a0a",border:"1px solid #16a34a33",borderRadius:10,padding:"12px 16px",marginBottom:16}}>
+        <div style={{fontSize:11,color:"#34d399",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Saved in System ({saved} transactions)</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+          <DStat label="Total Income" value={"£"+allSavedIncome.toLocaleString()} color="#34d399"/>
+          <DStat label="Total Expenses" value={"£"+allSavedExpense.toLocaleString()} color="#f87171"/>
+          <DStat label="Net Position" value={"£"+(allSavedIncome-allSavedExpense).toLocaleString()} color={(allSavedIncome-allSavedExpense)>=0?"#34d399":"#f87171"}/>
+        </div>
+      </div>}
+
+      {/* Import area */}
+      <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:10,padding:16,marginBottom:16}}>
+        <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Import New Statement</div>
+        <label style={{display:"block",padding:"12px 16px",background:"#1e3a5f",border:"2px dashed #3b82f6",borderRadius:8,cursor:"pointer",textAlign:"center",color:"#60a5fa",fontSize:12,fontWeight:600}}>
+          📁 {fileName||"Click to upload Excel / CSV · Date | Description | Amount"}
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{display:"none"}}/>
+        </label>
+        {txns.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:10}}>
+          <DStat label="Transactions" value={txns.length} color="#60a5fa"/>
+          <DStat label="Income" value={"£"+income.toLocaleString()} color="#34d399"/>
+          <DStat label="Expenses" value={"£"+expense.toLocaleString()} color="#f87171"/>
+          <DStat label="Categorised" value={txns.filter(t=>t.category).length+"/"+txns.length} color="#fbbf24"/>
+        </div>}
+      </div>
+
+      {txns.length>0&&<div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+        <div style={{maxHeight:480,overflowY:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead style={{position:"sticky",top:0,zIndex:1}}><tr>
+              <th style={{...DS.th,minWidth:85}}>Date</th>
+              <th style={{...DS.th,minWidth:180}}>Description</th>
+              <th style={{...DS.th,minWidth:80}}>Amount</th>
+              <th style={{...DS.th,minWidth:90}}>Type</th>
+              <th style={{...DS.th,minWidth:150}}>Category</th>
+              <th style={{...DS.th,minWidth:120}}>Site</th>
+              <th style={{...DS.th,minWidth:110}}>Client</th>
+              <th style={{...DS.th,minWidth:100}}>Notes</th>
+            </tr></thead>
+            <tbody>{txns.map((t,i)=>(
+              <tr key={t.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>{t.date}</td>
+                <td style={{...DS.td,maxWidth:180}}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#e2e8f0",fontSize:12}} title={t.description}>{t.description}</div></td>
+                <td style={{...DS.td,fontWeight:700,color:t.amount>=0?"#34d399":"#f87171",whiteSpace:"nowrap"}}>£{Math.abs(t.amount).toFixed(2)}</td>
+                <td style={DS.td}><select value={t.type} onChange={e=>upT(t.id,"type",e.target.value)} style={{...{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"3px 5px",color:t.type==="income"?"#34d399":"#f87171",fontSize:10,outline:"none"},cursor:"pointer"}}>
+                  <option value="income">Income</option><option value="expense">Expense</option>
+                </select></td>
+                <td style={DS.td}><select value={t.category} onChange={e=>upT(t.id,"category",e.target.value)} style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"3px 5px",color:t.category?"#e2e8f0":"#64748b",fontSize:10,outline:"none",cursor:"pointer"}}>
+                  <option value="">— Category —</option>
+                  <optgroup label="Income">{INCOME_CATS.map(c=><option key={c} value={c}>{c}</option>)}</optgroup>
+                  <optgroup label="Expenses">{EXPENSE_CATS.map(c=><option key={c} value={c}>{c}</option>)}</optgroup>
+                </select></td>
+                <td style={DS.td}><select value={t.siteId} onChange={e=>upT(t.id,"siteId",e.target.value)} style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"3px 5px",color:"#e2e8f0",fontSize:10,outline:"none",cursor:"pointer"}}>
+                  <option value="">— Site —</option>
+                  {allSites.filter(s=>!isOff(s.name)).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                </select></td>
+                <td style={DS.td}><select value={t.clientId} onChange={e=>upT(t.id,"clientId",e.target.value)} style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"3px 5px",color:"#e2e8f0",fontSize:10,outline:"none",cursor:"pointer"}}>
+                  <option value="">— Client —</option>
+                  {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select></td>
+                <td style={DS.td}><input value={t.notes} onChange={e=>upT(t.id,"notes",e.target.value)} placeholder="Notes…" style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"3px 5px",color:"#e2e8f0",fontSize:10,outline:"none"}}/></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>}
+    </div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAYMENT APPLICATIONS — per site, scopes+variations+dayworks+prelims
+// ═══════════════════════════════════════════════════════════════════════════
+const PA_ITEM_TYPES=["Scope of Work","Variation","Dayworks","Preliminaries","Other"];
+const PA_UNITS=["l/m","m²","m³","nr","kg","tonne","day","week","%","sum","hrs"];
+
+function DPayApps({allSites,clients,workers,activeDays,siteHours,scopeData,payApplications,setPayApplications,setPage,setDetailId}){
+  const [selSite,setSelSite]=useState("");
+  const activeSites=allSites.filter(s=>!isOff(s.name));
+
+  function newPayApp(){
+    if(!selSite){alert("Please select a site first.");return;}
+    const site=allSites.find(s=>s.id===selSite);
+    if(!site){return;}
+    // Build items from site scopes and variations
+    const items=[
+      ...(site.scopes||[]).map(sc=>({
+        id:"pai_"+Date.now()+Math.random().toString(36).slice(2),
+        type:"Scope of Work",description:sc.description||sc.desc||"",
+        unit:sc.unit||"sum",contractQty:sc.qty||0,contractRate:sc.rate||sc.unitIncome||0,
+        claimedQtyToDate:0,claimedPctToDate:0,useQty:true,previousQty:0,
+      })),
+      ...(site.variations||[]).map(vr=>({
+        id:"pai_"+Date.now()+Math.random().toString(36).slice(2),
+        type:"Variation",description:vr.description||vr.desc||"",
+        unit:"sum",contractQty:1,contractRate:vr.value||0,
+        claimedQtyToDate:0,claimedPctToDate:0,useQty:false,previousQty:0,
+      })),
+    ];
+    const pa={
+      id:"pa_"+Date.now(),
+      siteId:selSite,siteName:site.name,
+      clientId:site.clientId||"",
+      number:"PA-"+(payApplications.filter(p=>p.siteId===selSite).length+1).toString().padStart(3,"0"),
+      date:new Date().toISOString().slice(0,10),
+      status:"draft",items,
+      createdAt:new Date().toISOString(),
+    };
+    setPayApplications(pas=>[...pas,pa]);
+    setDetailId(pa.id);
+    setPage("payapp_detail");
+  }
+
+  return <div>
+    <DPageHdr title="📐 Payment Applications" sub={`${payApplications.length} applications across ${[...new Set(payApplications.map(p=>p.siteId))].length} sites`}
+      actions={<div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+        <div>
+          <label style={{...DS.th,display:"block",marginBottom:3}}>Select Site</label>
+          <select value={selSite} onChange={e=>setSelSite(e.target.value)} style={{background:"#0f1421",border:"1px solid #2d3555",borderRadius:7,padding:"6px 10px",color:"#e2e8f0",fontSize:12,outline:"none",cursor:"pointer",minWidth:200}}>
+            <option value="">— Choose site —</option>
+            {activeSites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+        <button onClick={newPayApp} style={{padding:"6px 14px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ New Application</button>
+      </div>}/>
+    <div style={DS.body}>
+      {payApplications.length===0&&<div style={{textAlign:"center",padding:"60px 24px",border:"1px dashed #1e2535",borderRadius:12}}>
+        <div style={{fontSize:40,marginBottom:14}}>📐</div>
+        <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",marginBottom:8}}>No Payment Applications Yet</div>
+        <div style={{fontSize:13,color:"#64748b"}}>Select a site above and click "+ New Application" to create a payment application from the site's scopes, variations, dayworks and preliminaries.</div>
+      </div>}
+      {/* Group by site */}
+      {activeSites.filter(s=>payApplications.some(p=>p.siteId===s.id)).map(site=>{
+        const sitePAs=payApplications.filter(p=>p.siteId===site.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+        return <div key={site.id} style={{marginBottom:20}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{width:10,height:10,borderRadius:"50%",background:site.color}}/><span style={{fontWeight:700,color:site.color,fontSize:14}}>{site.name}</span>
+            <span style={{fontSize:11,color:"#64748b"}}>{sitePAs.length} application{sitePAs.length!==1?"s":""}</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+            {sitePAs.map(pa=>{
+              const total=pa.items.reduce((a,it)=>{const v=it.useQty?(it.claimedQtyToDate||0)*it.contractRate:((it.claimedPctToDate||0)/100)*(it.contractQty*it.contractRate);return a+v;},0);
+              const contract=pa.items.reduce((a,it)=>a+it.contractQty*it.contractRate,0);
+              return <div key={pa.id} onClick={()=>{setDetailId(pa.id);setPage("payapp_detail");}}
+                style={{background:"#111827",border:"1px solid #1e2535",borderRadius:10,padding:14,cursor:"pointer",transition:"all 0.15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=site.color;e.currentTarget.style.transform="translateY(-2px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="#1e2535";e.currentTarget.style.transform="";}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                  <span style={{fontWeight:700,color:"#a78bfa",fontSize:13}}>{pa.number}</span>
+                  <span style={{padding:"2px 8px",borderRadius:4,fontSize:10,fontWeight:700,color:pa.status==="submitted"?"#60a5fa":pa.status==="certified"?"#34d399":"#94a3b8",background:pa.status==="submitted"?"#0d1a2e":pa.status==="certified"?"#0d2218":"#1e2535",textTransform:"capitalize"}}>{pa.status}</span>
+                </div>
+                <div style={{fontSize:11,color:"#64748b",marginBottom:8}}>{pa.date} · {pa.items.length} items</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <div style={{background:"#0f1421",borderRadius:6,padding:"6px 8px"}}><div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>Claimed</div><div style={{fontSize:14,fontWeight:800,color:"#34d399"}}>£{total.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+                  <div style={{background:"#0f1421",borderRadius:6,padding:"6px 8px"}}><div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>Contract</div><div style={{fontSize:14,fontWeight:800,color:"#60a5fa"}}>£{contract.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+// ── Payment Application Detail ─────────────────────────────────────────────────
+function DPayAppDetail({payApplications,setPayApplications,payappId,allSites,clients,setPage}){
+  const pa=payApplications.find(p=>p.id===payappId);
+  const [items,setItems]=useState(pa?JSON.parse(JSON.stringify(pa.items)):[]);
+  const [addType,setAddType]=useState("Dayworks");
+  if(!pa) return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Application not found.</div></div>;
+  const site=allSites.find(s=>s.id===pa.siteId);
+  const client=clients.find(c=>c.id===pa.clientId);
+
+  const calcClaimed=(it)=>{
+    if(it.useQty) return (it.claimedQtyToDate||0)*it.contractRate;
+    return ((it.claimedPctToDate||0)/100)*(it.contractQty*it.contractRate);
+  };
+  const calcPrev=(it)=>(it.previousQty||0)*it.contractRate;
+  const calcThisPeriod=(it)=>calcClaimed(it)-calcPrev(it);
+
+  const totalContract=items.reduce((a,it)=>a+it.contractQty*it.contractRate,0);
+  const totalClaimed=items.reduce((a,it)=>a+calcClaimed(it),0);
+  const totalPrev=items.reduce((a,it)=>a+calcPrev(it),0);
+  const totalThis=totalClaimed-totalPrev;
+  const pctComplete=totalContract>0?Math.round((totalClaimed/totalContract)*100):0;
+
+  function updateItem(id,key,val){setItems(its=>its.map(it=>it.id===id?{...it,[key]:val}:it));}
+  function toggleMode(id){setItems(its=>its.map(it=>it.id===id?{...it,useQty:!it.useQty}:it));}
+  function addItem(){
+    setItems(its=>[...its,{id:"pai_"+Date.now(),type:addType,description:"",unit:"sum",contractQty:1,contractRate:0,claimedQtyToDate:0,claimedPctToDate:0,useQty:addType!=="Preliminaries",previousQty:0}]);
+  }
+  function deleteItem(id){setItems(its=>its.filter(it=>it.id!==id));}
+
+  function savePA(){
+    setPayApplications(pas=>pas.map(p=>p.id===payappId?{...p,items,status:"draft"}:p));
+    alert("✓ Saved");
+  }
+  function submitPA(){
+    setPayApplications(pas=>pas.map(p=>p.id===payappId?{...p,items,status:"submitted"}:p));
+    alert("✓ Submitted");
+    setPage("payapps");
+  }
+
+  function exportPDF(){
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${pa.number} — ${site?.name||""}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0d1117;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif;font-size:12px;padding:24px;}
+.hdr{display:flex;justify-content:space-between;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #1e2535;}
+table{width:100%;border-collapse:collapse;margin-bottom:16px;}
+th{padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;border-bottom:2px solid #1e2535;background:#0a0e17;}
+td{padding:6px 10px;border-bottom:1px solid #1a2030;font-size:11px;}tr:nth-child(even) td{background:#111827;}tr:nth-child(odd) td{background:#0f1421;}
+.total{background:#0d2218;border:2px solid #10b981;border-radius:10px;padding:16px 20px;margin-top:10px;}
+.ft{margin-top:16px;padding-top:10px;border-top:1px solid #1e2535;display:flex;justify-content:space-between;font-size:9px;color:#374151;}
+@media print{@page{margin:8mm;size:A3 landscape;}}</style></head><body>
+<div class="hdr">
+  <div><div style="font-size:22px;font-weight:800;color:#f1f5f9">${pa.number}</div>
+  <div style="font-size:13px;color:#64748b">${site?.name||"—"} · ${client?.name||"—"}</div>
+  <div style="font-size:11px;color:#64748b;margin-top:4px">Date: ${pa.date} · Status: ${pa.status}</div></div>
+  <div style="text-align:right"><div style="font-size:11px;color:#64748b">Contract Value</div><div style="font-size:24px;font-weight:900;color:#60a5fa">£${totalContract.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+</div>
+<table><thead><tr><th>Type</th><th style="width:35%">Description</th><th>Unit</th><th>Qty</th><th>Rate £</th><th>Contract £</th><th>Prev Qty</th><th>Claimed ToDate</th><th>This Period £</th><th>%</th></tr></thead><tbody>
+${items.map(it=>{const cl=calcClaimed(it);const pr=calcPrev(it);const th=cl-pr;const pct=it.contractQty*it.contractRate>0?Math.round((cl/(it.contractQty*it.contractRate))*100):0;return `<tr><td style="color:#a78bfa">${it.type}</td><td style="font-weight:600">${it.description||"—"}</td><td>${it.unit}</td><td style="text-align:right">${it.contractQty}</td><td style="text-align:right">£${it.contractRate.toLocaleString()}</td><td style="text-align:right;font-weight:700">£${(it.contractQty*it.contractRate).toLocaleString()}</td><td style="text-align:right;color:#64748b">${it.previousQty||0}</td><td style="text-align:right;color:#34d399;font-weight:700">£${cl.toLocaleString(undefined,{maximumFractionDigits:0})}</td><td style="text-align:right;color:${th>=0?"#34d399":"#f87171"};font-weight:700">£${th.toLocaleString(undefined,{maximumFractionDigits:0})}</td><td style="text-align:right">${pct}%</td></tr>`;}).join("")}
+</tbody></table>
+<div class="total" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+  <div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Contract</div><div style="font-size:20px;font-weight:900;color:#60a5fa">£${totalContract.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+  <div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Claimed To Date</div><div style="font-size:20px;font-weight:900;color:#34d399">£${totalClaimed.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+  <div><div style="font-size:10px;color:#64748b;text-transform:uppercase">This Period</div><div style="font-size:20px;font-weight:900;color:#fbbf24">£${totalThis.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+  <div><div style="font-size:10px;color:#64748b;text-transform:uppercase">% Complete</div><div style="font-size:20px;font-weight:900;color:#a78bfa">${pctComplete}%</div></div>
+</div>
+<div class="ft"><span>${pa.number} — ${site?.name||""}</span><span>${client?.name||""}</span><span>Bright Metalwork Ltd</span><span>${new Date().toLocaleDateString("en-GB")}</span></div>
+<script>window.onload=function(){window.print();}<\/script></body></html>`;
+    const blob=new Blob([html],{type:"text/html"});const url=URL.createObjectURL(blob);
+    const win=window.open(url,"_blank","width=1200,height=820");
+    if(!win){const a=document.createElement("a");a.href=url;a.download=`${pa.number}.html`;a.click();}
+    setTimeout(()=>URL.revokeObjectURL(url),6000);
+  }
+
+  const typeColors={"Scope of Work":"#60a5fa","Variation":"#fbbf24","Dayworks":"#f97316","Preliminaries":"#a78bfa","Other":"#94a3b8"};
+
+  return <div>
+    <DPageHdr title={`📐 ${pa.number}`} sub={`${site?.name||"—"} · ${client?.name||"—"} · ${pa.date}`}
+      back="Payment Applications" onBack={()=>setPage("payapps")}
+      actions={<div style={{display:"flex",gap:7}}>
+        <button onClick={savePA} style={{padding:"6px 13px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:12}}>💾 Save</button>
+        <button onClick={exportPDF} style={{padding:"6px 13px",background:"#1a1f2e",border:"1px solid #ef4444",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700}}>📄 Export PDF</button>
+        <button onClick={submitPA} style={{padding:"6px 13px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>✓ Submit</button>
+      </div>}/>
+    <div style={DS.body}>
+      {/* Summary cards */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
+        <DStat label="Contract Value" value={"£"+totalContract.toLocaleString(undefined,{maximumFractionDigits:0})} color="#60a5fa"/>
+        <DStat label="Claimed To Date" value={"£"+totalClaimed.toLocaleString(undefined,{maximumFractionDigits:0})} color="#34d399"/>
+        <DStat label="This Period" value={"£"+totalThis.toLocaleString(undefined,{maximumFractionDigits:0})} color="#fbbf24"/>
+        <DStat label="% Complete" value={pctComplete+"%"} color="#a78bfa"/>
+      </div>
+
+      {/* Add item */}
+      <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"flex-end"}}>
+        <div><label style={{...DS.th,display:"block",marginBottom:3}}>Item Type</label>
+          <select value={addType} onChange={e=>setAddType(e.target.value)} style={{background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"6px 10px",color:"#e2e8f0",fontSize:12,outline:"none",cursor:"pointer"}}>
+            {PA_ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <button onClick={addItem} style={{padding:"6px 14px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ Add {addType} Item</button>
+      </div>
+
+      {/* Items table */}
+      <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden",marginBottom:16}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr>
+            <th style={{...DS.th,minWidth:100}}>Type</th>
+            <th style={{...DS.th,minWidth:220}}>Description</th>
+            <th style={{...DS.th,minWidth:60}}>Unit</th>
+            <th style={{...DS.th,minWidth:70}}>Qty</th>
+            <th style={{...DS.th,minWidth:80}}>Rate £</th>
+            <th style={{...DS.th,minWidth:90}}>Contract £</th>
+            <th style={{...DS.th,background:"#0d1a2e",color:"#60a5fa",minWidth:80}}>Prev Qty</th>
+            <th style={{...DS.th,background:"#0d1a2e",color:"#60a5fa",minWidth:80}}>Mode</th>
+            <th style={{...DS.th,background:"#0d1a2e",color:"#60a5fa",minWidth:90}}>Claimed ToDate</th>
+            <th style={{...DS.th,background:"#0d2218",color:"#34d399",minWidth:90}}>This Period £</th>
+            <th style={{...DS.th,minWidth:40}}></th>
+          </tr></thead>
+          <tbody>{items.map((it,i)=>{
+            const cl=calcClaimed(it);const pr=calcPrev(it);const thisPeriod=cl-pr;
+            const typeCol=typeColors[it.type]||"#94a3b8";
+            return <tr key={it.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+              <td style={DS.td}><span style={{fontSize:10,fontWeight:600,color:typeCol}}>{it.type}</span></td>
+              <td style={DS.td}><input value={it.description} onChange={e=>updateItem(it.id,"description",e.target.value)} style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"3px 6px",color:"#e2e8f0",fontSize:11,outline:"none"}}/></td>
+              <td style={DS.td}><select value={it.unit} onChange={e=>updateItem(it.id,"unit",e.target.value)} style={{background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"2px 4px",color:"#94a3b8",fontSize:10,outline:"none",cursor:"pointer"}}>
+                {PA_UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+              </select></td>
+              <td style={DS.td}><input type="number" value={it.contractQty} onChange={e=>updateItem(it.id,"contractQty",Number(e.target.value))} style={{width:60,background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"2px 4px",color:"#60a5fa",fontSize:11,textAlign:"right",outline:"none"}}/></td>
+              <td style={DS.td}><input type="number" value={it.contractRate} onChange={e=>updateItem(it.id,"contractRate",Number(e.target.value))} style={{width:70,background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"2px 4px",color:"#e2e8f0",fontSize:11,textAlign:"right",outline:"none"}}/></td>
+              <td style={{...DS.td,fontWeight:700,color:"#e2e8f0",textAlign:"right"}}>£{(it.contractQty*it.contractRate).toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+              <td style={{...DS.td,background:"#080d14"}}><input type="number" value={it.previousQty||0} onChange={e=>updateItem(it.id,"previousQty",Number(e.target.value))} style={{width:65,background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"2px 4px",color:"#64748b",fontSize:11,textAlign:"right",outline:"none"}}/></td>
+              <td style={{...DS.td,background:"#080d14",textAlign:"center"}}>
+                <button onClick={()=>toggleMode(it.id)} style={{padding:"2px 8px",background:it.useQty?"#0d1a2e":"#1a0d2e",border:`1px solid ${it.useQty?"#3b82f6":"#a855f7"}`,borderRadius:4,color:it.useQty?"#60a5fa":"#c084fc",cursor:"pointer",fontSize:10,fontWeight:700}}>
+                  {it.useQty?"Qty":"Pct%"}
+                </button>
+              </td>
+              <td style={{...DS.td,background:"#080d14"}}>
+                {it.useQty
+                  ?<input type="number" value={it.claimedQtyToDate||0} onChange={e=>updateItem(it.id,"claimedQtyToDate",Number(e.target.value))} style={{width:70,background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"2px 4px",color:"#34d399",fontSize:11,textAlign:"right",outline:"none"}} placeholder={it.unit}/>
+                  :<div style={{display:"flex",alignItems:"center",gap:3}}><input type="number" min="0" max="100" value={it.claimedPctToDate||0} onChange={e=>updateItem(it.id,"claimedPctToDate",Number(e.target.value))} style={{width:50,background:"#0f1421",border:"1px solid #2d3555",borderRadius:4,padding:"2px 4px",color:"#34d399",fontSize:11,textAlign:"right",outline:"none"}}/><span style={{color:"#64748b",fontSize:11}}>%</span></div>
+                }
+              </td>
+              <td style={{...DS.td,fontWeight:800,fontSize:13,color:thisPeriod>=0?"#34d399":"#f87171",background:"#080d14",textAlign:"right"}}>
+                £{thisPeriod.toLocaleString(undefined,{maximumFractionDigits:0})}
+                <div style={{fontSize:9,color:"#64748b"}}>{Math.round((cl/(it.contractQty*it.contractRate||1))*100)}%</div>
+              </td>
+              <td style={DS.td}><button onClick={()=>deleteItem(it.id)} style={{padding:"3px 6px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:10}}>✕</button></td>
+            </tr>;
+          })}</tbody>
+          <tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
+            <td colSpan={5} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTALS</td>
+            <td style={{...DS.td,fontWeight:800,color:"#e2e8f0",textAlign:"right"}}>£{totalContract.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+            <td colSpan={2} style={DS.td}/>
+            <td style={{...DS.td,background:"#080d14",fontWeight:800,color:"#34d399",textAlign:"right"}}>£{totalClaimed.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+            <td style={{...DS.td,background:"#080d14",fontWeight:900,fontSize:15,color:"#34d399",textAlign:"right"}}>£{totalThis.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+            <td style={DS.td}/>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>;
+}
+
+
 function DComingSoon({icon,title,sub}){
   return <div>
     <DPageHdr title={`${icon} ${title}`} sub={sub}/>
@@ -3105,12 +3687,19 @@ function DSiteBySite({workers,allSites,activeDays}){
 }
 
 
-function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,showWeekend,filter,setFilter,allSiteNames,updateCell,delWorker,dashPage,setDashPage,dashDetailId,setDashDetailId}){
+function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,bankTransactions,setBankTransactions,timesheetRecords,setTimesheetRecords,payslipRecords,setPayslipRecords,payApplications,setPayApplications,generateTimesheets,generatePayslips,showWeekend,filter,setFilter,allSiteNames,updateCell,dashPage,setDashPage,dashDetailId,setDashDetailId}){
   const nav=(page,id)=>{setDashPage(page);if(id!==undefined)setDashDetailId(id);};
   const goBack=(page)=>setDashPage(page);
 
     // Shared props shorthand
-  const SP={workers,allSites,clients,invoices,activeDays,siteHours,weekLabel,setModal,scopeData,filter,setFilter,allSiteNames,updateCell,delWorker,showWeekend,weeklyRecords,setWeeklyRecords};
+  const SP={workers,allSites,clients,invoices,activeDays,siteHours,weekLabel,setModal,scopeData,
+    filter,setFilter,allSiteNames,updateCell,delWorker,showWeekend,
+    weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,
+    bankTransactions,setBankTransactions,
+    timesheetRecords,setTimesheetRecords,
+    payslipRecords,setPayslipRecords,
+    payApplications,setPayApplications,
+    generateTimesheets,generatePayslips};
   const renderPage=()=>{
     switch(dashPage){
       // ── Overview
@@ -3119,7 +3708,11 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "workers":       return <DWorkers {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
       case "worker_detail": return <DWorkerDetail {...SP} workerId={dashDetailId} setPage={setDashPage}/>;
       // ── Schedule views — now fully embedded, no toggle needed
-      case "schedule":      return <DScheduleView {...SP} setShowWeekend={setShowWeekend}/>;
+      case "schedule":      {
+        // Auto-save schedule snapshot for this week if not already saved
+        if(scheduleHistory&&!scheduleHistory[weekLabel]&&workers.length>0) saveScheduleSnapshot(weekLabel,workers);
+        return <DScheduleView {...SP} setShowWeekend={setShowWeekend}/>;
+      }
       case "site_by_site":  return <DSiteBySite {...SP}/>;
       case "payslips":      return <DPayroll {...SP}/>;
       case "timesheets":    return <DComingSoon icon="⏱" title="Timesheets" sub="Timesheet tracking coming soon — use Weekly Records to archive completed weeks"/>;
@@ -3143,14 +3736,8 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
   };
 
 
-  return (
-    <div style={{display:"flex",minHeight:"calc(100vh - 60px)",background:"#080d14"}}>
-      <DashSidebar page={dashPage} setPage={p=>{setDashPage(p);setDashDetailId(null);}} workers={workers} allSites={allSites} clients={clients} invoices={invoices} setModal={setModal} activeDays={activeDays} siteHours={siteHours} weekLabel={weekLabel}/>
-      <div style={{flex:1,overflowY:"auto",minHeight:"calc(100vh - 60px)"}}>
-        {renderPage()}
-      </div>
-    </div>
-  );
+  // DashboardView only renders the page content — sidebar is in App
+  return <div style={{minHeight:"100%",background:"#080d14"}}>{renderPage()}</div>;
 }
 
 
@@ -3170,7 +3757,12 @@ export default function App(){
   const saveTimer=useRef(null);
   const [scopeData,setScopeData]=useState({});
   const [invoices,setInvoices]=useState([]);
-  const [weeklyRecords,setWeeklyRecords]=useState([]); // saved weekly snapshots
+  const [weeklyRecords,setWeeklyRecords]=useState([]);    // closed week snapshots
+  const [scheduleHistory,setScheduleHistory]=useState({}); // {weekLabel: {workers,sites,...}}
+  const [bankTransactions,setBankTransactions]=useState([]); // saved bank statement lines
+  const [timesheetRecords,setTimesheetRecords]=useState([]); // individual timesheet entries
+  const [payslipRecords,setPayslipRecords]=useState([]);     // individual payslip entries
+  const [payApplications,setPayApplications]=useState([]);   // payment applications per site
   // ── View mode toggle: "schedule" = original app, "dashboard" = project dashboard
   const [appMode,setAppMode]=useState("schedule"); // "schedule" | "dashboard"
   const [dashPage,setDashPage]=useState("home");
@@ -3193,6 +3785,11 @@ export default function App(){
         if(cfg.scope_data) setScopeData(cfg.scope_data);
         if(cfg.invoices) setInvoices(cfg.invoices);
         if(cfg.weekly_records) setWeeklyRecords(cfg.weekly_records);
+        if(cfg.schedule_history) setScheduleHistory(cfg.schedule_history);
+        if(cfg.bank_transactions) setBankTransactions(cfg.bank_transactions);
+        if(cfg.timesheet_records) setTimesheetRecords(cfg.timesheet_records);
+        if(cfg.payslip_records) setPayslipRecords(cfg.payslip_records);
+        if(cfg.pay_applications) setPayApplications(cfg.pay_applications);
       } catch(e){ console.error("Load error:",e); setSyncStatus("error"); setWorkers(INIT_W); }
       finally { setLoading(false); }
     }
@@ -3211,6 +3808,11 @@ export default function App(){
           {key:"site_hours",value:siteHours},{key:"scope_data",value:scopeData},
           {key:"invoices",value:invoices},
           {key:"weekly_records",value:weeklyRecords},
+          {key:"schedule_history",value:scheduleHistory},
+          {key:"bank_transactions",value:bankTransactions},
+          {key:"timesheet_records",value:timesheetRecords},
+          {key:"payslip_records",value:payslipRecords},
+          {key:"pay_applications",value:payApplications},
         ]);
         setSyncStatus("saved");
       } catch(e){ setSyncStatus("error"); }
@@ -3241,6 +3843,44 @@ export default function App(){
     catch(e){ setSyncStatus("error"); }
   };
   const saveScopeForSite=(siteId,items)=>{setScopeData(d=>({...d,[siteId]:items}));setModal(null);};
+  // Auto-save schedule snapshot whenever weekLabel changes (creates one per week automatically)
+  const saveScheduleSnapshot=(label,workerData)=>{
+    const snap={
+      weekLabel:label||weekLabel,
+      savedAt:new Date().toISOString(),
+      workers:JSON.parse(JSON.stringify(workerData||workers)),
+      allSites:JSON.parse(JSON.stringify(allSites)),
+      siteHours:JSON.parse(JSON.stringify(siteHours)),
+      activeDays:showWeekend?[...BASE_DAYS,...WEEKEND_DAYS]:BASE_DAYS,
+    };
+    setScheduleHistory(h=>({...h,[label||weekLabel]:snap}));
+  };
+  // Generate timesheets for current week from worker data
+  const generateTimesheets=(wkLabel)=>{
+    const days=showWeekend?[...BASE_DAYS,...WEEKEND_DAYS]:BASE_DAYS;
+    const sheets=workers.map(w=>{
+      const {stdH,otH,gross,net,tax}=calcPay(w,days,siteHours);
+      return {
+        id:"ts_"+w.id+"_"+Date.now(),
+        workerId:w.id, workerName:w.name, position:w.position,
+        weekLabel:wkLabel||weekLabel, stdHours:stdH, otHours:otH,
+        days:JSON.parse(JSON.stringify(w.days||{})),
+        rate:w.agreedRate||0, gross, net, tax, taxRate:w.taxRate||0,
+        approved:false, createdAt:new Date().toISOString(),
+      };
+    }).filter(t=>t.stdHours>0||t.otHours>0);
+    return sheets;
+  };
+  // Generate payslips from timesheets
+  const generatePayslips=(timesheets)=>{
+    return timesheets.map(t=>({
+      id:"ps_"+t.workerId+"_"+Date.now()+Math.random().toString(36).slice(2),
+      workerId:t.workerId, workerName:t.workerName, position:t.position,
+      weekLabel:t.weekLabel, stdHours:t.stdHours, otHours:t.otHours,
+      rate:t.rate, gross:t.gross, net:t.net, tax:t.tax, taxRate:t.taxRate,
+      issued:false, createdAt:new Date().toISOString(),
+    }));
+  };
   const saveInvoice=inv=>{setInvoices(list=>{const exists=list.find(x=>x.id===inv.id);return exists?list.map(x=>x.id===inv.id?inv:x):[...list,inv];});setModal(null);};
   const delInvoice=id=>{if(window.confirm("Delete invoice?"))setInvoices(list=>list.filter(x=>x.id!==id));};
 
@@ -3333,6 +3973,12 @@ export default function App(){
           setAllSites={setAllSites} setClients={setClients}
           setModal={setModal}
           weeklyRecords={weeklyRecords} setWeeklyRecords={setWeeklyRecords}
+          scheduleHistory={scheduleHistory} saveScheduleSnapshot={saveScheduleSnapshot}
+          bankTransactions={bankTransactions} setBankTransactions={setBankTransactions}
+          timesheetRecords={timesheetRecords} setTimesheetRecords={setTimesheetRecords}
+          payslipRecords={payslipRecords} setPayslipRecords={setPayslipRecords}
+          payApplications={payApplications} setPayApplications={setPayApplications}
+          generateTimesheets={generateTimesheets} generatePayslips={generatePayslips}
           showWeekend={showWeekend}
           filter={filter} setFilter={setFilter}
           allSiteNames={allSiteNames}
