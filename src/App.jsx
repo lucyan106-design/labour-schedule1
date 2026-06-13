@@ -2389,7 +2389,7 @@ function FinancialDashboard({workers,clients,allSites,activeDays,siteHours,scope
 
 // ── Shared dashboard styles ───────────────────────────────────────────────────
 const DS={
-  sidebar:{width:210,background:"#0a0e17",borderRight:"1px solid #1e2535",height:"calc(100vh - 60px)",position:"sticky",top:60,flexShrink:0,overflowY:"auto",display:"flex",flexDirection:"column"},
+  sidebar:{width:210,minWidth:210,background:"#0a0e17",borderRight:"1px solid #1e2535",height:"100%",flexShrink:0,overflowY:"auto",display:"flex",flexDirection:"column"},
   card:(color)=>({background:"#111827",border:`1px solid ${color||"#1e2535"}33`,borderRadius:12,padding:18,cursor:"pointer",transition:"all 0.15s",position:"relative",overflow:"hidden"}),
   th:{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",borderBottom:"1px solid #1e2535",background:"#0a0e17",whiteSpace:"nowrap"},
   td:{padding:"8px 12px",borderBottom:"1px solid #1a2030",verticalAlign:"middle",fontSize:13},
@@ -3898,14 +3898,14 @@ function DSiteBySite({workers,allSites,activeDays}){
 }
 
 
-function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,bankTransactions,setBankTransactions,timesheetRecords,setTimesheetRecords,payslipRecords,setPayslipRecords,payApplications,setPayApplications,generateTimesheets,generatePayslips,showWeekend,filter,setFilter,allSiteNames,updateCell,dashPage,setDashPage,dashDetailId,setDashDetailId}){
+function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,bankTransactions,setBankTransactions,timesheetRecords,setTimesheetRecords,payslipRecords,setPayslipRecords,payApplications,setPayApplications,generateTimesheets,generatePayslips,showWeekend,setShowWeekend,filter,setFilter,allSiteNames,updateCell,dashPage,setDashPage,dashDetailId,setDashDetailId}){
   const nav=(page,id)=>{setDashPage(page);if(id!==undefined)setDashDetailId(id);};
   const goBack=(page)=>setDashPage(page);
 
     // Shared props passed to all dashboard pages
   const SP={
     workers,allSites,clients,invoices,activeDays,siteHours,weekLabel,setModal,scopeData,
-    filter,setFilter,allSiteNames,updateCell,delWorker,showWeekend,
+    filter,setFilter,allSiteNames,updateCell,delWorker,showWeekend,setShowWeekend,
     weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,
     bankTransactions,setBankTransactions,
     timesheetRecords,setTimesheetRecords,
@@ -3921,7 +3921,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "workers":       return <DWorkers {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
       case "worker_detail": return <DWorkerDetail {...SP} workerId={dashDetailId} setPage={setDashPage}/>;
       // ── Labour Schedule (auto-snapshots each week)
-      case "schedule":      return <DScheduleView {...SP} setShowWeekend={setShowWeekend}/>;
+      case "schedule":      return <DScheduleView {...SP}/>;
       case "site_by_site":  return <DSiteBySite {...SP}/>;
       case "payroll":       return <DPayroll {...SP}/>;
       case "payslips":      return <DPayslips {...SP} setPage={setDashPage}/>;
@@ -3948,7 +3948,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
 
 
   // DashboardView only renders the page content — sidebar is in App
-  return <div style={{minHeight:"100%",background:"#080d14"}}>{renderPage()}</div>;
+  return <div style={{height:"100%",background:"#080d14",overflowY:"auto"}}>{renderPage()}</div>;
 }
 
 
@@ -4115,7 +4115,7 @@ export default function App(){
 
   const VIEWS=[["schedule","📋 Schedule"],["site","📍 By Site"],["certs","🛡 Certs"],["payroll","💷 Payroll"],["costs","👔 Costs"],["bank","🏦 Bank"],["budget","📐 Budget"],["invoices","🧾 Invoices"],["finance","📊 Finance"],["stats","🔢 Stats"]];
 
-  if(loading) return <div style={{minHeight:"100vh",background:"#0d1117",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+  if(loading) return <div style={{height:"100vh",width:"100vw",background:"#0d1117",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,position:"fixed",top:0,left:0}}>
     <div style={{width:48,height:48,background:"linear-gradient(135deg,#3b82f6,#6366f1)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🏗</div>
     <div style={{color:"#60a5fa",fontSize:16,fontWeight:700}}>Loading…</div>
     <div style={{width:200,height:3,background:"#1e2535",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",background:"linear-gradient(90deg,#3b82f6,#6366f1)",borderRadius:3,animation:"slide 1.5s ease-in-out infinite"}}/></div>
@@ -4123,10 +4123,11 @@ export default function App(){
   </div>;
 
   return (
-    <div style={{minHeight:"100vh",background:"#0d1117",fontFamily:"system-ui,'Segoe UI',sans-serif",color:"#e2e8f0",fontSize:13,display:"flex",flexDirection:"column"}}>
+    <div style={{height:"100vh",width:"100vw",background:"#0d1117",fontFamily:"system-ui,'Segoe UI',sans-serif",color:"#e2e8f0",fontSize:13,display:"flex",flexDirection:"column",overflow:"hidden",position:"fixed",top:0,left:0}}>
+      <style>{`*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;width:100%;overflow:hidden}body{background:#0d1117}::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:#0a0e17}::-webkit-scrollbar-thumb{background:#2d3555;border-radius:3px}::-webkit-scrollbar-thumb:hover{background:#3b82f6}`}</style>
 
       {/* ── TOP BAR: always visible, always exactly one ── */}
-      <div style={{background:"linear-gradient(135deg,#0f172a,#1a1f2e)",borderBottom:"1px solid #1e2535",padding:"9px 16px",position:"sticky",top:0,zIndex:300,flexShrink:0}}>
+      <div style={{background:"linear-gradient(135deg,#0f172a,#1a1f2e)",borderBottom:"1px solid #1e2535",padding:"9px 16px",flexShrink:0,zIndex:300}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
 
           {/* Logo + week nav */}
@@ -4189,7 +4190,7 @@ export default function App(){
       </div>
 
       {/* ── BODY: ONE sidebar + content — no nesting, no duplication ── */}
-      <div style={{display:"flex",flex:1,minHeight:0}}>
+      <div style={{display:"flex",flex:1,minHeight:0,overflow:"hidden"}}>
 
         {/* THE ONLY SIDEBAR IN THE ENTIRE APP */}
         <DashSidebar
@@ -4200,7 +4201,7 @@ export default function App(){
           activeDays={activeDays} siteHours={siteHours} weekLabel={weekLabel}/>
 
         {/* Main content — DashboardView renders ONLY page content, never a sidebar */}
-        <div style={{flex:1,overflowY:"auto",height:"calc(100vh - 56px)"}}>
+        <div style={{flex:1,overflowY:"auto",minWidth:0}}>
           <DashboardView
             workers={workers} allSites={allSites} clients={clients}
             weekLabel={weekLabel} activeDays={activeDays} siteHours={siteHours}
@@ -4215,6 +4216,7 @@ export default function App(){
             payApplications={payApplications} setPayApplications={setPayApplications}
             generateTimesheets={generateTimesheets} generatePayslips={generatePayslips}
             showWeekend={showWeekend}
+            setShowWeekend={setShowWeekend}
             filter={filter} setFilter={setFilter}
             allSiteNames={allSiteNames} updateCell={updateCell}
             dashPage={dashPage} setDashPage={setDashPage}
@@ -4233,22 +4235,4 @@ export default function App(){
       {modal?.type==="trainingMatrix"&&<TrainingMatrixModal workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} weekLabel={weekLabel} onClose={()=>setModal(null)}/>}
     </div>
   );
-}
-{
-  "sites": [
-    {
-      "id": "s1",
-      "name": "Paddington Station",
-      "address": "Praed St, London W2 1HQ",
-      "scope": "External façade works – brick replacement",
-      "supervisor": {
-        "name": "Marcus Webb",
-        "phone": "07700 900123"
-      },
-      "workers": [
-        { "id": "w1", "name": "Tom Bradley", "role": "Scaffolder" },
-        { "id": "w2", "name": "Sarah Chen",  "role": "Bricklayer" }
-      ]
-    }
-  ]
 }
