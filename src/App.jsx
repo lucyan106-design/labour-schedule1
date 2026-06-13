@@ -1860,6 +1860,525 @@ function FinancialDashboard({workers,clients,allSites,activeDays,siteHours,scope
     {active.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151"}}>No financial data yet. Add scope of works and workers to sites.</div>}
   </div>;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD VIEW — reads from the same live state as the schedule app
+// No separate data, no duplicate saving. Pure read + navigate layer.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Shared dashboard styles ───────────────────────────────────────────────────
+const DS={
+  sidebar:{width:210,background:"#0a0e17",borderRight:"1px solid #1e2535",height:"calc(100vh - 60px)",position:"sticky",top:60,flexShrink:0,overflowY:"auto",display:"flex",flexDirection:"column"},
+  card:(color)=>({background:"#111827",border:`1px solid ${color||"#1e2535"}33`,borderRadius:12,padding:18,cursor:"pointer",transition:"all 0.15s",position:"relative",overflow:"hidden"}),
+  th:{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",borderBottom:"1px solid #1e2535",background:"#0a0e17",whiteSpace:"nowrap"},
+  td:{padding:"8px 12px",borderBottom:"1px solid #1a2030",verticalAlign:"middle",fontSize:13},
+  pill:(color)=>({display:"inline-flex",alignItems:"center",gap:4,padding:"2px 9px",borderRadius:20,border:`1px solid ${color}44`,background:`${color}15`,fontSize:11,color:color,fontWeight:600}),
+  badge:(c,bg)=>({display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:600,color:c||"#fff",background:bg||"#1e2535",whiteSpace:"nowrap"}),
+  hdr:{padding:"18px 24px",borderBottom:"1px solid #1e2535",background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"space-between",minHeight:60},
+  body:{padding:"22px 24px"},
+};
+
+const DASH_NAV=[
+  {id:"home",icon:"🏠",label:"Overview"},
+  {id:"workers",icon:"👷",label:"Workers"},
+  {id:"sites",icon:"🏗",label:"Sites"},
+  {id:"clients",icon:"👔",label:"Clients"},
+  {id:"schedule",icon:"📋",label:"Labour Schedule"},
+  {id:"timesheets",icon:"⏱",label:"Timesheets"},
+  {id:"payslips",icon:"💷",label:"Payslips"},
+  {id:"invoices",icon:"🧾",label:"Invoices"},
+  {id:"certs",icon:"🛡",label:"Certificates"},
+  {id:"payapps",icon:"📐",label:"Payment Applications"},
+];
+
+function DStat({label,value,color,sub}){
+  return <div style={{background:"#111827",border:`1px solid ${color||"#1e2535"}22`,borderRadius:10,padding:"12px 15px"}}>
+    <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</div>
+    <div style={{fontSize:20,fontWeight:800,color:color||"#60a5fa",marginTop:4,lineHeight:1}}>{value}</div>
+    {sub&&<div style={{fontSize:10,color:"#374151",marginTop:3}}>{sub}</div>}
+  </div>;
+}
+
+function DTable({cols,rows,onRow}){
+  return <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+    <table style={{width:"100%",borderCollapse:"collapse"}}>
+      <thead><tr>{cols.map(c=><th key={c.key} style={{...DS.th,minWidth:c.w||90}}>{c.label}</th>)}</tr></thead>
+      <tbody>{rows.map((r,i)=>(
+        <tr key={r.id||i} onClick={()=>onRow&&onRow(r)}
+          style={{background:i%2===0?"#111827":"#0f1421",cursor:onRow?"pointer":"default"}}
+          onMouseEnter={e=>{if(onRow)e.currentTarget.style.background="#1a2535";}}
+          onMouseLeave={e=>{e.currentTarget.style.background=i%2===0?"#111827":"#0f1421";}}>
+          {cols.map(c=><td key={c.key} style={{...DS.td,...(c.style||{})}}>{c.r?c.r(r[c.key],r):r[c.key]}</td>)}
+        </tr>
+      ))}
+      {rows.length===0&&<tr><td colSpan={cols.length} style={{...DS.td,textAlign:"center",color:"#374151",padding:28}}>No records.</td></tr>}
+      </tbody>
+    </table>
+  </div>;
+}
+
+function DPageHdr({title,sub,back,onBack,actions}){
+  return <div style={DS.hdr}>
+    <div>
+      {back&&<div onClick={onBack} style={{display:"flex",alignItems:"center",gap:6,color:"#64748b",cursor:"pointer",fontSize:12,marginBottom:6,userSelect:"none"}}>
+        <span style={{fontSize:14}}>←</span><span>Back to {back}</span>
+      </div>}
+      <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.02em"}}>{title}</div>
+      {sub&&<div style={{fontSize:12,color:"#64748b",marginTop:2}}>{sub}</div>}
+    </div>
+    {actions&&<div style={{display:"flex",gap:8}}>{actions}</div>}
+  </div>;
+}
+
+function DStatusBadge({status}){
+  const m={paid:["#34d399","#0d2218"],pending:["#fbbf24","#1a1500"],draft:["#94a3b8","#1e2535"],submitted:["#60a5fa","#0d1a2e"],approved:["#34d399","#0d2218"],rejected:["#f87171","#2d1515"],issued:["#a78bfa","#1a0d2e"],outstanding:["#fbbf24","#1a1500"],addition:["#34d399","#0d2218"],omission:["#f87171","#2d1515"]};
+  const[c,bg]=m[status]||["#94a3b8","#1e2535"];
+  return <span style={{...DS.badge(c,bg),textTransform:"capitalize"}}>{status}</span>;
+}
+
+// ── Dashboard Sidebar ─────────────────────────────────────────────────────────
+function DashSidebar({page,setPage,workers,allSites,clients,invoices,setModal}){
+  const expiring=workers.flatMap(w=>Object.values(w.certs||{}).filter(c=>{if(!c.held||!c.expiry)return false;const d=(new Date(c.expiry)-new Date())/86400000;return d>=0&&d<30;})).length;
+  const badges={certs:expiring,invoices:invoices.filter(i=>i.status==="pending").length};
+  const isActive=(id)=>page===id||page.startsWith(id+"_");
+
+  return <div style={DS.sidebar}>
+    <div style={{padding:"12px 10px",flex:1}}>
+      {DASH_NAV.map(item=>{
+        const active=isActive(item.id);
+        const cnt=badges[item.id];
+        return <div key={item.id} onClick={()=>setPage(item.id)}
+          style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:7,marginBottom:2,cursor:"pointer",background:active?"#1e3a5f":"transparent",border:active?"1px solid #3b82f6":"1px solid transparent",transition:"all 0.12s"}}
+          onMouseEnter={e=>{if(!active)e.currentTarget.style.background="#1a1f2e";}}
+          onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
+          <span style={{fontSize:15,width:18,textAlign:"center",flexShrink:0}}>{item.icon}</span>
+          <span style={{flex:1,fontSize:12,fontWeight:active?700:400,color:active?"#60a5fa":"#94a3b8"}}>{item.label}</span>
+          {cnt>0&&<span style={{fontSize:10,fontWeight:700,color:"#fbbf24",background:"#1a1500",padding:"1px 5px",borderRadius:9,minWidth:18,textAlign:"center"}}>{cnt}</span>}
+        </div>;
+      })}
+    </div>
+    <div style={{padding:"10px 12px",borderTop:"1px solid #1e2535"}}>
+      <button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:6}}>+ Add Worker</button>
+      <button onClick={()=>setModal({type:"sites"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:12,marginBottom:6}}>🏗 Manage Sites</button>
+      <button onClick={()=>setModal({type:"clients"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:12}}>👔 Manage Clients</button>
+    </div>
+  </div>;
+}
+
+// ── Dashboard Home ────────────────────────────────────────────────────────────
+function DHome({workers,allSites,clients,invoices,scopeData,activeDays,siteHours,setPage}){
+  const totalLabour=useMemo(()=>workers.reduce((a,w)=>{const{gross}=calcPay(w,activeDays,siteHours);return a+gross;},0),[workers,activeDays,siteHours]);
+  const totalInvoiced=invoices.reduce((a,i)=>a+i.amount,0);
+  const expiring=workers.flatMap(w=>Object.values(w.certs||{}).filter(c=>{if(!c.held||!c.expiry)return false;const d=(new Date(c.expiry)-new Date())/86400000;return d>=0&&d<30;})).length;
+  const expired=workers.flatMap(w=>Object.values(w.certs||{}).filter(c=>{if(!c.held||!c.expiry)return false;return new Date(c.expiry)<new Date();})).length;
+
+  const objects=[
+    {id:"workers",icon:"👷",label:"Workers",count:workers.length,color:"#3b82f6",sub:`${workers.filter(w=>Object.values(w.days||{}).some(d=>d&&!isOff(d))).length} active this week`},
+    {id:"sites",icon:"🏗",label:"Sites",count:allSites.filter(s=>!isOff(s.name)).length,color:"#f59e0b",sub:`${allSites.filter(s=>s.scopes&&s.scopes.length>0).length} with scope`},
+    {id:"clients",icon:"👔",label:"Clients",count:clients.length,color:"#8b5cf6",sub:`${clients.filter(c=>(c.rates||[]).length>0).length} with day rates`},
+    {id:"schedule",icon:"📋",label:"Labour Schedule",count:"WC",color:"#06b6d4",sub:"Weekly worker allocation"},
+    {id:"timesheets",icon:"⏱",label:"Timesheets",count:0,color:"#10b981",sub:"Coming soon"},
+    {id:"payslips",icon:"💷",label:"Payslips",count:"£"+totalLabour.toFixed(0),color:"#34d399",sub:"Weekly labour gross"},
+    {id:"invoices",icon:"🧾",label:"Invoices",count:invoices.length,color:"#fbbf24",sub:`£${totalInvoiced.toLocaleString()} total · ${invoices.filter(i=>i.status==="pending").length} pending`},
+    {id:"certs",icon:"🛡",label:"Certificates",count:workers.reduce((a,w)=>a+Object.values(w.certs||{}).filter(c=>c.held).length,0),color:expiring+expired>0?"#fbbf24":"#34d399",sub:`${expiring} expiring · ${expired} expired`},
+    {id:"payapps",icon:"📐",label:"Payment Apps",count:0,color:"#a78bfa",sub:"Valuation applications"},
+  ];
+
+  return <div>
+    <DPageHdr title="🏗 Bright Metalwork" sub="Project Management Overview"/>
+    <div style={DS.body}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:24}}>
+        <DStat label="Operatives" value={workers.length} color="#60a5fa"/>
+        <DStat label="Active Sites" value={allSites.filter(s=>!isOff(s.name)).length} color="#f59e0b"/>
+        <DStat label="Weekly Labour" value={"£"+totalLabour.toFixed(0)} color="#34d399"/>
+        <DStat label="Total Invoiced" value={"£"+totalInvoiced.toLocaleString()} color="#a78bfa"/>
+        <DStat label="Cert Alerts" value={expiring+expired} color={expiring+expired>0?"#fbbf24":"#34d399"} sub={`${expiring} expiring · ${expired} expired`}/>
+      </div>
+      <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:14}}>All Objects — click to open</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+        {objects.map(obj=>(
+          <div key={obj.id} onClick={()=>setPage(obj.id)}
+            style={{...DS.card(obj.color),borderColor:`${obj.color}33`}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=obj.color;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 30px ${obj.color}22`;}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=`${obj.color}33`;e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="";}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${obj.color},${obj.color}44)`}}/>
+            <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+              <div style={{width:42,height:42,borderRadius:10,background:`${obj.color}18`,border:`1px solid ${obj.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,flexShrink:0}}>{obj.icon}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:2}}>{obj.label}</div>
+                <div style={{fontSize:11,color:"#64748b",marginBottom:8}}>{obj.sub}</div>
+                <div style={{fontSize:24,fontWeight:900,color:obj.color,lineHeight:1}}>{obj.count}</div>
+              </div>
+              <span style={{color:`${obj.color}66`,fontSize:16}}>→</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>;
+}
+
+// ── Dashboard Workers Page ────────────────────────────────────────────────────
+function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDetailId,setModal}){
+  const[search,setSearch]=useState("");
+  const shown=workers.filter(w=>!search||w.name.toLowerCase().includes(search.toLowerCase())||w.position.toLowerCase().includes(search.toLowerCase()));
+  const {gross}=useMemo(()=>workers.reduce((a,w)=>{const r=calcPay(w,activeDays,siteHours);return{gross:a.gross+r.gross};},{gross:0}),[workers,activeDays,siteHours]);
+
+  return <div>
+    <DPageHdr title="👷 Workers" sub={`${workers.length} operatives · £${gross.toFixed(0)} gross this week`}
+      actions={<button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{padding:"7px 14px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ Add Worker</button>}/>
+    <div style={DS.body}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name or position…"
+        style={{...{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"7px 10px",color:"#e2e8f0",fontSize:13,outline:"none",boxSizing:"border-box"},maxWidth:320,marginBottom:16}}/>
+      <DTable cols={[
+        {key:"name",label:"Name",w:200,r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:9}}>
+          <div style={{width:30,height:30,borderRadius:7,background:r.color+"22",border:`1px solid ${r.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:r.color,flexShrink:0}}>{(v||"?")[0]}</div>
+          <div><div style={{fontWeight:600,color:"#f1f5f9"}}>{v||"Unnamed"}</div><div style={{fontSize:10,color:"#64748b"}}>{r.company}</div></div>
+        </div>},
+        {key:"position",label:"Position",r:v=><span style={DS.badge("#60a5fa","#0d1a2e")}>{v||"—"}</span>},
+        {key:"agreedRate",label:"Rate",r:v=>v?<span style={{color:"#34d399",fontWeight:600}}>£{v}/hr</span>:<span style={{color:"#374151"}}>—</span>},
+        {key:"taxRate",label:"Tax",r:v=><span style={{color:v===0.30?"#f87171":v===0.20?"#fbbf24":"#34d399",fontWeight:600}}>{Math.round((v||0)*100)}%</span>},
+        {key:"certs",label:"Certs",r:(v,r)=>{
+          const held=Object.values(r.certs||{}).filter(c=>c.held);
+          const exp=held.filter(c=>{if(!c.expiry)return false;return new Date(c.expiry)<new Date();});
+          const warn=held.filter(c=>{if(!c.expiry)return false;const d=(new Date(c.expiry)-new Date())/86400000;return d>=0&&d<30;});
+          return <div style={{display:"flex",gap:5,alignItems:"center"}}>
+            <span style={{color:"#34d399",fontSize:11,fontWeight:700}}>✓{held.length}</span>
+            {warn.length>0&&<span style={{color:"#fbbf24",fontSize:11,fontWeight:700}}>⚠{warn.length}</span>}
+            {exp.length>0&&<span style={{color:"#f87171",fontSize:11,fontWeight:700}}>✗{exp.length}</span>}
+          </div>;
+        }},
+        {key:"days",label:"This Week",r:(v,r)=>{
+          const site=Object.values(v||{}).filter(d=>d&&!isOff(d));
+          const primary=[...new Set(site)][0];
+          const s=primary&&allSites.find(x=>primary.includes(x.name));
+          return s?<span style={DS.pill(s.color)}>{s.name}</span>:<span style={{color:"#374151",fontSize:11}}>—</span>;
+        }},
+      ]} rows={shown} onRow={r=>{setDetailId(r.id);setPage("worker_detail");}}/>
+    </div>
+  </div>;
+}
+
+// ── Dashboard Worker Detail ───────────────────────────────────────────────────
+function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,setPage,setModal}){
+  const w=workers.find(x=>x.id===workerId);
+  if(!w) return <div style={DS.body}><div style={{color:"#374151"}}>Worker not found.</div></div>;
+  const {gross,net,stdH,otH}=calcPay(w,activeDays,siteHours);
+  const heldCerts=Object.entries(w.certs||{}).filter(([,v])=>v.held).map(([k,v])=>({...v,key:k,label:CERTS.find(c=>c.key===k)?.label||k}));
+
+  return <div>
+    <DPageHdr title={w.name} sub={`${w.position} · ${w.company}`} back="Workers" onBack={()=>setPage("workers")}
+      actions={<>
+        <button onClick={()=>setModal({type:"worker",worker:w})} style={{padding:"6px 12px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:600}}>✏️ Edit</button>
+        <button onClick={()=>exportWorkerProfile(w,allSites,formatWeekLabel(new Date()))} style={{padding:"6px 12px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,color:"#94a3b8",cursor:"pointer",fontSize:12}}>📋 Profile PDF</button>
+        <button onClick={()=>exportPayslip(w,activeDays,formatWeekLabel(new Date()),siteHours)} style={{padding:"6px 12px",background:"#0d2218",border:"1px solid #10b981",borderRadius:6,color:"#34d399",cursor:"pointer",fontSize:12,fontWeight:600}}>💷 Payslip</button>
+      </>}/>
+    <div style={DS.body}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
+        <DStat label="Hourly Rate" value={w.agreedRate?`£${w.agreedRate}/hr`:"Not set"} color="#34d399"/>
+        <DStat label="Tax Rate" value={Math.round((w.taxRate||0)*100)+"%"} color={w.taxRate===0.30?"#f87171":w.taxRate===0.20?"#fbbf24":"#34d399"}/>
+        <DStat label="This Week Gross" value={gross>0?`£${gross.toFixed(0)}`:"£0"} color="#60a5fa"/>
+        <DStat label="This Week Net" value={net>0?`£${net.toFixed(0)}`:"£0"} color="#a78bfa"/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:10,padding:16}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Contact Details</div>
+          {[["Name",w.name],["Position",w.position],["Company",w.company],["Phone",w.contact||"—"],["Email",w.email||"—"]].map(([l,v])=>(
+            <div key={l} style={{display:"flex",gap:8,marginBottom:8}}>
+              <span style={{fontSize:10,color:"#64748b",fontWeight:600,minWidth:75,textTransform:"uppercase",flexShrink:0}}>{l}</span>
+              <span style={{fontSize:12,color:"#e2e8f0"}}>{v}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:10,padding:16}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>This Week Allocation</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:4,marginBottom:10}}>
+            {(w.days?BASE_DAYS:[]).map(d=>{const site=w.days[d];const s=site&&allSites.find(x=>site.includes(x.name));const c=s?.color||"#374151";return <div key={d} style={{textAlign:"center"}}>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{d}</div>
+              <div style={{height:3,borderRadius:2,background:c,marginBottom:3}}/>
+              <div style={{fontSize:8,color:c,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{site?site.split("-")[0].trim():"—"}</div>
+            </div>;})}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:10}}>
+            {[["Std Hrs",stdH+"h","#60a5fa"],["OT Hrs",otH>0?otH+"h":"—","#fbbf24"],["Gross",`£${gross.toFixed(0)}`,"#34d399"]].map(([l,v,c])=>(
+              <div key={l} style={{background:"#0f1421",borderRadius:7,padding:8,textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div>
+                <div style={{fontSize:14,fontWeight:800,color:c,marginTop:2}}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Certificates ({heldCerts.length} held)</div>
+      {heldCerts.length===0&&<div style={{color:"#374151",fontSize:12,textAlign:"center",padding:"20px 0",border:"1px dashed #1e2535",borderRadius:8}}>No certificates on file. Edit worker to add certificates.</div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {heldCerts.map(c=>{
+          const exp=c.expiry?new Date(c.expiry):null;const now=new Date();
+          const days=exp?(exp-now)/86400000:null;
+          const st=!exp?"valid":days<0?"expired":days<30?"expiring":"valid";
+          const stColor={valid:"#34d399",expiring:"#fbbf24",expired:"#f87171"}[st];
+          return <div key={c.key} style={{background:"#0f1421",borderRadius:8,padding:"10px 12px",border:`1px solid ${stColor}44`}}>
+            <div style={{fontWeight:600,color:"#e2e8f0",fontSize:12,marginBottom:4}}>{c.label}</div>
+            {c.regNo&&<div style={{fontSize:11,color:"#60a5fa",marginBottom:2}}>Reg: {c.regNo}</div>}
+            {c.expiry&&<div style={{fontSize:10,color:"#64748b",marginBottom:3}}>Exp: {c.expiry} {days!==null&&days<30&&<span style={{color:stColor}}>({days<0?"EXPIRED":`${Math.ceil(days)}d`})</span>}</div>}
+            {c.fileUrl&&<a href={c.fileUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#60a5fa"}}>📎 View</a>}
+            <div style={{fontSize:10,color:stColor,fontWeight:700,textTransform:"uppercase",marginTop:4}}>{st}</div>
+          </div>;
+        })}
+      </div>
+    </div>
+  </div>;
+}
+
+// ── Dashboard Sites Page ──────────────────────────────────────────────────────
+function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetailId,setModal}){
+  const activeSites=allSites.filter(s=>!isOff(s.name));
+  return <div>
+    <DPageHdr title="🏗 Sites" sub={`${activeSites.length} sites`}
+      actions={<button onClick={()=>setModal({type:"sites"})} style={{padding:"7px 14px",background:"#1e2535",border:"1px solid #f59e0b",borderRadius:7,color:"#fbbf24",cursor:"pointer",fontSize:12,fontWeight:700}}>🏗 Manage Sites</button>}/>
+    <div style={DS.body}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+        {activeSites.map(site=>{
+          const wk=workers.filter(w=>BASE_DAYS.some(d=>(w.days[d]||"").includes(site.name)));
+          const client=clients.find(c=>c.id===site.clientId);
+          const sc=site.scopes||[],vr=site.variations||[];
+          const scopeT=sc.reduce((a,s)=>a+(s.qty*s.rate),0);
+          const varT=vr.reduce((a,v)=>a+(v.type==="addition"?v.value:-v.value),0);
+          return <div key={site.id} onClick={()=>{setDetailId(site.id);setPage("site_detail");}}
+            style={{...DS.card(site.color),borderColor:`${site.color}33`}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=site.color;e.currentTarget.style.transform="translateY(-2px)";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=`${site.color}33`;e.currentTarget.style.transform="";}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:site.color}}/>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <span style={{width:11,height:11,borderRadius:"50%",background:site.color,flexShrink:0}}/>
+              <span style={{fontSize:15,fontWeight:800,color:"#f1f5f9",flex:1}}>{site.name}</span>
+              {client&&<span style={DS.pill(client.color)}>{client.name}</span>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+              {[["Contract","£"+(scopeT+varT).toLocaleString(),"#60a5fa"],["Scope","£"+scopeT.toLocaleString(),"#34d399"],["Workers",wk.length,"#a78bfa"],["Variations",vr.length,"#fbbf24"]].map(([l,v,c])=>(
+                <div key={l} style={{background:"#0a0e17",borderRadius:6,padding:"6px 8px"}}>
+                  <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:c,marginTop:2}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+  </div>;
+}
+
+// ── Dashboard Site Detail ─────────────────────────────────────────────────────
+function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,setPage,setDetailId,setModal,saveSiteDetail}){
+  const site=allSites.find(s=>s.id===siteId);
+  if(!site) return <div style={DS.body}><div style={{color:"#374151"}}>Site not found.</div></div>;
+  const client=clients.find(c=>c.id===site.clientId);
+  const siteWorkers=workers.filter(w=>BASE_DAYS.some(d=>(w.days[d]||"").includes(site.name)));
+  const sc=site.scopes||[],vr=site.variations||[];
+  const scopeT=sc.reduce((a,s)=>a+(s.qty*s.rate),0);
+  const varT=vr.reduce((a,v)=>a+(v.type==="addition"?v.value:-v.value),0);
+  const contract=scopeT+varT;
+  const labourCost=useMemo(()=>{let t=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.includes(site.name))t+=b.gross;});});return t;},[workers,activeDays,siteHours,site.name]);
+  const profit=contract-labourCost;
+  const [tab,setTab]=useState("scopes");
+
+  return <div>
+    <DPageHdr title={<span style={{display:"flex",alignItems:"center",gap:9}}><span style={{width:12,height:12,borderRadius:"50%",background:site.color}}/>{site.name}</span>}
+      sub={client?`Client: ${client.name}`:"No client assigned"} back="Sites" onBack={()=>setPage("sites")}
+      actions={<button onClick={()=>setModal({type:"siteDetail",site})} style={{padding:"6px 12px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:600}}>✏️ Edit Site</button>}/>
+    <div style={DS.body}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+        <DStat label="Contract" value={"£"+contract.toLocaleString()} color="#60a5fa"/>
+        <DStat label="Labour Cost" value={"£"+labourCost.toFixed(0)} color="#f87171"/>
+        <DStat label="Profit / Loss" value={"£"+Math.abs(profit).toFixed(0)} color={profit>=0?"#34d399":"#f87171"} sub={profit>=0?"Profit":"Loss"}/>
+        <DStat label="Workers This Week" value={siteWorkers.length} color="#a78bfa"/>
+      </div>
+      <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:16,width:"fit-content"}}>
+        {[["scopes","📋 Scopes"],["variations","⚡ Variations"],["workers","👷 Workers"],["costs","💷 Costs"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setTab(v)} style={{padding:"5px 12px",background:tab===v?"#1e3a5f":"transparent",border:tab===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:tab===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:tab===v?700:400}}>{l}</button>
+        ))}
+      </div>
+      {tab==="scopes"&&<DTable cols={[
+        {key:"description",label:"Description",w:280},{key:"unit",label:"Unit",r:v=><span style={DS.badge("#94a3b8","#1e2535")}>{v}</span>},
+        {key:"qty",label:"Qty",r:v=><span style={{color:"#60a5fa",fontWeight:600}}>{v}</span>},
+        {key:"rate",label:"Rate",r:v=>`£${v.toLocaleString()}`},
+        {key:"total",label:"Total",r:(_,r)=><span style={{color:"#34d399",fontWeight:700}}>£{(r.qty*r.rate).toLocaleString()}</span>},
+      ]} rows={sc}/>}
+      {tab==="variations"&&<DTable cols={[
+        {key:"description",label:"Description",w:280},
+        {key:"type",label:"Type",r:v=><DStatusBadge status={v}/>},
+        {key:"value",label:"Value",r:(v,r)=><span style={{color:r.type==="addition"?"#34d399":"#f87171",fontWeight:700}}>{r.type==="addition"?"+":"-"}£{v.toLocaleString()}</span>},
+        {key:"approved",label:"Status",r:v=><DStatusBadge status={v?"approved":"pending"}/>},
+      ]} rows={vr}/>}
+      {tab==="workers"&&<DTable cols={[
+        {key:"name",label:"Worker",r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:26,height:26,borderRadius:6,background:r.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:r.color}}>{v[0]}</div><div><div style={{fontWeight:600,color:"#f1f5f9"}}>{v}</div><div style={{fontSize:10,color:"#64748b"}}>{r.position}</div></div></div>},
+        {key:"agreedRate",label:"Rate",r:v=>v?`£${v}/hr`:"—"},
+        {key:"certs",label:"Certs",r:(v,r)=><span style={{color:"#a78bfa",fontWeight:600}}>{Object.values(r.certs||{}).filter(c=>c.held).length} held</span>},
+      ]} rows={siteWorkers} onRow={r=>{setDetailId(r.id);setPage("worker_detail");}}/>}
+      {tab==="costs"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Income</div>
+          {[["Agreed Scope","£"+scopeT.toLocaleString(),"#60a5fa"],["Variations",(varT>=0?"+":"-")+"£"+Math.abs(varT).toLocaleString(),"#fbbf24"],["Total Contract","£"+contract.toLocaleString(),"#34d399"]].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>{l}</span><span style={{fontWeight:700,color:c}}>{v}</span></div>
+          ))}
+        </div>
+        <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Costs & Margin</div>
+          {[["Labour (this week)","£"+labourCost.toFixed(0),"#f87171"],[profit>=0?"Profit":"Loss","£"+Math.abs(profit).toFixed(0),profit>=0?"#34d399":"#f87171"]].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>{l}</span><span style={{fontWeight:700,color:c}}>{v}</span></div>
+          ))}
+        </div>
+      </div>}
+    </div>
+  </div>;
+}
+
+// ── Dashboard Clients Page ────────────────────────────────────────────────────
+function DClients({clients,allSites,invoices,setPage,setDetailId,setModal}){
+  return <div>
+    <DPageHdr title="👔 Clients" sub={`${clients.length} accounts`}
+      actions={<button onClick={()=>setModal({type:"clients"})} style={{padding:"7px 14px",background:"#1e2535",border:"1px solid #8b5cf6",borderRadius:7,color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700}}>👔 Manage Clients</button>}/>
+    <div style={DS.body}>
+      {clients.map(c=>{
+        const sites=allSites.filter(s=>s.clientId===c.id);
+        const invs=invoices.filter(i=>i.siteId&&sites.find(s=>s.id===i.siteId));
+        const totalInv=invs.reduce((a,i)=>a+i.amount,0);
+        return <div key={c.id} onClick={()=>{setDetailId(c.id);setPage("client_detail");}}
+          style={{...DS.card(c.color),borderColor:`${c.color}33`,marginBottom:12}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=c.color;e.currentTarget.style.transform="translateY(-2px)";}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=`${c.color}33`;e.currentTarget.style.transform="";}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+            <div style={{width:40,height:40,borderRadius:10,background:`${c.color}18`,border:`1px solid ${c.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:c.color}}>{c.name[0]}</div>
+            <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800,color:"#f1f5f9"}}>{c.name}</div><div style={{fontSize:11,color:"#64748b"}}>{c.contact}</div></div>
+            <span style={{color:`${c.color}66`,fontSize:16}}>→</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+            {[["Sites",sites.length,"#60a5fa"],["Invoiced","£"+totalInv.toLocaleString(),"#34d399"],["Rates",(c.rates||[]).length,"#a78bfa"]].map(([l,v,col])=>(
+              <div key={l} style={{background:"#0a0e17",borderRadius:7,padding:"7px 9px"}}><div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div><div style={{fontSize:14,fontWeight:800,color:col,marginTop:2}}>{v}</div></div>
+            ))}
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {(c.rates||[]).map(r=><span key={r.id} style={DS.pill(c.color)}>{TEAM_TYPES.find(t=>t.key===r.teamType)?.label.split("(")[0].trim()||r.teamType} · £{r.dayRate}/day</span>)}
+            {(c.rates||[]).length===0&&<span style={{color:"#374151",fontSize:11}}>No day rates configured</span>}
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+// ── Dashboard Certs Page ──────────────────────────────────────────────────────
+function DCerts({workers,setPage,setDetailId}){
+  const allCerts=useMemo(()=>workers.flatMap(w=>
+    Object.entries(w.certs||{}).filter(([,v])=>v.held).map(([k,v])=>({
+      ...v,key:k,workerId:w.id,workerName:w.name,workerColor:w.color,
+      label:CERTS.find(c=>c.key===k)?.label||k,
+    }))
+  ),[workers]);
+  const expired=allCerts.filter(c=>{if(!c.expiry)return false;return new Date(c.expiry)<new Date();});
+  const expiring=allCerts.filter(c=>{if(!c.expiry)return false;const d=(new Date(c.expiry)-new Date())/86400000;return d>=0&&d<30;});
+  const[filter,setFilter]=useState("all");
+  const shown=filter==="all"?allCerts:filter==="expiring"?expiring:expired;
+
+  return <div>
+    <DPageHdr title="🛡 Certificates" sub={`${allCerts.length} held · ${expiring.length} expiring · ${expired.length} expired`}/>
+    <div style={DS.body}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+        <DStat label="Total" value={allCerts.length} color="#a78bfa"/>
+        <DStat label="Valid" value={allCerts.length-expiring.length-expired.length} color="#34d399"/>
+        <DStat label="Expiring Soon" value={expiring.length} color="#fbbf24" sub="within 30 days"/>
+        <DStat label="Expired" value={expired.length} color="#f87171"/>
+      </div>
+      <div style={{display:"flex",gap:7,marginBottom:14}}>
+        {[["all","All"],["expiring","Expiring Soon"],["expired","Expired"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setFilter(v)} style={{padding:"5px 12px",background:filter===v?"#1e3a5f":"#1a1f2e",border:`1px solid ${filter===v?"#3b82f6":"#2d3555"}`,borderRadius:7,color:filter===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:filter===v?700:400}}>{l}</button>
+        ))}
+      </div>
+      <DTable cols={[
+        {key:"label",label:"Certificate",w:200},
+        {key:"workerName",label:"Worker",r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:7}}><div style={{width:24,height:24,borderRadius:5,background:r.workerColor+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:r.workerColor}}>{v[0]}</div><span style={{fontWeight:500}}>{v}</span></div>},
+        {key:"regNo",label:"Reg No",r:v=>v?<span style={{color:"#60a5fa",fontFamily:"monospace",fontSize:12}}>{v}</span>:<span style={{color:"#374151"}}>—</span>},
+        {key:"expiry",label:"Expiry",r:v=>{if(!v)return <span style={{color:"#374151"}}>No expiry</span>;const d=(new Date(v)-new Date())/86400000;const col=d<0?"#f87171":d<30?"#fbbf24":"#34d399";return <span style={{color:col,fontWeight:600}}>{v} {d<0?"(EXPIRED)":d<30?`(${Math.ceil(d)}d)`:"✓"}</span>;}},
+        {key:"fileUrl",label:"File",r:v=>v?<a href={v} target="_blank" rel="noreferrer" style={{color:"#60a5fa",fontSize:11}}>📎 View</a>:<span style={{color:"#374151",fontSize:11}}>—</span>},
+      ]} rows={shown} onRow={r=>{setDetailId(r.workerId);setPage("worker_detail");}}/>
+    </div>
+  </div>;
+}
+
+// ── Dashboard Invoices Page ───────────────────────────────────────────────────
+function DInvoices({invoices,allSites,clients,setModal}){
+  const total=invoices.reduce((a,i)=>a+i.amount,0);
+  const paid=invoices.filter(i=>i.status==="paid").reduce((a,i)=>a+i.amount,0);
+  return <div>
+    <DPageHdr title="🧾 Invoices" sub={`${invoices.length} invoices · £${total.toLocaleString()} total`}
+      actions={<button onClick={()=>setModal({type:"invoice",invoice:{id:"inv"+Date.now(),number:"INV-00"+(invoices.length+1),siteId:"",clientId:"",date:new Date().toISOString().slice(0,10),status:"draft",amount:0,items:[]}})} style={{padding:"7px 14px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ New Invoice</button>}/>
+    <div style={DS.body}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+        <DStat label="Total" value={"£"+total.toLocaleString()} color="#34d399"/>
+        <DStat label="Paid" value={"£"+paid.toLocaleString()} color="#a78bfa"/>
+        <DStat label="Outstanding" value={"£"+(total-paid).toLocaleString()} color="#fbbf24"/>
+        <DStat label="Draft" value={invoices.filter(i=>i.status==="draft").length} color="#94a3b8"/>
+      </div>
+      <DTable cols={[
+        {key:"number",label:"Invoice",r:v=><span style={{color:"#60a5fa",fontWeight:700}}>{v}</span>},
+        {key:"date",label:"Date"},
+        {key:"siteId",label:"Site",r:v=>{const s=allSites.find(x=>x.id===v);return s?<span style={DS.pill(s.color)}>{s.name}</span>:<span style={{color:"#374151"}}>—</span>;}},
+        {key:"clientId",label:"Client",r:v=>{const c=clients.find(x=>x.id===v);return c?<span style={DS.pill(c.color)}>{c.name}</span>:<span style={{color:"#374151"}}>—</span>;}},
+        {key:"amount",label:"Amount",r:v=><span style={{color:"#34d399",fontWeight:700}}>£{v.toLocaleString()}</span>},
+        {key:"status",label:"Status",r:v=><DStatusBadge status={v}/>},
+      ]} rows={invoices} onRow={r=>setModal({type:"invoice",invoice:r})}/>
+    </div>
+  </div>;
+}
+
+// ── Coming Soon placeholder ───────────────────────────────────────────────────
+function DComingSoon({icon,title,sub}){
+  return <div>
+    <DPageHdr title={`${icon} ${title}`} sub={sub}/>
+    <div style={{...DS.body,textAlign:"center",padding:60}}>
+      <div style={{fontSize:48,marginBottom:16}}>{icon}</div>
+      <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",marginBottom:8}}>{title}</div>
+      <div style={{fontSize:13,color:"#64748b",marginBottom:20}}>{sub}</div>
+      <div style={{fontSize:12,color:"#374151"}}>This section uses the same data as the Schedule view.<br/>Switch to 📋 Schedule to manage {title.toLowerCase()}.</div>
+    </div>
+  </div>;
+}
+
+// ─── DashboardView — the complete dashboard shell ─────────────────────────────
+function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,dashPage,setDashPage,dashDetailId,setDashDetailId}){
+  const nav=(page,id)=>{setDashPage(page);if(id!==undefined)setDashDetailId(id);};
+  const goBack=(page)=>setDashPage(page);
+
+  const renderPage=()=>{
+    switch(dashPage){
+      case "home":          return <DHome workers={workers} allSites={allSites} clients={clients} invoices={invoices} scopeData={scopeData} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+      case "workers":       return <DWorkers workers={workers} allSites={allSites} clients={clients} activeDays={activeDays} siteHours={siteHours} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
+      case "worker_detail": return <DWorkerDetail workers={workers} allSites={allSites} clients={clients} activeDays={activeDays} siteHours={siteHours} workerId={dashDetailId} setPage={setDashPage} setModal={setModal}/>;
+      case "sites":         return <DSites allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
+      case "site_detail":   return <DSiteDetail allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} siteId={dashDetailId} setPage={setDashPage} setDetailId={setDashDetailId} setModal={setModal}/>;
+      case "clients":       return <DClients clients={clients} allSites={allSites} invoices={invoices} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
+      case "invoices":      return <DInvoices invoices={invoices} allSites={allSites} clients={clients} setModal={setModal}/>;
+      case "certs":         return <DCerts workers={workers} setPage={nav} setDetailId={setDashDetailId}/>;
+      case "schedule":      return <DComingSoon icon="📋" title="Labour Schedule" sub="Switch to Schedule view to manage the weekly labour schedule"/>;
+      case "timesheets":    return <DComingSoon icon="⏱" title="Timesheets" sub="Timesheet management coming soon"/>;
+      case "payslips":      return <DComingSoon icon="💷" title="Payslips" sub="Switch to Schedule → Payroll tab to generate payslips"/>;
+      case "payapps":       return <DComingSoon icon="📐" title="Payment Applications" sub="Use the Budget tab in Schedule view for payment applications"/>;
+      default:              return <DHome workers={workers} allSites={allSites} clients={clients} invoices={invoices} scopeData={scopeData} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+    }
+  };
+
+  return (
+    <div style={{display:"flex",minHeight:"calc(100vh - 60px)",background:"#080d14"}}>
+      <DashSidebar page={dashPage} setPage={p=>{setDashPage(p);setDashDetailId(null);}} workers={workers} allSites={allSites} clients={clients} invoices={invoices} setModal={setModal}/>
+      <div style={{flex:1,overflowY:"auto",minHeight:"calc(100vh - 60px)"}}>
+        {renderPage()}
+      </div>
+    </div>
+  );
+}
+
+
 // ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App(){
   const [workers,setWorkers]=useState([]);
@@ -1876,6 +2395,10 @@ export default function App(){
   const saveTimer=useRef(null);
   const [scopeData,setScopeData]=useState({});
   const [invoices,setInvoices]=useState([]);
+  // ── View mode toggle: "schedule" = original app, "dashboard" = project dashboard
+  const [appMode,setAppMode]=useState("schedule"); // "schedule" | "dashboard"
+  const [dashPage,setDashPage]=useState("home");
+  const [dashDetailId,setDashDetailId]=useState(null);
 
   useEffect(()=>{
     async function loadAll(){
@@ -1979,7 +2502,14 @@ export default function App(){
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:36,height:36,background:"linear-gradient(135deg,#3b82f6,#6366f1)",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>🏗</div>
           <div>
-            <div style={{fontSize:17,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.02em"}}>Labour Schedule</div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:17,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.02em"}}>Labour Schedule</div>
+              {/* ── View mode toggle ── */}
+              <div style={{display:"flex",background:"#0d1117",borderRadius:7,padding:2,border:"1px solid #2d3555"}}>
+                <button onClick={()=>setAppMode("schedule")} style={{padding:"4px 10px",background:appMode==="schedule"?"#1e3a5f":"transparent",border:appMode==="schedule"?"1px solid #3b82f6":"1px solid transparent",borderRadius:5,color:appMode==="schedule"?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:appMode==="schedule"?700:400,transition:"all 0.15s"}}>📋 Schedule</button>
+                <button onClick={()=>setAppMode("dashboard")} style={{padding:"4px 10px",background:appMode==="dashboard"?"#1e3a5f":"transparent",border:appMode==="dashboard"?"1px solid #3b82f6":"1px solid transparent",borderRadius:5,color:appMode==="dashboard"?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:appMode==="dashboard"?700:400,transition:"all 0.15s"}}>🗂 Dashboard</button>
+              </div>
+            </div>
             <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
               <button onClick={()=>setWeekLabel(addWeeks(weekLabel,-1))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:5,color:"#94a3b8",cursor:"pointer",fontSize:13,padding:"1px 7px",fontWeight:700,lineHeight:1.4}}>‹</button>
               <span style={{fontSize:10,color:"#64748b"}}>WC:</span>
@@ -2010,6 +2540,18 @@ export default function App(){
       </div>
     </div>
 
+    {/* ── CONDITIONAL: Dashboard or Schedule view ── */}
+    {appMode==="dashboard"&&<DashboardView
+      workers={workers} allSites={allSites} clients={clients}
+      weekLabel={weekLabel} activeDays={activeDays} siteHours={siteHours}
+      scopeData={scopeData} invoices={invoices}
+      saveWorker={saveWorker} delWorker={delWorker}
+      setAllSites={setAllSites} setClients={setClients}
+      setModal={setModal}
+      dashPage={dashPage} setDashPage={setDashPage}
+      dashDetailId={dashDetailId} setDashDetailId={setDashDetailId}
+    />}
+    {appMode==="schedule"&&<>
     {/* Tabs + Filters */}
     <div style={{padding:"9px 18px",background:"#111827",borderBottom:"1px solid #1e2535",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
       <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,flexWrap:"wrap"}}>
@@ -2140,7 +2682,8 @@ export default function App(){
       </div>
     </div>
 
-    {/* Modals */}
+    </>}
+    {/* Modals — always rendered regardless of mode */}
     {modal?.type==="worker"&&<WorkerModal worker={modal.worker} onSave={saveWorker} onClose={()=>setModal(null)} allSiteNames={allSiteNames} allSites={allSites} activeDays={activeDays}/>}
     {modal?.type==="sites"&&<SitesModal allSites={allSites} clients={clients} onSave={s=>{setAllSites(s);}} onClose={()=>setModal(null)} onOpenDetail={site=>setModal({type:"siteDetail",site})}/>}
     {modal?.type==="clients"&&<ClientsModal clients={clients} onSave={l=>{setClients(l);setModal(null);}} onClose={()=>setModal(null)}/>}
