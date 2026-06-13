@@ -4209,7 +4209,9 @@ items.map(it=>{const cl=calcClaimed(it);const pr=calcPrev(it);const th=cl-pr;con
     ws2["!cols"]=[{wch:22},{wch:20}];
     XLSX.utils.book_append_sheet(wb,ws2,"Summary");
 
-    XLSX.writeFile(wb,pa.number.replace(/[/\]/g,"-")+"_"+(site?.name||"site").replace(/\s+/g,"_")+".xlsx");
+    const safeNum=(pa.number||"PA").split("/").join("-").split("\\").join("-");
+    const safeSite=(site?.name||"site").split(" ").join("_");
+    XLSX.writeFile(wb,safeNum+"_"+safeSite+".xlsx");
   }
 
 
