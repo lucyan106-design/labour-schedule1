@@ -98,8 +98,12 @@ function mkW(o={}){
   return {id:String(Date.now()+Math.random()),name:"",company:"",position:"",scope:"",
     days:emptyDays(),hoursPerDay:emptyHrs(),overtimeHours:emptyOT(),
     agreedRate:null,actualRate:null,taxRate:0,overtimeMultiplier:1.5,customOTRate:null,
-    contact:"",email:"",dob:"",address:"",nino:"",utr:"",
+    contact:"",email:"",dob:"",address:"",nationality:"",
+    nino:"",utr:"",
     bankName:"",bankAccount:"",bankSort:"",nextOfKin:"",nextOfKinPhone:"",
+    shareCode:"",shareCodeDate:"",shareCodeExpiry:"",
+    workerFiles:[],
+    holidayRequests:[],
     comments:"",certs:emptyCerts(),...o};
 }
 function calcPay(w,days,siteHours){
@@ -613,6 +617,42 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
       <Sec title="Next of Kin">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
           <FI label="Name" value={f.nextOfKin} onChange={v=>set("nextOfKin",v)}/><FI label="Phone" value={f.nextOfKinPhone} onChange={v=>set("nextOfKinPhone",v)}/>
+        </div>
+      </Sec>
+      <Sec title="Personal Details" color="#60a5fa">
+        <FI label="Nationality" value={f.nationality||""} onChange={v=>set("nationality",v)} placeholder="e.g. Romanian, British…"/>
+      </Sec>
+      <Sec title="Right to Work in UK" color="#34d399">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
+          <FI label="Share Code" value={f.shareCode||""} onChange={v=>set("shareCode",v)} placeholder="e.g. W4P-B7C-XY3"/>
+          <FI label="Date Added / Checked" value={f.shareCodeDate||""} onChange={v=>set("shareCodeDate",v)} type="date"/>
+          <FI label="Expiry Date" value={f.shareCodeExpiry||""} onChange={v=>set("shareCodeExpiry",v)} type="date"/>
+        </div>
+        <div style={{marginTop:10}}>
+          <label style={LBL}>Attach Documents (ID, RTW proof, Driving Licence, Signed Agreement)</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
+            {(f.workerFiles||[]).map((wf,i)=>{
+              const isImg=wf.type&&wf.type.startsWith("image/");
+              const icon=isImg?"🖼":wf.type==="application/pdf"?"📄":wf.type&&wf.type.includes("word")?"📝":"📎";
+              return <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:"#1a2035",borderRadius:7,border:"1px solid #2d3555",maxWidth:200}}>
+                <span>{icon}</span>
+                <a href={wf.url} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#60a5fa",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:120,textDecoration:"none"}} title={wf.name}>{wf.name}</a>
+                <button onClick={()=>set("workerFiles",(f.workerFiles||[]).filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:13,lineHeight:1,padding:0}}>×</button>
+              </div>;
+            })}
+          </div>
+          <label style={{display:"inline-flex",alignItems:"center",gap:7,padding:"7px 14px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:7,cursor:"pointer",color:"#60a5fa",fontSize:11,fontWeight:700}}>
+            📎 Attach File
+            <input type="file" multiple accept="image/*,.pdf,.doc,.docx" style={{display:"none"}} onChange={e=>{
+              const files=Array.from(e.target.files||[]);
+              files.forEach(file=>{
+                const reader=new FileReader();
+                reader.onload=ev=>set("workerFiles",[...(f.workerFiles||[]),{name:file.name,type:file.type,size:file.size,url:ev.target.result,addedAt:new Date().toISOString()}]);
+                reader.readAsDataURL(file);
+              });
+              e.target.value="";
+            }}/>
+          </label>
         </div>
       </Sec>
     </div>}
@@ -2727,75 +2767,350 @@ function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDeta
 }
 
 // ── Dashboard Worker Detail ───────────────────────────────────────────────────
-function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,setPage,setModal}){
+function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,timesheetRecords,payslipRecords,setTimesheetRecords,setPayslipRecords,setPage,setModal}){
   const w=workers.find(x=>x.id===workerId);
-  if(!w) return <div style={DS.body}><div style={{color:"#374151"}}>Worker not found.</div></div>;
+  if(!w) return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Worker not found.</div></div>;
   const {gross,net,stdH,otH}=calcPay(w,activeDays,siteHours);
   const heldCerts=Object.entries(w.certs||{}).filter(([,v])=>v.held).map(([k,v])=>({...v,key:k,label:CERTS.find(c=>c.key===k)?.label||k}));
+  const [tab,setTab]=useState("profile");
+
+  // Worker's timesheets and payslips
+  const wTimesheets=(timesheetRecords||[]).filter(t=>t.workerId===w.id).sort((a,b)=>new Date(b.weekLabel)-new Date(a.weekLabel));
+  const wPayslips=(payslipRecords||[]).filter(p=>p.workerId===w.id).sort((a,b)=>new Date(b.weekLabel)-new Date(a.weekLabel));
+
+  // Holiday requests
+  const [holidays,setHolidays]=useState(w.holidayRequests||[]);
+  const [newHolFrom,setNewHolFrom]=useState("");
+  const [newHolTo,setNewHolTo]=useState("");
+  const [newHolNote,setNewHolNote]=useState("");
+  function requestHoliday(){
+    if(!newHolFrom) return;
+    const req={id:"hol_"+Date.now(),from:newHolFrom,to:newHolTo||newHolFrom,note:newHolNote,status:"pending",requestedAt:new Date().toISOString()};
+    setHolidays(h=>[...h,req]);
+    // Save back to worker (handled by parent via setModal — here we just show it locally)
+    setNewHolFrom("");setNewHolTo("");setNewHolNote("");
+  }
+  function approveHoliday(id){setHolidays(h=>h.map(r=>r.id===id?{...r,status:"approved"}:r));}
+  function declineHoliday(id){setHolidays(h=>h.map(r=>r.id===id?{...r,status:"declined"}:r));}
+  function deleteHoliday(id){setHolidays(h=>h.filter(r=>r.id!==id));}
+
+  // RTW expiry check
+  const rtwExp=w.shareCodeExpiry?new Date(w.shareCodeExpiry):null;
+  const rtwDays=rtwExp?(rtwExp-new Date())/86400000:null;
+  const rtwStatus=!w.shareCode?"missing":!rtwExp?"valid":rtwDays<0?"expired":rtwDays<30?"expiring":"valid";
+  const rtwColor={missing:"#374151",valid:"#34d399",expiring:"#fbbf24",expired:"#f87171"}[rtwStatus];
+
+  const initials=(w.name||"?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase();
+  const wColor="#3b82f6";
 
   return <div>
-    <DPageHdr title={w.name} sub={`${w.position} · ${w.company}`} back="Workers" onBack={()=>setPage("workers")}
-      actions={<>
+    <DPageHdr title={<span style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{width:36,height:36,borderRadius:9,background:wColor+"22",border:"1px solid "+wColor+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:wColor,flexShrink:0}}>{initials}</div>
+      <span>{w.name}</span>
+    </span>} sub={w.position+" · "+w.company} back="Workers" onBack={()=>setPage("workers")}
+      actions={<div style={{display:"flex",gap:6}}>
         <button onClick={()=>setModal({type:"worker",worker:w})} style={{padding:"6px 12px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:600}}>✏️ Edit</button>
         <button onClick={()=>exportWorkerProfile(w,allSites,formatWeekLabel(new Date()))} style={{padding:"6px 12px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,color:"#94a3b8",cursor:"pointer",fontSize:12}}>📋 Profile PDF</button>
         <button onClick={()=>exportPayslip(w,activeDays,formatWeekLabel(new Date()),siteHours)} style={{padding:"6px 12px",background:"#0d2218",border:"1px solid #10b981",borderRadius:6,color:"#34d399",cursor:"pointer",fontSize:12,fontWeight:600}}>💷 Payslip</button>
-      </>}/>
+      </div>}/>
+
     <div style={DS.body}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
-        <DStat label="Hourly Rate" value={w.agreedRate?`£${w.agreedRate}/hr`:"Not set"} color="#34d399"/>
+      {/* Top stat cards */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}}>
+        <DStat label="Hourly Rate" value={w.agreedRate?"£"+w.agreedRate+"/hr":"Not set"} color="#34d399"/>
         <DStat label="Tax Rate" value={Math.round((w.taxRate||0)*100)+"%"} color={w.taxRate===0.30?"#f87171":w.taxRate===0.20?"#fbbf24":"#34d399"}/>
-        <DStat label="This Week Gross" value={gross>0?`£${gross.toFixed(0)}`:"£0"} color="#60a5fa"/>
-        <DStat label="This Week Net" value={net>0?`£${net.toFixed(0)}`:"£0"} color="#a78bfa"/>
+        <DStat label="This Week Gross" value={gross>0?"£"+gross.toFixed(0):"£0"} color="#60a5fa"/>
+        <DStat label="This Week Net" value={net>0?"£"+net.toFixed(0):"£0"} color="#a78bfa"/>
+        <DStat label="Right to Work" value={rtwStatus.toUpperCase()} color={rtwColor} sub={rtwDays!==null&&rtwDays<30?rtwDays<0?"EXPIRED":Math.ceil(rtwDays)+"d remaining":""}/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
-        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:10,padding:16}}>
-          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Contact Details</div>
-          {[["Name",w.name],["Position",w.position],["Company",w.company],["Phone",w.contact||"—"],["Email",w.email||"—"]].map(([l,v])=>(
-            <div key={l} style={{display:"flex",gap:8,marginBottom:8}}>
-              <span style={{fontSize:10,color:"#64748b",fontWeight:600,minWidth:75,textTransform:"uppercase",flexShrink:0}}>{l}</span>
-              <span style={{fontSize:12,color:"#e2e8f0"}}>{v}</span>
+
+      {/* Tab bar */}
+      <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:20,width:"fit-content",flexWrap:"wrap"}}>
+        {[["profile","👤 Profile"],["rtw","🛡 Right to Work"],["schedule","📅 Schedule"],["timesheets","⏱ Timesheets ("+wTimesheets.length+")"],["payslips","💷 Payslips ("+wPayslips.length+")"],["certs","🏅 Certs ("+heldCerts.length+")"],["holidays","🏖 Holidays ("+holidays.length+")"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setTab(v)} style={{padding:"6px 12px",background:tab===v?"#1e3a5f":"transparent",border:tab===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:tab===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:tab===v?700:400,whiteSpace:"nowrap"}}>{l}</button>
+        ))}
+      </div>
+
+      {/* Profile tab */}
+      {tab==="profile"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        {/* Personal details */}
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+          <div style={{fontSize:11,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Personal Details</div>
+          {[
+            ["Full Name",w.name],["Position",w.position],["Company",w.company],
+            ["Nationality",w.nationality||"—"],["Date of Birth",w.dob?fmtDate(w.dob):"—"],
+            ["Contact",w.contact||"—"],["Email",w.email||"—"],
+            ["Address",w.address||"—"],
+            ["Next of Kin",w.nextOfKin?(w.nextOfKin+(w.nextOfKinPhone?" · "+w.nextOfKinPhone:"")):"—"],
+          ].map(([l,v])=>(
+            <div key={l} style={{display:"flex",gap:10,padding:"7px 0",borderBottom:"1px solid #1e2535"}}>
+              <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:90,textTransform:"uppercase",flexShrink:0,lineHeight:1.6}}>{l}</span>
+              <span style={{fontSize:12,color:"#e2e8f0",wordBreak:"break-word"}}>{v}</span>
             </div>
           ))}
         </div>
-        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:10,padding:16}}>
-          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>This Week Allocation</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:4,marginBottom:10}}>
-            {(w.days?BASE_DAYS:[]).map(d=>{const site=w.days[d];const s=site&&allSites.find(x=>site.includes(x.name));const c=s?.color||"#374151";return <div key={d} style={{textAlign:"center"}}>
-              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{d}</div>
-              <div style={{height:3,borderRadius:2,background:c,marginBottom:3}}/>
-              <div style={{fontSize:8,color:c,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{site?site.split("-")[0].trim():"—"}</div>
-            </div>;})}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:10}}>
-            {[["Std Hrs",stdH+"h","#60a5fa"],["OT Hrs",otH>0?otH+"h":"—","#fbbf24"],["Gross",`£${gross.toFixed(0)}`,"#34d399"]].map(([l,v,c])=>(
-              <div key={l} style={{background:"#0f1421",borderRadius:7,padding:8,textAlign:"center"}}>
-                <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div>
-                <div style={{fontSize:14,fontWeight:800,color:c,marginTop:2}}>{v}</div>
+
+        {/* Work & Pay details */}
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+            <div style={{fontSize:11,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Pay Details</div>
+            {[
+              ["Agreed Rate",w.agreedRate?"£"+w.agreedRate+"/hr":"Not set"],
+              ["OT Rate",w.customOTRate?"£"+w.customOTRate+"/hr":"×"+(w.overtimeMultiplier||1.5)+" std"],
+              ["Tax Rate",Math.round((w.taxRate||0)*100)+"%"],
+              ["NINO",w.nino||"—"],["UTR",w.utr||"—"],
+              ["Bank",w.bankName?(w.bankName+" · "+w.bankAccount+" · "+w.bankSort):"—"],
+            ].map(([l,v])=>(
+              <div key={l} style={{display:"flex",gap:10,padding:"5px 0",borderBottom:"1px solid #1e2535"}}>
+                <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:80,textTransform:"uppercase",flexShrink:0}}>{l}</span>
+                <span style={{fontSize:12,color:"#e2e8f0"}}>{v}</span>
               </div>
             ))}
           </div>
+
+          {/* This week allocation */}
+          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+            <div style={{fontSize:11,color:"#34d399",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>This Week Allocation</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:12}}>
+              {BASE_DAYS.map(d=>{const site=w.days?.[d];const s=site&&allSites.find(x=>site.includes(x.name));const c=s?.color||"#374151";return <div key={d} style={{textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{d}</div>
+                <div style={{height:3,borderRadius:2,background:c,marginBottom:4}}/>
+                <div style={{fontSize:9,color:c,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",padding:"0 2px"}} title={site}>{site?site.split("-")[0].trim():"—"}</div>
+              </div>;})}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7}}>
+              {[["Std Hrs",stdH+"h","#60a5fa"],["OT Hrs",otH>0?otH+"h":"—","#fbbf24"],["Gross","£"+gross.toFixed(0),"#34d399"]].map(([l,v,c])=>(
+                <div key={l} style={{background:"#0f1421",borderRadius:7,padding:9,textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div>
+                  <div style={{fontSize:15,fontWeight:800,color:c,marginTop:2}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
-      <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Certificates ({heldCerts.length} held)</div>
-      {heldCerts.length===0&&<div style={{color:"#374151",fontSize:12,textAlign:"center",padding:"20px 0",border:"1px dashed #1e2535",borderRadius:8}}>No certificates on file. Edit worker to add certificates.</div>}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-        {heldCerts.map(c=>{
-          const exp=c.expiry?new Date(c.expiry):null;const now=new Date();
-          const days=exp?(exp-now)/86400000:null;
-          const st=!exp?"valid":days<0?"expired":days<30?"expiring":"valid";
-          const stColor={valid:"#34d399",expiring:"#fbbf24",expired:"#f87171"}[st];
-          return <div key={c.key} style={{background:"#0f1421",borderRadius:8,padding:"10px 12px",border:`1px solid ${stColor}44`}}>
-            <div style={{fontWeight:600,color:"#e2e8f0",fontSize:12,marginBottom:4}}>{c.label}</div>
-            {c.regNo&&<div style={{fontSize:11,color:"#60a5fa",marginBottom:2}}>Reg: {c.regNo}</div>}
-            {c.expiry&&<div style={{fontSize:10,color:"#64748b",marginBottom:3}}>Exp: {c.expiry} {days!==null&&days<30&&<span style={{color:stColor}}>({days<0?"EXPIRED":`${Math.ceil(days)}d`})</span>}</div>}
-            {c.fileUrl&&<a href={c.fileUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#60a5fa"}}>📎 View</a>}
-            <div style={{fontSize:10,color:stColor,fontWeight:700,textTransform:"uppercase",marginTop:4}}>{st}</div>
-          </div>;
-        })}
-      </div>
+      </div>}
+
+      {/* Right to Work tab */}
+      {tab==="rtw"&&<div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+          <div style={{background:"#111827",border:"1px solid "+rtwColor+"44",borderRadius:11,padding:16,borderLeft:"4px solid "+rtwColor}}>
+            <div style={{fontSize:11,color:rtwColor,fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Right to Work Status: {rtwStatus.toUpperCase()}</div>
+            {[
+              ["Share Code",w.shareCode||"—"],
+              ["Date Added / Checked",w.shareCodeDate?fmtDate(w.shareCodeDate):"—"],
+              ["Expiry Date",w.shareCodeExpiry?fmtDate(w.shareCodeExpiry):"—"],
+              ["Nationality",w.nationality||"—"],
+              ["NINO",w.nino||"—"],
+            ].map(([l,v])=>(
+              <div key={l} style={{display:"flex",gap:10,padding:"7px 0",borderBottom:"1px solid #1e2535"}}>
+                <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:110,textTransform:"uppercase",flexShrink:0}}>{l}</span>
+                <span style={{fontSize:12,color:l==="Share Code"&&w.shareCode?"#34d399":"#e2e8f0",fontWeight:l==="Share Code"?700:400}}>{v}</span>
+              </div>
+            ))}
+            {rtwDays!==null&&rtwDays<30&&<div style={{marginTop:10,padding:"9px 12px",background:rtwColor+"18",borderRadius:8,border:"1px solid "+rtwColor+"44",fontSize:11,color:rtwColor,fontWeight:700}}>
+              {rtwDays<0?"⚠️ RIGHT TO WORK EXPIRED — must not work until renewed":"⚠️ Expiring in "+Math.ceil(rtwDays)+" days — renew urgently"}
+            </div>}
+          </div>
+
+          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>📎 Documents Attached ({(w.workerFiles||[]).length})</div>
+            {(w.workerFiles||[]).length===0?<div style={{color:"#374151",fontSize:12,textAlign:"center",padding:"20px 0",border:"1px dashed #1e2535",borderRadius:8}}>No documents. Edit worker to attach ID, RTW proof, licence, agreement.</div>:
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {(w.workerFiles||[]).map((wf,i)=>{
+                const isImg=wf.type&&wf.type.startsWith("image/");
+                const icon=isImg?"🖼":wf.type==="application/pdf"?"📄":wf.type&&wf.type.includes("word")?"📝":"📎";
+                return <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#0f1421",borderRadius:8,border:"1px solid #2d3555"}}>
+                  <span style={{fontSize:18,flexShrink:0}}>{icon}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:600,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{wf.name}</div>
+                    {wf.addedAt&&<div style={{fontSize:10,color:"#374151"}}>Added: {fmtDate(wf.addedAt)}</div>}
+                  </div>
+                  {isImg?<a href={wf.url} target="_blank" rel="noreferrer" style={{padding:"3px 9px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",fontSize:10,textDecoration:"none",fontWeight:700}}>👁 View</a>:
+                    <a href={wf.url} download={wf.name} style={{padding:"3px 9px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",fontSize:10,textDecoration:"none",fontWeight:700}}>⬇ Download</a>}
+                </div>;
+              })}
+            </div>}
+            <div style={{marginTop:10,fontSize:10,color:"#374151"}}>To add documents, click ✏️ Edit above → Right to Work section</div>
+          </div>
+        </div>
+      </div>}
+
+      {/* Schedule tab */}
+      {tab==="schedule"&&<div>
+        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>
+              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=><th key={d} style={{...DS.th,textAlign:"center",color:d==="Sat"||d==="Sun"?"#fbbf24":"#64748b"}}>{d}</th>)}
+            </tr></thead>
+            <tbody><tr>
+              {ALL_DAYS.map(d=>{const site=w.days?.[d];const c=getSiteColor(site,allSites);return <td key={d} style={{...DS.td,textAlign:"center",padding:"10px 6px",background:d==="Sat"||d==="Sun"?"rgba(251,191,36,0.03)":undefined}}>
+                {site?<span style={{display:"inline-block",padding:"3px 8px",borderRadius:5,fontSize:11,fontWeight:700,color:"#fff",background:c,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={site}>{site}</span>:<span style={{color:"#374151",fontSize:11}}>—</span>}
+              </td>;})}
+            </tr></tbody>
+          </table>
+        </div>
+      </div>}
+
+      {/* Timesheets tab */}
+      {tab==="timesheets"&&<div>
+        {wTimesheets.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
+          <div style={{fontSize:28,marginBottom:8}}>⏱</div>No timesheets yet. Timesheets are auto-generated each week.
+        </div>:
+        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>
+              <th style={DS.th}>Week Commencing</th><th style={DS.th}>Std h</th><th style={DS.th}>OT h</th>
+              <th style={DS.th}>Rate</th><th style={DS.th}>Gross</th><th style={DS.th}>Tax</th><th style={DS.th}>Net</th>
+              <th style={DS.th}>Status</th><th style={DS.th}>Download</th>
+            </tr></thead>
+            <tbody>{wTimesheets.map((t,i)=>{
+              const ST={draft:{c:"#64748b",bg:"#1e2535"},submitted:{c:"#fbbf24",bg:"#1a1500"},approved:{c:"#34d399",bg:"#0d2218"},payslip_generated:{c:"#a78bfa",bg:"#1a0d2e"}};
+              const st=ST[t.status]||ST.draft;
+              return <tr key={t.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>WC {t.weekLabel}</td>
+                <td style={{...DS.td,color:"#60a5fa",fontWeight:600,textAlign:"center"}}>{t.stdHours}h</td>
+                <td style={{...DS.td,color:"#fbbf24",textAlign:"center"}}>{t.otHours>0?t.otHours+"h":"—"}</td>
+                <td style={{...DS.td,color:"#34d399"}}>{t.rate?"£"+t.rate+"/hr":"—"}</td>
+                <td style={{...DS.td,color:"#34d399",fontWeight:700}}>£{(t.gross||0).toFixed(2)}</td>
+                <td style={{...DS.td,color:"#f87171"}}>£{(t.tax||0).toFixed(2)}</td>
+                <td style={{...DS.td,color:"#a78bfa",fontWeight:800}}>£{(t.net||0).toFixed(2)}</td>
+                <td style={DS.td}><span style={{padding:"2px 8px",borderRadius:4,fontSize:10,fontWeight:700,color:st.c,background:st.bg,textTransform:"capitalize"}}>{t.status}</span></td>
+                <td style={DS.td}><button onClick={()=>exportPayslip({...w,agreedRate:t.rate,taxRate:t.taxRate,days:t.days||{},overtimeHours:{},hoursPerDay:{}},activeDays,t.weekLabel,siteHours||{})}
+                  style={{padding:"3px 9px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>💷 PDF</button></td>
+              </tr>;
+            })}</tbody>
+            <tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
+              <td style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>ALL TIME TOTALS</td>
+              <td style={{...DS.td,color:"#60a5fa",fontWeight:700,textAlign:"center"}}>{wTimesheets.reduce((a,t)=>a+t.stdHours,0)}h</td>
+              <td style={{...DS.td,color:"#fbbf24",textAlign:"center"}}>{wTimesheets.reduce((a,t)=>a+t.otHours,0)>0?wTimesheets.reduce((a,t)=>a+t.otHours,0)+"h":"—"}</td>
+              <td style={DS.td}/>
+              <td style={{...DS.td,color:"#34d399",fontWeight:800}}>£{wTimesheets.reduce((a,t)=>a+(t.gross||0),0).toFixed(2)}</td>
+              <td style={{...DS.td,color:"#f87171",fontWeight:700}}>£{wTimesheets.reduce((a,t)=>a+(t.tax||0),0).toFixed(2)}</td>
+              <td style={{...DS.td,color:"#a78bfa",fontWeight:900,fontSize:13}}>£{wTimesheets.reduce((a,t)=>a+(t.net||0),0).toFixed(2)}</td>
+              <td colSpan={2} style={DS.td}/>
+            </tr></tfoot>
+          </table>
+        </div>}
+      </div>}
+
+      {/* Payslips tab */}
+      {tab==="payslips"&&<div>
+        {wPayslips.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
+          <div style={{fontSize:28,marginBottom:8}}>💷</div>No payslips yet. Created automatically after timesheets are approved.
+        </div>:
+        <div>
+          {/* Payslip cards */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10,marginBottom:16}}>
+            {wPayslips.map(p=>{
+              const issued=p.status==="issued";
+              return <div key={p.id} style={{background:"linear-gradient(145deg,#141924,#1a2035)",border:"1px solid "+(issued?"#065f4666":"#1e2535"),borderRadius:11,padding:14,position:"relative",overflow:"hidden"}}>
+                {issued&&<div style={{position:"absolute",top:8,right:-18,background:"#059669",color:"#fff",fontSize:8,fontWeight:800,padding:"2px 22px",transform:"rotate(30deg)"}}>ISSUED</div>}
+                <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",marginBottom:8}}>WC {p.weekLabel}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5,marginBottom:10}}>
+                  {[["Gross","£"+(p.gross||0).toFixed(0),"#34d399"],["Tax","-£"+(p.tax||0).toFixed(0),"#f87171"],["Net","£"+(p.net||0).toFixed(0),"#a78bfa"]].map(([l,v,c])=>(
+                    <div key={l} style={{textAlign:"center",background:"#0f1421",borderRadius:6,padding:"5px 4px"}}>
+                      <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div>
+                      <div style={{fontSize:12,fontWeight:800,color:c,marginTop:1}}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{fontSize:10,color:"#64748b",marginBottom:8}}>{p.stdHours}h std{p.otHours>0?" · "+p.otHours+"h OT":""} · £{p.rate||0}/hr</div>
+                <button onClick={()=>exportPayslip({...w,agreedRate:p.rate,taxRate:p.taxRate,days:p.days||{},overtimeHours:{},hoursPerDay:{}},activeDays,p.weekLabel,siteHours||{})}
+                  style={{width:"100%",padding:"6px 0",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:700}}>💷 Download Payslip PDF</button>
+                {p.issuedAt&&<div style={{fontSize:8,color:"#374151",textAlign:"center",marginTop:5}}>Issued {fmtDate(p.issuedAt)}</div>}
+              </div>;
+            })}
+          </div>
+          {/* All-time totals */}
+          <div style={{background:"#0d2218",border:"1px solid #065f46",borderRadius:10,padding:14,display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+            {[["Total Gross","£"+wPayslips.reduce((a,p)=>a+(p.gross||0),0).toFixed(2),"#34d399"],["Total Tax","£"+wPayslips.reduce((a,p)=>a+(p.tax||0),0).toFixed(2),"#f87171"],["Total Net Pay","£"+wPayslips.reduce((a,p)=>a+(p.net||0),0).toFixed(2),"#a78bfa"]].map(([l,v,c])=>(
+              <div key={l} style={{textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",fontWeight:700,marginBottom:4}}>{l}</div>
+                <div style={{fontSize:18,fontWeight:900,color:c}}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>}
+      </div>}
+
+      {/* Certificates tab */}
+      {tab==="certs"&&<div>
+        {heldCerts.length===0?<div style={{color:"#374151",fontSize:12,textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:8}}>No certificates. Edit worker to add.</div>:
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+          {heldCerts.map(c=>{
+            const exp=c.expiry?new Date(c.expiry):null;const now=new Date();
+            const days=exp?(exp-now)/86400000:null;
+            const st=!exp?"valid":days<0?"expired":days<30?"expiring":"valid";
+            const stColor={valid:"#34d399",expiring:"#fbbf24",expired:"#f87171"}[st];
+            return <div key={c.key} style={{background:"#0f1421",borderRadius:9,padding:"12px 14px",border:"1px solid "+stColor+"44",borderLeft:"3px solid "+stColor}}>
+              <div style={{fontWeight:700,color:"#f1f5f9",fontSize:12,marginBottom:6}}>{c.label}</div>
+              {c.regNo&&<div style={{fontSize:11,color:"#60a5fa",marginBottom:3}}>🪪 Reg: {c.regNo}</div>}
+              {c.expiry&&<div style={{fontSize:10,color:"#64748b",marginBottom:4}}>📅 Expires: {fmtDate(c.expiry)} {days!==null&&days<30&&<span style={{color:stColor,fontWeight:700}}>({days<0?"EXPIRED":Math.ceil(days)+"d"})</span>}</div>}
+              {c.fileUrl&&<a href={c.fileUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#60a5fa",display:"block",marginBottom:4}}>📎 View Certificate</a>}
+              <div style={{fontSize:10,color:stColor,fontWeight:800,textTransform:"uppercase",marginTop:6,padding:"2px 7px",background:stColor+"18",borderRadius:4,display:"inline-block"}}>{st}</div>
+            </div>;
+          })}
+        </div>}
+      </div>}
+
+      {/* Holidays tab */}
+      {tab==="holidays"&&<div>
+        {/* Request form */}
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16,marginBottom:16}}>
+          <div style={{fontSize:11,color:"#84cc16",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>🏖 Request Holiday</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,alignItems:"flex-end"}}>
+            <div><label style={LBL}>From Date</label>
+              <input type="date" value={newHolFrom} onChange={e=>setNewHolFrom(e.target.value)} style={{...INP,padding:"6px 9px"}}/></div>
+            <div><label style={LBL}>To Date</label>
+              <input type="date" value={newHolTo} onChange={e=>setNewHolTo(e.target.value)} style={{...INP,padding:"6px 9px"}}/></div>
+            <div><label style={LBL}>Note (optional)</label>
+              <input value={newHolNote} onChange={e=>setNewHolNote(e.target.value)} placeholder="e.g. Annual leave" style={{...INP,padding:"6px 9px"}}/></div>
+            <button onClick={requestHoliday} disabled={!newHolFrom}
+              style={{padding:"8px 16px",background:"linear-gradient(135deg,#65a30d,#84cc16)",border:"none",borderRadius:7,color:"#fff",cursor:newHolFrom?"pointer":"default",fontSize:12,fontWeight:700,opacity:newHolFrom?1:0.4}}>
+              + Request
+            </button>
+          </div>
+        </div>
+
+        {/* Holiday list */}
+        {holidays.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
+          <div style={{fontSize:28,marginBottom:8}}>🏖</div>No holiday requests yet.
+        </div>:
+        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>
+              <th style={DS.th}>From</th><th style={DS.th}>To</th><th style={DS.th}>Days</th>
+              <th style={DS.th}>Note</th><th style={DS.th}>Requested</th><th style={DS.th}>Status</th><th style={DS.th}>Actions</th>
+            </tr></thead>
+            <tbody>{holidays.map((h,i)=>{
+              const from=new Date(h.from),to=new Date(h.to||h.from);
+              const days=Math.round((to-from)/86400000)+1;
+              const SC={pending:{c:"#fbbf24",bg:"#1a1500"},approved:{c:"#34d399",bg:"#0d2218"},declined:{c:"#f87171",bg:"#2d1515"}};
+              const sc=SC[h.status]||SC.pending;
+              return <tr key={h.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{fmtDate(h.from)}</td>
+                <td style={{...DS.td,color:"#94a3b8"}}>{h.to&&h.to!==h.from?fmtDate(h.to):"—"}</td>
+                <td style={{...DS.td,color:"#84cc16",fontWeight:700,textAlign:"center"}}>{days}d</td>
+                <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>{h.note||"—"}</td>
+                <td style={{...DS.td,color:"#64748b",fontSize:11}}>{fmtDate(h.requestedAt)}</td>
+                <td style={DS.td}><span style={{padding:"2px 9px",borderRadius:5,fontSize:10,fontWeight:700,color:sc.c,background:sc.bg,textTransform:"capitalize"}}>{h.status}</span></td>
+                <td style={DS.td}><div style={{display:"flex",gap:4}}>
+                  {h.status==="pending"&&<button onClick={()=>approveHoliday(h.id)} style={{padding:"3px 8px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>✓ Approve</button>}
+                  {h.status==="pending"&&<button onClick={()=>declineHoliday(h.id)} style={{padding:"3px 8px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:10,fontWeight:700}}>✗ Decline</button>}
+                  <button onClick={()=>deleteHoliday(h.id)} style={{padding:"3px 6px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:4,color:"#64748b",cursor:"pointer",fontSize:10}}>🗑</button>
+                </div></td>
+              </tr>;
+            })}</tbody>
+          </table>
+          <div style={{padding:"10px 14px",background:"#0d1117",fontSize:11,color:"#64748b",borderTop:"1px solid #1e2535"}}>
+            {holidays.filter(h=>h.status==="approved").reduce((a,h)=>{const d=Math.round((new Date(h.to||h.from)-new Date(h.from))/86400000)+1;return a+d;},0)} days approved · {holidays.filter(h=>h.status==="pending").length} pending
+          </div>
+        </div>}
+      </div>}
     </div>
   </div>;
 }
+
 
 // ── Dashboard Sites Page ──────────────────────────────────────────────────────
 function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetailId,setModal}){
@@ -4641,7 +4956,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "home":          return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
       // ── Labour & People
       case "workers":       return <DWorkers {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
-      case "worker_detail": return <DWorkerDetail {...SP} workerId={dashDetailId} setPage={setDashPage}/>;
+      case "worker_detail": return <DWorkerDetail {...SP} workerId={dashDetailId} timesheetRecords={timesheetRecords} payslipRecords={payslipRecords} setTimesheetRecords={setTimesheetRecords} setPayslipRecords={setPayslipRecords} setPage={setDashPage}/>;
       // ── Labour Schedule (auto-snapshots each week)
       case "schedule":      return <DScheduleView {...SP}/>;
       case "site_by_site":  return <DSiteBySite {...SP}/>;
