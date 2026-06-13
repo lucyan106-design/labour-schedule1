@@ -19,8 +19,8 @@ const DEFAULT_POSITIONS=[
   "Crane Supervisor","Magic Man","Fire Watcher","Cladding Operative",
   "Architectural Metalworker","Plant Operator","Site Engineer",
 ];
-// POSITIONS is built from defaults + any custom ones stored in app config
-let POSITIONS=[...DEFAULT_POSITIONS];
+// Mutable array — custom trades get pushed here at runtime
+const POSITIONS=DEFAULT_POSITIONS.slice();
 const COMPANIES=["Bright Matalwork","Dodi Metalwork","External"];
 const DEFAULT_HOURS=9;
 const PRESET_COLORS=[
@@ -554,6 +554,8 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
 function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
   const [f,setF]=useState({...worker,days:{...worker.days},hoursPerDay:{...worker.hoursPerDay},overtimeHours:{...worker.overtimeHours},certs:{...worker.certs}});
   const [tab,setTab]=useState("personal");
+  const [allPositions,setAllPositions]=useState([...POSITIONS]);
+  const [showCustomInput,setShowCustomInput]=useState(!POSITIONS.includes(worker.position)&&!!worker.position);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
   const setD=(d,v)=>setF(x=>({...x,days:{...x.days,[d]:v}}));
   const setH=(d,v)=>setF(x=>({...x,hoursPerDay:{...x.hoursPerDay,[d]:Number(v)||0}}));
@@ -562,6 +564,12 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
   const held=CERTS.filter(c=>f.certs?.[c.key]?.held).length;
   const alerts=CERTS.filter(c=>{const s=cSt(c,f);return s==="expired"||s==="expiring";}).length;
   const SC={valid:"#34d399",expiring:"#fbbf24",expired:"#f87171",missing:"#374151"};
+  function saveCustomTrade(){
+    if(!f.position||allPositions.includes(f.position)) return;
+    const updated=[...allPositions,f.position];
+    setAllPositions(updated);
+    POSITIONS.splice(0,POSITIONS.length,...updated);
+  }
   return <Overlay onClose={onClose} wide>
     <MH title={worker.name?`Edit: ${worker.name}`:"Add New Worker"} onClose={onClose}/>
     <TabBar tabs={[["personal","👤 Personal"],["schedule","📅 Schedule"],["pay","💷 Pay & OT"],["certs","🛡 Certs "+(alerts>0?"⚠"+alerts:"("+held+")")]]} active={tab} onChange={setTab}/>
@@ -571,19 +579,22 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
         <div style={{marginBottom:11}}>
           <label style={LBL}>Position / Trade</label>
           <div style={{display:"flex",gap:6}}>
-            <select value={POSITIONS.includes(f.position)?f.position:"__custom"} onChange={e=>{if(e.target.value!=="__custom")set("position",e.target.value);else set("position","");}}
+            <select value={allPositions.includes(f.position)?f.position:"__custom"}
+              onChange={e=>{
+                if(e.target.value==="__custom"){setShowCustomInput(true);set("position","");}
+                else{setShowCustomInput(false);set("position",e.target.value);}
+              }}
               style={{...INP,cursor:"pointer",flex:1}}>
-              <option value="">— Select —</option>
-              {POSITIONS.map(p=><option key={p} value={p}>{p}</option>)}
+              <option value="">— Select position —</option>
+              {allPositions.map(p=><option key={p} value={p}>{p}</option>)}
               <option value="__custom">+ Add custom trade…</option>
             </select>
-            {(!POSITIONS.includes(f.position)&&f.position)||(!POSITIONS.includes(f.position))
-              ?<input value={f.position} onChange={e=>set("position",e.target.value)} placeholder="Enter custom trade…"
-                style={{...INP,flex:1}} autoFocus/>:null}
+            {showCustomInput&&<input value={f.position} onChange={e=>set("position",e.target.value)}
+              placeholder="Type custom trade name…" style={{...INP,flex:1}} autoFocus/>}
           </div>
-          {!POSITIONS.includes(f.position)&&f.position&&<div style={{marginTop:5,display:"flex",alignItems:"center",gap:7}}>
-            <span style={{fontSize:10,color:"#fbbf24"}}>💡 New trade: <strong>{f.position}</strong></span>
-            <button onClick={()=>{if(!POSITIONS.includes(f.position)){POSITIONS=[...POSITIONS,f.position];alert("Trade ""+f.position+"" added to all worker forms.");} }} style={{padding:"2px 8px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:4,color:"#60a5fa",cursor:"pointer",fontSize:10,fontWeight:700}}>+ Save to list</button>
+          {showCustomInput&&f.position&&!allPositions.includes(f.position)&&<div style={{marginTop:6,display:"flex",alignItems:"center",gap:8,padding:"5px 10px",background:"#1a1500",borderRadius:6,border:"1px solid #92400e"}}>
+            <span style={{fontSize:10,color:"#fbbf24",flex:1}}>New trade: <strong>{f.position}</strong> — save to add permanently to all dropdowns</span>
+            <button onClick={saveCustomTrade} style={{padding:"3px 10px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:4,color:"#60a5fa",cursor:"pointer",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>+ Save to list</button>
           </div>}
         </div>
         <FI label="Scope" value={f.scope} onChange={v=>set("scope",v)}/>
