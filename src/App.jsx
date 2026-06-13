@@ -2376,21 +2376,26 @@ const DS={
 };
 
 const DASH_NAV=[
-  {id:"home",    icon:"🏠",label:"Overview"},
-  {id:"workers", icon:"👷",label:"Workers"},
-  {id:"sites",   icon:"🏗",label:"Sites"},
-  {id:"clients", icon:"👔",label:"Clients"},
-  {id:"schedule",icon:"📋",label:"Labour Schedule"},
-  {id:"payslips",icon:"💷",label:"Payslips"},
-  {id:"invoices",icon:"🧾",label:"Invoices"},
-  {id:"certs",   icon:"🛡",label:"Certificates"},
-  {id:"budget",  icon:"📐",label:"Budget"},
-  {id:"bank",    icon:"🏦",label:"Bank Import"},
-  {id:"finance", icon:"📊",label:"Finance"},
-  {id:"stats",   icon:"🔢",label:"Stats"},
-  {id:"payapps", icon:"📋",label:"Payment Apps"},
-  {id:"timesheets",icon:"⏱",label:"Timesheets"},
-  {id:"weekly_records",icon:"📅",label:"Weekly Records"},
+  // ── Overview
+  {id:"home",           icon:"🏠", label:"Overview",         group:"main"},
+  // ── People & Labour
+  {id:"workers",        icon:"👷", label:"Workers",           group:"labour"},
+  {id:"schedule",       icon:"📋", label:"Labour Schedule",   group:"labour"},
+  {id:"site_by_site",   icon:"📍", label:"By Site",           group:"labour"},
+  {id:"payslips",       icon:"💷", label:"Payroll & Payslips",group:"labour"},
+  {id:"timesheets",     icon:"⏱", label:"Timesheets",         group:"labour"},
+  {id:"weekly_records", icon:"📅", label:"Weekly Records",    group:"labour"},
+  // ── Projects
+  {id:"sites",          icon:"🏗", label:"Sites",             group:"projects"},
+  {id:"clients",        icon:"👔", label:"Clients",           group:"projects"},
+  {id:"invoices",       icon:"🧾", label:"Invoices",          group:"projects"},
+  {id:"payapps",        icon:"📐", label:"Payment Apps",      group:"projects"},
+  {id:"budget",         icon:"💰", label:"Budget",            group:"projects"},
+  // ── Analysis
+  {id:"certs",          icon:"🛡", label:"Certificates",      group:"analysis"},
+  {id:"finance",        icon:"📊", label:"Finance",           group:"analysis"},
+  {id:"stats",          icon:"🔢", label:"Stats",             group:"analysis"},
+  {id:"bank",           icon:"🏦", label:"Bank Import",       group:"analysis"},
 ];
 
 function DStat({label,value,color,sub}){
@@ -2983,33 +2988,160 @@ function DComingSoon({icon,title,sub}){
 }
 
 // ─── DashboardView — the complete dashboard shell ─────────────────────────────
-function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,showWeekend,dashPage,setDashPage,dashDetailId,setDashDetailId}){
+
+// ── Embedded Schedule View (full schedule table, inside dashboard) ─────────────
+function DScheduleView({workers,allSites,clients,activeDays,siteHours,weekLabel,allSiteNames,filter,setFilter,showWeekend,setShowWeekend,weeklyRecords,setWeeklyRecords,updateCell,setModal,delWorker,filtered,invoices,scopeData}){
+  // Use workers as filtered if filtered not passed
+  const displayWorkers = filtered||workers;
+  return <div>
+    <DPageHdr title="📋 Labour Schedule" sub={`WC: ${weekLabel} · ${displayWorkers.length} workers · grouped by site`}
+      actions={<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        <input value={filter.name} onChange={e=>setFilter(f=>({...f,name:e.target.value}))} placeholder="🔍 Name…" style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:"#e2e8f0",fontSize:11,outline:"none",width:110}}/>
+        <button onClick={()=>setShowWeekend(s=>!s)} style={{padding:"5px 10px",background:showWeekend?"#1a3020":"#1a1f2e",border:`1px solid ${showWeekend?"#10b981":"#2d3555"}`,borderRadius:7,color:showWeekend?"#34d399":"#64748b",cursor:"pointer",fontSize:11,fontWeight:700}}>{showWeekend?"✓ Wknd":"+ Wknd"}</button>
+        <button onClick={()=>exportSchedulePDF(displayWorkers,activeDays,weekLabel,allSites)} style={{padding:"5px 10px",background:"#1a1f2e",border:"1px solid #ef4444",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>📄 PDF</button>
+        <button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{padding:"5px 10px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700}}>+ Worker</button>
+      </div>}/>
+    <div style={{padding:"4px 24px 0",background:"#0f1421",borderBottom:"1px solid #1e2535",fontSize:11,color:"#64748b"}}>
+      💡 <strong style={{color:"#60a5fa"}}>Click any cell</strong> to edit inline · <strong style={{color:"#a78bfa"}}>📋</strong> profile · <strong style={{color:"#34d399"}}>💷</strong> payslip · <strong style={{color:"#60a5fa"}}>🔗</strong> open in new window
+    </div>
+    <div style={{overflowX:"auto"}}>
+      {(()=>{
+        const grp={};
+        displayWorkers.forEach(w=>{
+          const cnts={};activeDays.forEach(d=>{const s=w.days[d];if(s&&!isOff(s))cnts[s]=(cnts[s]||0)+1;});
+          const primary=Object.entries(cnts).sort((a,b)=>b[1]-a[1])[0]?.[0]||"Unassigned / Off";
+          if(!grp[primary])grp[primary]=[];grp[primary].push(w);
+        });
+        const order=Object.keys(grp).sort((a,b)=>{if(a==="Unassigned / Off")return 1;if(b==="Unassigned / Off")return -1;return a.localeCompare(b);});
+        return order.map(siteName=>{
+          const siteColor=getSiteColor(siteName,allSites);
+          const siteWorkers=grp[siteName];
+          const TH2={padding:"7px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",borderBottom:"1px solid #1e2535",background:"#0a0e17",whiteSpace:"nowrap"};
+          const TD2={padding:"5px 8px",borderBottom:"1px solid #1a2030",verticalAlign:"middle"};
+          return <div key={siteName}>
+            <div style={{background:`${siteColor}15`,borderLeft:`4px solid ${siteColor}`,padding:"6px 18px",display:"flex",alignItems:"center",gap:10,borderTop:"1px solid #1e2535",borderBottom:`1px solid ${siteColor}33`}}>
+              <span style={{width:9,height:9,borderRadius:"50%",background:siteColor,flexShrink:0}}/>
+              <span style={{fontWeight:800,color:siteColor,fontSize:13,flex:1}}>{siteName}</span>
+              <span style={{fontSize:11,color:"#64748b"}}>{siteWorkers.length} operative{siteWorkers.length!==1?"s":""}</span>
+            </div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr>
+                <th style={{...TH2,minWidth:140,paddingLeft:20}}>Worker</th>
+                <th style={TH2}>Co.</th><th style={TH2}>Position</th>
+                {activeDays.map(d=><th key={d} style={{...TH2,minWidth:130,color:WEEKEND_DAYS.includes(d)?"#fbbf24":"#64748b"}}>{d}{WEEKEND_DAYS.includes(d)?" 🟡":""}</th>)}
+                <th style={TH2}>Rate</th><th style={TH2}>Tax</th><th style={TH2}>Certs</th><th style={TH2}>Actions</th>
+              </tr></thead>
+              <tbody>
+                {siteWorkers.map((w,i)=>{
+                  const exp=CERTS.filter(c=>cSt(c,w)==="expired").length;
+                  const expg=CERTS.filter(c=>cSt(c,w)==="expiring").length;
+                  return <tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                    <td style={{...TD2,fontWeight:600,color:"#f1f5f9",paddingLeft:20}}>
+                      <div>{w.name}</div>
+                      {w.comments&&<div style={{fontSize:9,color:"#fbbf24"}}>⚑ {w.comments}</div>}
+                    </td>
+                    <td style={{...TD2,color:"#94a3b8",fontSize:10}}>{(w.company||"").split(" ")[0]}</td>
+                    <td style={{...TD2,color:"#94a3b8",fontSize:10}}>{w.position||"—"}</td>
+                    {activeDays.map(d=>(
+                      <td key={d} style={{...TD2,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"3px 6px"}}>
+                        <InlineCell value={w.days[d]} workerId={w.id} day={d} allSiteNames={allSiteNames||(()=>{const s=new Set(allSites.map(x=>x.name));workers.forEach(w=>ALL_DAYS.forEach(d=>{if(w.days[d])s.add(w.days[d].trim());}));return Array.from(s).filter(Boolean).sort();})()} allSites={allSites} onUpdate={updateCell}/>
+                      </td>
+                    ))}
+                    <td style={{...TD2,color:"#34d399",fontWeight:600,fontSize:11}}>{w.agreedRate?`£${w.agreedRate}`:"—"}</td>
+                    <td style={TD2}><span style={{fontSize:10,fontWeight:700,color:w.taxRate===0.30?"#f87171":w.taxRate===0.20?"#fbbf24":"#34d399"}}>{Math.round((w.taxRate||0)*100)}%</span></td>
+                    <td style={TD2}><div style={{display:"flex",gap:3}}>
+                      {exp>0&&<span style={{color:"#f87171",fontSize:10,fontWeight:700}}>✗{exp}</span>}
+                      {expg>0&&<span style={{color:"#fbbf24",fontSize:10,fontWeight:700}}>⚠{expg}</span>}
+                      {exp===0&&expg===0&&<span style={{color:"#374151"}}>—</span>}
+                    </div></td>
+                    <td style={TD2}><div style={{display:"flex",gap:3,flexWrap:"nowrap"}}>
+                      <button onClick={()=>setModal({type:"worker",worker:w})} style={{padding:"3px 7px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:4,color:"#60a5fa",cursor:"pointer",fontSize:10,fontWeight:600}}>Edit</button>
+                      <button onClick={()=>openWorkerWindow(w,allSites,weekLabel,activeDays,siteHours)} style={{padding:"3px 6px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:4,color:"#60a5fa",cursor:"pointer",fontSize:10}}>🔗</button>
+                      <button onClick={()=>exportWorkerProfile(w,allSites,weekLabel)} style={{padding:"3px 6px",background:"#1a2535",border:"1px solid #8b5cf6",borderRadius:4,color:"#a78bfa",cursor:"pointer",fontSize:10}}>📋</button>
+                      <button onClick={()=>exportPayslip(w,activeDays,weekLabel,siteHours)} style={{padding:"3px 6px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10}}>💷</button>
+                      <button onClick={()=>delWorker(w.id)} style={{padding:"3px 6px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:10}}>✕</button>
+                    </div></td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>;
+        });
+      })()}
+      {displayWorkers.length===0&&<div style={{textAlign:"center",padding:50,color:"#374151"}}>No workers match filters.</div>}
+    </div>
+    {/* Site legend */}
+    <div style={{padding:"8px 24px",borderTop:"1px solid #1e2535",background:"#0a0e17",display:"flex",flexWrap:"wrap",gap:4}}>
+      {allSites.filter(s=>!isOff(s.name)).map(s=><span key={s.id} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:20,background:"#111827",border:`1px solid ${s.color}`,fontSize:9,color:"#94a3b8"}}><span style={{width:5,height:5,borderRadius:"50%",background:s.color}}/>{s.name}</span>)}
+    </div>
+  </div>;
+}
+
+// ── Embedded By-Site View ─────────────────────────────────────────────────────
+function DSiteBySite({workers,allSites,activeDays}){
+  const sm={};
+  workers.forEach(w=>activeDays.forEach(d=>{const s=(w.days[d]||"").trim();if(s){if(!sm[s])sm[s]={};if(!sm[s][d])sm[s][d]=[];sm[s][d].push(w);}}));
+  return <div>
+    <DPageHdr title="📍 By Site" sub="All workers grouped by site per day"/>
+    <div style={{padding:"0 24px 24px",overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginTop:16}}>
+        <thead><tr>
+          <th style={{...DS.th,minWidth:180}}>Site</th>
+          {activeDays.map(d=><th key={d} style={{...DS.th,minWidth:120,color:WEEKEND_DAYS.includes(d)?"#fbbf24":"#64748b"}}>{d}{WEEKEND_DAYS.includes(d)?" 🟡":""}</th>)}
+          <th style={DS.th}>Total</th>
+        </tr></thead>
+        <tbody>{Object.keys(sm).sort().map((site,i)=>{
+          const color=getSiteColor(site,allSites);
+          const all=new Set();activeDays.forEach(d=>(sm[site][d]||[]).forEach(w=>all.add(w.id)));
+          return <tr key={site} style={{background:i%2===0?"#111827":"#0f1421"}}>
+            <td style={{...DS.td,borderLeft:`3px solid ${color}`,paddingLeft:12}}><span style={{fontWeight:700,color}}>{site}</span></td>
+            {activeDays.map(d=><td key={d} style={DS.td}>{(sm[site][d]||[]).map(w=><div key={w.id} style={{fontSize:11,color:"#cbd5e1"}}>{w.name} <span style={{color:"#64748b",fontSize:10}}>({w.position||"—"})</span></div>)}</td>)}
+            <td style={{...DS.td,textAlign:"center",fontWeight:700,color:"#60a5fa"}}>{all.size}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </div>
+  </div>;
+}
+
+
+function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,showWeekend,filter,setFilter,allSiteNames,updateCell,delWorker,dashPage,setDashPage,dashDetailId,setDashDetailId}){
   const nav=(page,id)=>{setDashPage(page);if(id!==undefined)setDashDetailId(id);};
   const goBack=(page)=>setDashPage(page);
 
+    // Shared props shorthand
+  const SP={workers,allSites,clients,invoices,activeDays,siteHours,weekLabel,setModal,scopeData,filter,setFilter,allSiteNames,updateCell,delWorker,showWeekend,weeklyRecords,setWeeklyRecords};
   const renderPage=()=>{
     switch(dashPage){
-      case "home":          return <DHome workers={workers} allSites={allSites} clients={clients} invoices={invoices} scopeData={scopeData} activeDays={activeDays} siteHours={siteHours} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
-      case "workers":       return <DWorkers workers={workers} allSites={allSites} clients={clients} activeDays={activeDays} siteHours={siteHours} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
-      case "worker_detail": return <DWorkerDetail workers={workers} allSites={allSites} clients={clients} activeDays={activeDays} siteHours={siteHours} workerId={dashDetailId} setPage={setDashPage} setModal={setModal}/>;
-      case "sites":         return <DSites allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
-      case "site_detail":   return <DSiteDetail allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} siteId={dashDetailId} setPage={setDashPage} setDetailId={setDashDetailId} setModal={setModal}/>;
-      case "clients":       return <DClients clients={clients} allSites={allSites} invoices={invoices} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={nav} setDetailId={setDashDetailId} setModal={setModal}/>;
-      case "invoices":      return <DInvoices invoices={invoices} allSites={allSites} clients={clients} setModal={setModal}/>;
-      case "certs":         return <DCerts workers={workers} setPage={nav} setDetailId={setDashDetailId}/>;
-      case "schedule":     return <DComingSoon icon="📋" title="Labour Schedule" sub="Switch to 📋 Schedule mode via the toggle in the header to access the full weekly schedule"/>;
-      case "weekly_records": return <DWeeklyRecords weeklyRecords={weeklyRecords} setWeeklyRecords={setWeeklyRecords} workers={workers} allSites={allSites} clients={clients} siteHours={siteHours} activeDays={activeDays} weekLabel={weekLabel} showWeekend={showWeekend} invoices={invoices} setPage={setDashPage} setDetailId={setDashDetailId}/>;
+      // ── Overview
+      case "home":          return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
+      // ── Labour & People
+      case "workers":       return <DWorkers {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
+      case "worker_detail": return <DWorkerDetail {...SP} workerId={dashDetailId} setPage={setDashPage}/>;
+      // ── Schedule views — now fully embedded, no toggle needed
+      case "schedule":      return <DScheduleView {...SP} setShowWeekend={setShowWeekend}/>;
+      case "site_by_site":  return <DSiteBySite {...SP}/>;
+      case "payslips":      return <DPayroll {...SP}/>;
+      case "timesheets":    return <DComingSoon icon="⏱" title="Timesheets" sub="Timesheet tracking coming soon — use Weekly Records to archive completed weeks"/>;
+      case "weekly_records":return <DWeeklyRecords weeklyRecords={weeklyRecords} setWeeklyRecords={setWeeklyRecords} workers={workers} allSites={allSites} clients={clients} siteHours={siteHours} activeDays={activeDays} weekLabel={weekLabel} showWeekend={showWeekend} invoices={invoices} setPage={setDashPage} setDetailId={setDashDetailId}/>;
       case "weekly_record_detail": return <DWeeklyRecordDetail weeklyRecords={weeklyRecords} recordId={dashDetailId} setPage={setDashPage} allSites={allSites}/>;
-      case "timesheets":return <DComingSoon icon="⏱" title="Timesheets" sub="Timesheet management — coming soon"/>;
-      case "payslips":  return <DPayroll workers={workers} allSites={allSites} activeDays={activeDays} siteHours={siteHours} weekLabel={weekLabel} setModal={setModal}/>;
-      case "payapps":   return <DComingSoon icon="📐" title="Payment Applications" sub="Use the Budget tab for site-level scope tracking"/>;
-      case "stats":     return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
-      case "bank":      return <DBank allSites={allSites} clients={clients} setModal={setModal}/>;
-      case "budget":    return <DBudget workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} setModal={setModal}/>;
-      case "finance":   return <DFinance workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} invoices={invoices}/>;
-      default:              return <DHome workers={workers} allSites={allSites} clients={clients} invoices={invoices} scopeData={scopeData} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+      // ── Projects & Finance
+      case "sites":         return <DSites {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
+      case "site_detail":   return <DSiteDetail {...SP} siteId={dashDetailId} setPage={setDashPage} setDetailId={setDashDetailId}/>;
+      case "clients":       return <DClients {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
+      case "client_detail": return <DComingSoon icon="👔" title="Client Detail" sub="Click a client card to open"/>;
+      case "invoices":      return <DInvoices {...SP}/>;
+      case "payapps":       return <DComingSoon icon="📐" title="Payment Applications" sub="Linked to site scopes — open a site to manage payment applications"/>;
+      case "budget":        return <DBudget {...SP}/>;
+      // ── Analysis
+      case "certs":         return <DCerts workers={workers} setPage={nav} setDetailId={setDashDetailId}/>;
+      case "finance":       return <DFinance {...SP}/>;
+      case "stats":         return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
+      case "bank":          return <DBank allSites={allSites} clients={clients} setModal={setModal}/>;
+      default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
     }
   };
+
 
   return (
     <div style={{display:"flex",minHeight:"calc(100vh - 60px)",background:"#080d14"}}>
@@ -3141,218 +3273,76 @@ export default function App(){
     <style>{`@keyframes slide{0%{width:0%;margin-left:0%}50%{width:60%;margin-left:20%}100%{width:0%;margin-left:100%}}`}</style>
   </div>;
 
-  return <div style={{minHeight:"100vh",background:"#0d1117",fontFamily:"system-ui,'Segoe UI',sans-serif",color:"#e2e8f0",fontSize:13}}>
-    {/* Header */}
-    <div style={{background:"linear-gradient(135deg,#0f172a,#1a1f2e)",borderBottom:"1px solid #1e2535",padding:"13px 18px"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:9,marginBottom:12}}>
+  return <div style={{minHeight:"100vh",background:"#0d1117",fontFamily:"system-ui,'Segoe UI',sans-serif",color:"#e2e8f0",fontSize:13,display:"flex",flexDirection:"column"}}>
+
+    {/* ── Slim Top Bar ── */}
+    <div style={{background:"linear-gradient(135deg,#0f172a,#1a1f2e)",borderBottom:"1px solid #1e2535",padding:"9px 16px",position:"sticky",top:0,zIndex:200,flexShrink:0}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        {/* Logo + Week nav */}
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:36,height:36,background:"linear-gradient(135deg,#3b82f6,#6366f1)",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>🏗</div>
+          <div style={{width:30,height:30,background:"linear-gradient(135deg,#3b82f6,#6366f1)",borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🏗</div>
           <div>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div style={{fontSize:17,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.02em"}}>Labour Schedule</div>
-              {/* ── View mode toggle ── */}
-              <div style={{display:"flex",background:"#0d1117",borderRadius:7,padding:2,border:"1px solid #2d3555"}}>
-                <button onClick={()=>setAppMode("schedule")} style={{padding:"4px 10px",background:appMode==="schedule"?"#1e3a5f":"transparent",border:appMode==="schedule"?"1px solid #3b82f6":"1px solid transparent",borderRadius:5,color:appMode==="schedule"?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:appMode==="schedule"?700:400,transition:"all 0.15s"}}>📋 Schedule</button>
-                <button onClick={()=>setAppMode("dashboard")} style={{padding:"4px 10px",background:appMode==="dashboard"?"#1e3a5f":"transparent",border:appMode==="dashboard"?"1px solid #3b82f6":"1px solid transparent",borderRadius:5,color:appMode==="dashboard"?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:appMode==="dashboard"?700:400,transition:"all 0.15s"}}>🗂 Dashboard</button>
-              </div>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
-              <button onClick={()=>setWeekLabel(addWeeks(weekLabel,-1))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:5,color:"#94a3b8",cursor:"pointer",fontSize:13,padding:"1px 7px",fontWeight:700,lineHeight:1.4}}>‹</button>
+            <div style={{fontSize:14,fontWeight:800,color:"#f1f5f9",lineHeight:1}}>Bright Metalwork</div>
+            <div style={{display:"flex",alignItems:"center",gap:5,marginTop:3}}>
+              <button onClick={()=>setWeekLabel(addWeeks(weekLabel,-1))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:4,color:"#94a3b8",cursor:"pointer",fontSize:12,padding:"0px 6px",fontWeight:700,lineHeight:1.5}}>‹</button>
               <span style={{fontSize:10,color:"#64748b"}}>WC:</span>
-              <input value={weekLabel} onChange={e=>setWeekLabel(e.target.value)} style={{background:"none",border:"none",borderBottom:"1px solid #2d3555",color:"#60a5fa",fontWeight:600,fontSize:12,outline:"none",width:115}}/>
-              <button onClick={()=>setWeekLabel(addWeeks(weekLabel,1))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:5,color:"#94a3b8",cursor:"pointer",fontSize:13,padding:"1px 7px",fontWeight:700,lineHeight:1.4}}>›</button>
-              <button onClick={()=>setWeekLabel(formatWeekLabel(new Date()))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:5,color:"#64748b",cursor:"pointer",fontSize:10,padding:"2px 7px",fontWeight:700}}>Today</button>
+              <input value={weekLabel} onChange={e=>setWeekLabel(e.target.value)} style={{background:"none",border:"none",borderBottom:"1px solid #2d3555",color:"#60a5fa",fontWeight:600,fontSize:11,outline:"none",width:105}}/>
+              <button onClick={()=>setWeekLabel(addWeeks(weekLabel,1))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:4,color:"#94a3b8",cursor:"pointer",fontSize:12,padding:"0px 6px",fontWeight:700,lineHeight:1.5}}>›</button>
+              <button onClick={()=>setWeekLabel(formatWeekLabel(new Date()))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:4,color:"#64748b",cursor:"pointer",fontSize:9,padding:"1px 6px",fontWeight:700}}>Today</button>
             </div>
           </div>
         </div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:syncStatus==="saved"?"#34d399":syncStatus==="error"?"#f87171":"#fbbf24"}}>
-            <span style={{width:7,height:7,borderRadius:"50%",background:syncStatus==="saved"?"#34d399":syncStatus==="error"?"#f87171":"#fbbf24",display:"inline-block"}}/>
+
+        {/* Quick stats strip */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {[{l:"Workers",v:stats.total,c:"#60a5fa"},{l:"Holiday",v:stats.onHol,c:"#fbbf24"},{l:"Off",v:stats.off,c:"#94a3b8"},{l:"Cert ⚠",v:stats.alerts,c:stats.alerts>0?"#f87171":"#34d399"},{l:"Gross",v:stats.g>0?`£${stats.g.toFixed(0)}`:"—",c:"#34d399"},{l:"Net",v:stats.g>0?`£${stats.n.toFixed(0)}`:"—",c:"#a78bfa"}].map(s=>(
+            <div key={s.l} style={{background:"#111827",border:"1px solid #1e2535",borderRadius:7,padding:"3px 10px",cursor:"pointer"}} onClick={()=>setDashPage(s.l==="Workers"||s.l==="Holiday"||s.l==="Off"?"workers":s.l==="Cert ⚠"?"certs":s.l==="Gross"||s.l==="Net"?"payslips":"home")}>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{s.l}</div>
+              <div style={{fontSize:13,fontWeight:800,color:s.c,lineHeight:1.2}}>{s.v}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Right actions */}
+        <div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:syncStatus==="saved"?"#34d399":syncStatus==="error"?"#f87171":"#fbbf24"}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:syncStatus==="saved"?"#34d399":syncStatus==="error"?"#f87171":"#fbbf24",display:"inline-block"}}/>
             {syncStatus==="saved"?"☁ Saved":syncStatus==="error"?"⚠ Error":"Saving…"}
           </div>
-          <button onClick={()=>setShowWeekend(s=>!s)} style={{padding:"6px 11px",background:showWeekend?"#1a3020":"#1a1f2e",border:`1px solid ${showWeekend?"#10b981":"#2d3555"}`,borderRadius:7,color:showWeekend?"#34d399":"#64748b",cursor:"pointer",fontSize:11,fontWeight:700}}>{showWeekend?"✓ Weekend":"+ Weekend"}</button>
+          <button onClick={()=>setShowWeekend(s=>!s)} style={{padding:"4px 9px",background:showWeekend?"#1a3020":"#1a1f2e",border:`1px solid ${showWeekend?"#10b981":"#2d3555"}`,borderRadius:6,color:showWeekend?"#34d399":"#64748b",cursor:"pointer",fontSize:10,fontWeight:700}}>{showWeekend?"✓ Wknd":"+ Wknd"}</button>
           <button onClick={()=>{
-            if(!window.confirm(`Save snapshot of WC ${weekLabel} to weekly records?\n\nThis saves the current workers, schedule, payroll data and creates a permanent record.`)) return;
-            const snap={
-              id:"wk_"+Date.now(),
-              weekLabel,
-              savedAt:new Date().toISOString(),
-              workers:JSON.parse(JSON.stringify(workers)),
-              allSites:JSON.parse(JSON.stringify(allSites)),
-              siteHours:JSON.parse(JSON.stringify(siteHours)),
-              activeDays:showWeekend?[...BASE_DAYS,...WEEKEND_DAYS]:BASE_DAYS,
-              invoices:JSON.parse(JSON.stringify(invoices)),
-              status:"closed",
-            };
-            setWeeklyRecords(recs=>{
-              const existing=recs.find(r=>r.weekLabel===weekLabel);
-              if(existing) return recs.map(r=>r.weekLabel===weekLabel?snap:r);
-              return [...recs,snap];
-            });
-            alert(`✓ Week WC ${weekLabel} saved to records.`);
-          }} style={{padding:"6px 11px",background:"#0d2218",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:700}}>💾 Close Week</button>
-          <button onClick={()=>setModal({type:"sites"})} style={{padding:"6px 11px",background:"#1a1f2e",border:"1px solid #f59e0b",borderRadius:7,color:"#fbbf24",cursor:"pointer",fontSize:11,fontWeight:700}}>🏗 Sites</button>
-          <button onClick={()=>setModal({type:"clients"})} style={{padding:"6px 11px",background:"#1a1f2e",border:"1px solid #8b5cf6",borderRadius:7,color:"#a78bfa",cursor:"pointer",fontSize:11,fontWeight:700}}>👔 Clients</button>
-          <button onClick={()=>setModal({type:"trainingMatrix"})} style={{padding:"6px 11px",background:"#1a1f2e",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:700}}>🛡 Matrix PDF</button>
-          {view==="schedule"&&<button onClick={()=>exportSchedulePDF(filtered,activeDays,weekLabel,allSites)} style={{padding:"6px 11px",background:"#1a1f2e",border:"1px solid #ef4444",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>📄 PDF</button>}
-          <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites)} style={{...BG,padding:"6px 13px",fontSize:11}}>⬇ Excel</button>
-          <button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{...BP,padding:"6px 13px",fontSize:11}}>+ Worker</button>
+            if(!window.confirm(`Save WC ${weekLabel} snapshot?`)) return;
+            const snap={id:"wk_"+Date.now(),weekLabel,savedAt:new Date().toISOString(),workers:JSON.parse(JSON.stringify(workers)),allSites:JSON.parse(JSON.stringify(allSites)),siteHours:JSON.parse(JSON.stringify(siteHours)),activeDays:showWeekend?[...BASE_DAYS,...WEEKEND_DAYS]:BASE_DAYS,invoices:JSON.parse(JSON.stringify(invoices)),status:"closed"};
+            setWeeklyRecords(recs=>{const ex=recs.find(r=>r.weekLabel===weekLabel);return ex?recs.map(r=>r.weekLabel===weekLabel?snap:r):[...recs,snap];});
+            alert(`✓ WC ${weekLabel} saved.`);
+          }} style={{padding:"4px 9px",background:"#0d2218",border:"1px solid #10b981",borderRadius:6,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>💾 Close Week</button>
+          <button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{padding:"4px 10px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",fontSize:10,fontWeight:700}}>+ Worker</button>
         </div>
-      </div>
-      <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-        {[{l:"Workers",v:stats.total,c:"#60a5fa"},{l:"On Holiday",v:stats.onHol,c:"#fbbf24"},{l:"Off",v:stats.off,c:"#94a3b8"},{l:"Cert Alerts",v:stats.alerts,c:stats.alerts>0?"#fbbf24":"#34d399"},{l:"Gross",v:stats.g>0?`£${stats.g.toFixed(0)}`:"—",c:"#34d399"},{l:"Net",v:stats.g>0?`£${stats.n.toFixed(0)}`:"—",c:"#a78bfa"},{l:"Clients",v:clients.length,c:"#8b5cf6"},{l:"Invoices",v:invoices.length,c:"#10b981"}].map(s=>(
-          <div key={s.l} style={{background:"#111827",border:"1px solid #1e2535",borderRadius:9,padding:"6px 12px"}}><div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{s.l}</div><div style={{fontSize:15,fontWeight:800,color:s.c}}>{s.v}</div></div>
-        ))}
       </div>
     </div>
 
-    {/* ── CONDITIONAL: Dashboard or Schedule view ── */}
-    {appMode==="dashboard"&&<DashboardView
-      workers={workers} allSites={allSites} clients={clients}
-      weekLabel={weekLabel} activeDays={activeDays} siteHours={siteHours}
-      scopeData={scopeData} invoices={invoices}
-      saveWorker={saveWorker} delWorker={delWorker}
-      setAllSites={setAllSites} setClients={setClients}
-      setModal={setModal}
-      weeklyRecords={weeklyRecords} setWeeklyRecords={setWeeklyRecords}
-      showWeekend={showWeekend}
-      dashPage={dashPage} setDashPage={setDashPage}
-      dashDetailId={dashDetailId} setDashDetailId={setDashDetailId}
-    />}
-    {appMode==="schedule"&&<>
-    {/* Tabs + Filters */}
-    <div style={{padding:"9px 18px",background:"#111827",borderBottom:"1px solid #1e2535",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
-      <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,flexWrap:"wrap"}}>
-        {VIEWS.map(([v,l])=><button key={v} onClick={()=>setView(v)} style={{padding:"5px 10px",background:view===v?"#1e3a5f":"transparent",border:view===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:view===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:view===v?700:400}}>{l}</button>)}
-      </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        <input value={filter.name} onChange={e=>setFilter(f=>({...f,name:e.target.value}))} placeholder="🔍 Name…" style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:"#e2e8f0",fontSize:11,outline:"none",width:120}}/>
-        <select value={filter.position} onChange={e=>setFilter(f=>({...f,position:e.target.value}))} style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:filter.position?"#e2e8f0":"#64748b",fontSize:11,outline:"none",cursor:"pointer"}}>
-          <option value="">All Positions</option>{POSITIONS.map(p=><option key={p} value={p}>{p}</option>)}
-        </select>
-        <input value={filter.site} onChange={e=>setFilter(f=>({...f,site:e.target.value}))} placeholder="📍 Site…" style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:"#e2e8f0",fontSize:11,outline:"none",width:110}}/>
-        {Object.values(filter).some(Boolean)&&<button onClick={()=>setFilter({name:"",position:"",site:""})} style={{padding:"5px 9px",background:"#1e2535",border:"1px solid #f87171",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>}
+    {/* ── Main body: sidebar + content ── */}
+    <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+      <DashSidebar page={dashPage} setPage={p=>{setDashPage(p);setDashDetailId(null);}} workers={workers} allSites={allSites} clients={clients} invoices={invoices} setModal={setModal} activeDays={activeDays} siteHours={siteHours} weekLabel={weekLabel}/>
+      <div style={{flex:1,overflowY:"auto",height:"calc(100vh - 55px)"}}>
+        <DashboardView
+          workers={workers} allSites={allSites} clients={clients}
+          weekLabel={weekLabel} activeDays={activeDays} siteHours={siteHours}
+          scopeData={scopeData} invoices={invoices}
+          saveWorker={saveWorker} delWorker={delWorker}
+          setAllSites={setAllSites} setClients={setClients}
+          setModal={setModal}
+          weeklyRecords={weeklyRecords} setWeeklyRecords={setWeeklyRecords}
+          showWeekend={showWeekend}
+          filter={filter} setFilter={setFilter}
+          allSiteNames={allSiteNames}
+          updateCell={updateCell}
+          dashPage={dashPage} setDashPage={setDashPage}
+          dashDetailId={dashDetailId} setDashDetailId={setDashDetailId}/>
       </div>
     </div>
 
-    {/* Views */}
-    <div style={{paddingBottom:40}}>
-      {view==="site"&&<div style={{padding:"12px 18px"}}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-        <thead><tr><th style={{...TH,minWidth:180}}>Site</th>{activeDays.map(d=><th key={d} style={{...TH,minWidth:120,color:WEEKEND_DAYS.includes(d)?"#fbbf24":"#64748b"}}>{d}{WEEKEND_DAYS.includes(d)?" 🟡":""}</th>)}<th style={TH}>Total</th></tr></thead>
-        <tbody>{(()=>{const sm={};workers.forEach(w=>activeDays.forEach(d=>{const s=(w.days[d]||"").trim();if(s){if(!sm[s])sm[s]={};if(!sm[s][d])sm[s][d]=[];sm[s][d].push(w);}}));
-          return Object.keys(sm).sort().map((site,i)=>{const color=getSiteColor(site,allSites);const all=new Set();activeDays.forEach(d=>(sm[site][d]||[]).forEach(w=>all.add(w.id)));
-            return <tr key={site} style={{background:i%2===0?"#111827":"#0f1421"}}>
-              <td style={{...TD,borderLeft:`3px solid ${color}`,paddingLeft:10}}><span style={{fontWeight:700,color}}>{site}</span></td>
-              {activeDays.map(d=><td key={d} style={TD}>{(sm[site][d]||[]).map(w=><div key={w.id} style={{fontSize:11,color:"#cbd5e1"}}>{w.name} <span style={{color:"#64748b"}}>({w.position||"—"})</span></div>)}</td>)}
-              <td style={{...TD,textAlign:"center",fontWeight:700,color:"#60a5fa"}}>{all.size}</td>
-            </tr>;});})()} 
-        </tbody>
-      </table></div></div>}
-      {view==="certs"&&<CertView workers={filtered}/>}
-      {view==="payroll"&&<PayrollView workers={filtered} activeDays={activeDays} siteHours={siteHours} allSites={allSites} weekLabel={weekLabel}/>}
-      {view==="costs"&&<ClientCostView workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours}/>}
-      {view==="budget"&&<BudgetView workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} onEditScope={site=>setModal({type:"scope",site})}/>}
-      {view==="invoices"&&<InvoicesView invoices={invoices} clients={clients} allSites={allSites} scopeData={scopeData} workers={workers} onNew={()=>setModal({type:"invoice",invoice:emptyInvoice(clients,allSites,invoices)})} onEdit={inv=>setModal({type:"invoice",invoice:inv})} onDelete={delInvoice}/>}
-      {view==="finance"&&<FinancialDashboard workers={workers} clients={clients} allSites={allSites} activeDays={activeDays} siteHours={siteHours} scopeData={scopeData} invoices={invoices}/>}
-      {view==="bank"&&<div style={{padding:"20px 18px"}}><div style={{textAlign:"center",padding:40}}>
-        <div style={{fontSize:40,marginBottom:14}}>🏦</div>
-        <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",marginBottom:8}}>Bank Import & Categorisation</div>
-        <div style={{fontSize:13,color:"#64748b",marginBottom:20,lineHeight:1.6}}>Import your bank statement Excel or CSV.<br/>Categorise each transaction as income or expense, allocate to sites and clients.</div>
-        <button onClick={()=>setModal({type:"bank"})} style={{...BP,padding:"10px 24px",fontSize:14}}>📂 Open Bank Import Tool</button>
-      </div></div>}
-      {view==="stats"&&<div style={{padding:"14px 18px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-        <div><div style={{fontWeight:700,color:"#94a3b8",marginBottom:11,fontSize:13}}>Workers per Site</div><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-          {(()=>{const m={};workers.forEach(w=>activeDays.forEach(d=>{const s=(w.days[d]||"").trim();if(s&&!isOff(s))m[s]=(m[s]||0)+1;}));return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([site,cnt])=>(
-            <div key={site} style={{background:"#1a1f2e",border:`1px solid ${getSiteColor(site,allSites)}`,borderRadius:9,padding:"8px 12px"}}><div style={{fontSize:11,color:getSiteColor(site,allSites),fontWeight:700}}>{site}</div><div style={{fontSize:20,fontWeight:800,color:"#f1f5f9"}}>{cnt}</div></div>
-          ));})()}</div></div>
-        <div><div style={{fontWeight:700,color:"#94a3b8",marginBottom:11,fontSize:13}}>Cert Compliance</div>
-          {CERTS.slice(0,12).map(c=>{const held=workers.filter(w=>w.certs?.[c.key]?.held).length;const pct=workers.length>0?Math.round((held/workers.length)*100):0;return <div key={c.key} style={{marginBottom:7}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#94a3b8",marginBottom:2}}><span>{c.label}</span><span style={{color:pct>50?"#34d399":"#64748b"}}>{held}/{workers.length}</span></div>
-            <div style={{height:4,background:"#1e2535",borderRadius:3}}><div style={{height:"100%",borderRadius:3,background:pct>70?"#34d399":pct>30?"#fbbf24":"#f87171",width:`${pct}%`,transition:"width 0.3s"}}/></div>
-          </div>;})}
-        </div>
-      </div>}
-
-      {view==="schedule"&&<div>
-        <div style={{padding:"5px 18px",background:"#0f1421",borderBottom:"1px solid #1e2535",fontSize:11,color:"#64748b"}}>
-          💡 <strong style={{color:"#60a5fa"}}>Click any site cell</strong> to edit inline · <strong style={{color:"#60a5fa"}}>Edit</strong> opens full profile · <strong style={{color:"#f87171"}}>📋 Profile</strong> exports worker card · <strong style={{color:"#34d399"}}>💷 Payslip</strong> in Payroll tab
-        </div>
-        <div style={{overflowX:"auto"}}>
-          {(()=>{
-            const grp={};
-            filtered.forEach(w=>{
-              const cnts={};
-              activeDays.forEach(d=>{const s=w.days[d];if(s&&!isOff(s))cnts[s]=(cnts[s]||0)+1;});
-              const primary=Object.entries(cnts).sort((a,b)=>b[1]-a[1])[0]?.[0]||"Unassigned / Off";
-              if(!grp[primary])grp[primary]=[];
-              grp[primary].push(w);
-            });
-            const order=Object.keys(grp).sort((a,b)=>{if(a==="Unassigned / Off")return 1;if(b==="Unassigned / Off")return -1;return a.localeCompare(b);});
-            return order.map(siteName=>{
-              const siteColor=getSiteColor(siteName,allSites);
-              const siteWorkers=grp[siteName];
-              return <div key={siteName}>
-                <div style={{background:`${siteColor}15`,borderLeft:`4px solid ${siteColor}`,padding:"7px 18px",display:"flex",alignItems:"center",gap:10,borderTop:"1px solid #1e2535",borderBottom:`1px solid ${siteColor}33`}}>
-                  <span style={{width:10,height:10,borderRadius:"50%",background:siteColor,flexShrink:0}}/>
-                  <span style={{fontWeight:800,color:siteColor,fontSize:13,flex:1}}>{siteName}</span>
-                  <span style={{fontSize:11,color:"#64748b"}}>{siteWorkers.length} operative{siteWorkers.length!==1?"s":""}</span>
-                </div>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                  <thead><tr>
-                    <th style={{...TH,minWidth:145,paddingLeft:24}}>Worker</th>
-                    <th style={TH}>Company</th><th style={TH}>Position</th>
-                    {activeDays.map(d=><th key={d} style={{...TH,minWidth:140,color:WEEKEND_DAYS.includes(d)?"#fbbf24":"#64748b"}}>{d}{WEEKEND_DAYS.includes(d)?" 🟡":""}</th>)}
-                    <th style={TH}>Rate</th><th style={TH}>Tax</th><th style={TH}>Certs</th><th style={TH}>Actions</th>
-                  </tr></thead>
-                  <tbody>
-                    {siteWorkers.map((w,i)=>{
-              const exp=CERTS.filter(c=>cSt(c,w)==="expired").length;
-              const expg=CERTS.filter(c=>cSt(c,w)==="expiring").length;
-              return <tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
-                <td style={{...TD,fontWeight:600,color:"#f1f5f9",paddingLeft:24}}>
-                  <div>{w.name}</div>{w.comments&&<div style={{fontSize:10,color:"#fbbf24"}}>⚑ {w.comments}</div>}
-                </td>
-                <td style={{...TD,color:"#94a3b8",fontSize:11}}>{w.company||"—"}</td>
-                <td style={{...TD,color:"#94a3b8",fontSize:11}}>{w.position||"—"}</td>
-                {activeDays.map(d=>(<td key={d} style={{...TD,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"4px 7px"}}><InlineCell value={w.days[d]} workerId={w.id} day={d} allSiteNames={allSiteNames} allSites={allSites} onUpdate={updateCell}/></td>))}
-                <td style={{...TD,color:"#34d399",fontWeight:600}}>{w.agreedRate?`£${w.agreedRate}`:<span style={{color:"#374151"}}>—</span>}</td>
-                <td style={TD}><span style={{fontSize:11,fontWeight:700,color:w.taxRate===0.30?"#f87171":w.taxRate===0.20?"#fbbf24":"#34d399"}}>{Math.round((w.taxRate||0)*100)}%</span></td>
-                <td style={TD}><div style={{display:"flex",gap:3}}>
-                  {exp>0&&<span style={{color:"#f87171",fontSize:11,fontWeight:700}}>✗{exp}</span>}
-                  {expg>0&&<span style={{color:"#fbbf24",fontSize:11,fontWeight:700}}>⚠{expg}</span>}
-                  {exp===0&&expg===0&&<span style={{color:"#374151"}}>—</span>}
-                </div></td>
-                <td style={TD}><div style={{display:"flex",gap:4,flexWrap:"nowrap"}}>
-                  <button onClick={()=>setModal({type:"worker",worker:w})} style={{padding:"4px 8px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:600}}>Edit</button>
-                  <button onClick={()=>openWorkerWindow(w,allSites,weekLabel,activeDays,siteHours)} title="Open full profile in new window" style={{padding:"4px 8px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11}}>🔗</button>
-                  <button onClick={()=>exportWorkerProfile(w,allSites,weekLabel)} title="Export worker profile PDF" style={{padding:"4px 8px",background:"#1a2535",border:"1px solid #8b5cf6",borderRadius:5,color:"#a78bfa",cursor:"pointer",fontSize:11,fontWeight:600}}>📋</button>
-                  <button onClick={()=>exportPayslip(w,activeDays,weekLabel,siteHours)} title="Generate payslip PDF" style={{padding:"4px 8px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:600}}>💷</button>
-                  <button onClick={()=>delWorker(w.id)} style={{padding:"4px 8px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:600}}>✕</button>
-                </div></td>
-              </tr>;
-            })}
-                  </tbody>
-                </table>
-              </div>;
-            });
-          })()}
-          {filtered.length===0&&<div style={{textAlign:"center",padding:50,color:"#374151"}}>No workers match filters.</div>}
-        </div>
-      </div>}
-    </div>
-
-    {/* Legend */}
-    <div style={{padding:"10px 18px",borderTop:"1px solid #1e2535",background:"#0d1117"}}>
-      <div style={{fontSize:10,color:"#374151",marginBottom:5,fontWeight:700,textTransform:"uppercase"}}>Site Legend</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-        {allSites.filter(s=>!isOff(s.name)).map(s=><span key={s.id} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:20,background:"#111827",border:`1px solid ${s.color}`,fontSize:10,color:"#94a3b8"}}>
-          <span style={{width:6,height:6,borderRadius:"50%",background:s.color}}/>{s.name}
-        </span>)}
-      </div>
-    </div>
-
-    </>}
-    {/* Modals — always rendered regardless of mode */}
+    {/* ── Modals — always available ── */}
     {modal?.type==="worker"&&<WorkerModal worker={modal.worker} onSave={saveWorker} onClose={()=>setModal(null)} allSiteNames={allSiteNames} allSites={allSites} activeDays={activeDays}/>}
     {modal?.type==="sites"&&<SitesModal allSites={allSites} clients={clients} onSave={s=>{setAllSites(s);}} onClose={()=>setModal(null)} onOpenDetail={site=>setModal({type:"siteDetail",site})}/>}
     {modal?.type==="clients"&&<ClientsModal clients={clients} onSave={l=>{setClients(l);setModal(null);}} onClose={()=>setModal(null)}/>}
