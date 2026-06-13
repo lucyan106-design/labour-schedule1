@@ -2564,18 +2564,17 @@ function DashSidebar({page,setPage,workers,allSites,clients,invoices,bankTransac
       <button onClick={()=>setModal({type:"clients"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:12,marginBottom:6}}>👔 Manage Clients</button>
       <button onClick={()=>setModal({type:"trainingMatrix"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:12,marginBottom:6}}>🛡 Training Matrix PDF</button>
       <button onClick={()=>exportSchedulePDF(workers,activeDays,weekLabel,allSites)} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #ef4444",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:12,marginBottom:6}}>📄 Schedule PDF</button>
-      <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites)} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:6}}>⬇ Export Excel</button>
-      {/* ── App Launchers ── */}
-      <div style={{borderTop:"1px solid #1e2535",paddingTop:8,marginTop:4}}>
-        <div style={{fontSize:9,color:"#374151",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6,paddingLeft:2}}>Tools</div>
-        <button onClick={()=>setPage("app_sitemanager")} style={{width:"100%",padding:"8px 10px",background:"#0c1a2e",border:"1px solid #1e3a5f",borderRadius:8,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:16}}>📊</span><span>Site Manager</span>
+      <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites)} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:8}}>⬇ Export Excel</button>
+      <div style={{borderTop:"1px solid #1e2535",paddingTop:8}}>
+        <div style={{fontSize:9,color:"#374151",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6,paddingLeft:2}}>Integrated Apps</div>
+        <button onClick={()=>setPage("app_sitemanager")} style={{width:"100%",padding:"9px 10px",background:page==="app_sitemanager"?"#1e3a5f":"#0c1a2e",border:`1px solid ${page==="app_sitemanager"?"#3b82f6":"#1e3a5f"}`,borderRadius:8,color:page==="app_sitemanager"?"#93c5fd":"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}>
+          <span style={{fontSize:17}}>📊</span><span>Site Manager</span>
         </button>
-        <button onClick={()=>setPage("app_sitedocs")} style={{width:"100%",padding:"8px 10px",background:"#0c1a2e",border:"1px solid #1e3a5f",borderRadius:8,color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:16}}>📋</span><span>Site Documents</span>
+        <button onClick={()=>setPage("app_sitedocs")} style={{width:"100%",padding:"9px 10px",background:page==="app_sitedocs"?"#1a0d2e":"#0d0a1e",border:`1px solid ${page==="app_sitedocs"?"#7c3aed":"#2d1f4e"}`,borderRadius:8,color:page==="app_sitedocs"?"#c4b5fd":"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}>
+          <span style={{fontSize:17}}>📋</span><span>Site Documents</span>
         </button>
-        <button onClick={()=>setPage("app_assets")} style={{width:"100%",padding:"8px 10px",background:"#1a1400",border:"1px solid #ffb00055",borderRadius:8,color:"#ffb000",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:0,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:16}}>⚙</span><span>Asset Register</span>
+        <button onClick={()=>setPage("app_assets")} style={{width:"100%",padding:"9px 10px",background:page==="app_assets"?"#1a1200":"#0d0900",border:`1px solid ${page==="app_assets"?"#ffb000":"#3a2a00"}`,borderRadius:8,color:page==="app_assets"?"#ffb000":"#a87000",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:0,display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}>
+          <span style={{fontSize:17}}>⚙</span><span>Asset Register</span>
         </button>
       </div>
     </div>
@@ -5159,327 +5158,1017 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "certs":         return <DCerts workers={workers} setPage={nav} setDetailId={setDashDetailId}/>;
       case "finance":       return <DFinance {...SP}/>;
       case "stats":         return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
-      case "bank":          return <DBankFull {...SP}/>;
-      case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
-      case "app_sitemanager": return <SiteManagerView/>;
-      case "app_sitedocs":    return <SiteDocGeneratorView/>;
-      case "app_assets":      return <AssetRegisterView/>;
-      default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
-    }
-  };
+// ─── Asset Register — embedded via iframe (fully isolated, zero conflicts) ────
+function AssetRegisterView(){
+  const assetHtml=`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SiteKit — Asset Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --steel:#1f2933; --steel-2:#323f4b; --steel-3:#3e4c59;
+    --paper:#f3f2ee; --card:#ffffff;
+    --ink:#1f2933; --ink-soft:#52606d; --ink-faint:#9aa5b1; --line:#e2e0da;
+    --hivis:#ffb000; --hivis-ink:#3a2a00;
+    --ok:#2e9e5b; --ok-bg:#e7f4ec;
+    --due:#ef7d18; --due-bg:#fdeede;
+    --over:#d64545; --over-bg:#fbe6e6;
+    --none:#7b8794; --none-bg:#eceef0;
+    --r:14px;
+    --shadow:0 1px 2px rgba(31,41,51,.06), 0 6px 18px rgba(31,41,51,.06);
+    --sheet-shadow:0 -8px 40px rgba(31,41,51,.22);
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:"Barlow",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--paper);
+    color:var(--ink);-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input,select,textarea{font-family:inherit;font-size:16px}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
 
+  .app{max-width:520px;margin:0 auto;min-height:100vh;min-height:100dvh;position:relative;background:var(--paper)}
+  .topbar{position:sticky;top:0;z-index:20;background:var(--steel);color:#fff;
+    padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .brand .mark{width:30px;height:30px;border-radius:7px;flex:none;background:var(--hivis);color:var(--hivis-ink);
+    display:grid;place-items:center;font-weight:700;box-shadow:inset 0 0 0 2px rgba(0,0,0,.12)}
+  .brand .mark svg{width:18px;height:18px}
+  .brand h1{font-family:"Barlow Condensed";font-weight:700;font-size:21px;letter-spacing:.06em;text-transform:uppercase;margin:0;line-height:1}
+  .brand small{display:block;font-family:"IBM Plex Mono";font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:#9aa5b1;margin-top:3px}
+  .icon-btn{width:40px;height:40px;border-radius:10px;flex:none;background:var(--steel-2);color:#cdd5dd;display:grid;place-items:center;transition:background .15s,color .15s}
+  .icon-btn:hover{background:var(--steel-3);color:#fff}
+  .icon-btn svg{width:20px;height:20px}
 
-  // DashboardView only renders the page content — sidebar is in App
-  return <div style={{height:"100%",background:"#080d14",overflowY:"auto"}}>{renderPage()}</div>;
+  .scroll{padding:18px 16px 130px;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .eyebrow{font-family:"Barlow Condensed";font-weight:600;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin:0 2px 10px}
+  .h-row{display:flex;align-items:baseline;justify-content:space-between;margin:0 2px 12px}
+  .h-row h2{font-family:"Barlow Condensed";font-weight:700;font-size:24px;letter-spacing:.02em;margin:0;text-transform:uppercase}
+  .muted{color:var(--ink-soft);font-size:14px;line-height:1.5;padding:4px 2px}
+
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:22px}
+  .tile{background:var(--card);border-radius:var(--r);padding:15px 15px 13px;box-shadow:var(--shadow);border:1px solid var(--line);position:relative;overflow:hidden}
+  .tile .n{font-family:"Barlow Condensed";font-weight:700;font-size:38px;line-height:.95}
+  .tile .l{font-size:12.5px;color:var(--ink-soft);margin-top:5px;font-weight:500}
+  .tile .bar{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--steel-3)}
+  .tile.acc .bar{background:var(--hivis)}
+  .tile.due .bar{background:var(--due)} .tile.due .n{color:var(--due)}
+  .tile.over .bar{background:var(--over)} .tile.over .n{color:var(--over)}
+
+  /* inspection tag */
+  .tag{display:inline-flex;align-items:center;gap:7px;padding:4px 9px 4px 6px;border-radius:5px;
+    font-family:"IBM Plex Mono";font-size:11px;font-weight:500;line-height:1;white-space:nowrap;border:1px solid transparent}
+  .tag .hole{width:7px;height:7px;border-radius:50%;flex:none;background:var(--paper);box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.18)}
+  .tag .lab{font-weight:600;letter-spacing:.04em}
+  .tag.ok{background:var(--ok-bg);color:#1c6b3c;border-color:#bfe3cd} .tag.ok .hole{box-shadow:inset 0 0 0 1.5px var(--ok)}
+  .tag.due{background:var(--due-bg);color:#9a4e08;border-color:#f6cda3} .tag.due .hole{box-shadow:inset 0 0 0 1.5px var(--due)}
+  .tag.over{background:var(--over-bg);color:#a32525;border-color:#f0bcbc} .tag.over .hole{box-shadow:inset 0 0 0 1.5px var(--over)}
+  .tag.none{background:var(--none-bg);color:#52606d;border-color:#d5dadf}
+
+  .alert{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:9px;box-shadow:var(--shadow);transition:transform .12s}
+  .alert:active{transform:scale(.99)}
+  .alert .thumb{width:42px;height:42px;border-radius:9px;flex:none;background:var(--paper);background-size:cover;background-position:center;display:grid;place-items:center;color:var(--ink-faint)}
+  .alert .thumb svg{width:20px;height:20px}
+  .alert .mid{min-width:0;flex:1}
+  .alert .nm{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .alert .sub{font-size:12.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .search{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 13px;margin-bottom:13px;box-shadow:var(--shadow)}
+  .search svg{width:18px;height:18px;color:var(--ink-faint);flex:none}
+  .search input{border:none;outline:none;background:none;width:100%;color:var(--ink)}
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;padding:7px 13px;border-radius:999px;background:var(--card);border:1px solid var(--line);font-family:"Barlow Condensed";font-weight:600;font-size:13.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft);transition:.15s}
+  .chip.on{background:var(--steel);color:#fff;border-color:var(--steel)}
+
+  .card{display:flex;gap:13px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:11px;box-shadow:var(--shadow);transition:transform .12s;position:relative}
+  .card:active{transform:scale(.992)}
+  .card.oos{border-color:#f0bcbc}
+  .card.oos::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:var(--r) 0 0 var(--r);background:var(--over)}
+  .card .photo{width:74px;height:74px;border-radius:11px;flex:none;background:var(--paper);background-size:cover;background-position:center;display:grid;place-items:center;color:var(--ink-faint);border:1px solid var(--line);position:relative;overflow:hidden}
+  .card .photo svg{width:26px;height:26px}
+  .card .photo .oosdot{position:absolute;inset:auto 0 0 0;background:rgba(214,69,69,.92);color:#fff;font-family:"Barlow Condensed";font-weight:700;font-size:9px;letter-spacing:.08em;text-align:center;padding:2px 0;text-transform:uppercase}
+  .card .body{min-width:0;flex:1;display:flex;flex-direction:column}
+  .card .name{font-weight:600;font-size:16.5px;line-height:1.15;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .card .cat{font-family:"IBM Plex Mono";font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin-top:3px}
+  .card .tagrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+  .card .meta{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:9px;font-size:12px;color:var(--ink-soft)}
+  .card .meta svg{width:13px;height:13px;flex:none;color:var(--ink-faint)}
+
+  .site{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 15px;margin-bottom:11px;box-shadow:var(--shadow);transition:transform .12s}
+  .site:active{transform:scale(.992)}
+  .site .st-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .site .st-name{display:flex;align-items:center;gap:9px;min-width:0}
+  .site .pin{width:34px;height:34px;border-radius:9px;flex:none;background:var(--paper);display:grid;place-items:center;color:var(--steel);border:1px solid var(--line)}
+  .site .pin svg{width:18px;height:18px}
+  .site .st-name b{font-family:"Barlow Condensed";font-weight:700;font-size:19px;letter-spacing:.02em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .site .count{font-family:"IBM Plex Mono";font-size:12px;color:var(--ink-soft);flex:none}
+  .site .breakdown{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}
+  .pillstat{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono";font-size:11px;padding:4px 8px;border-radius:6px;background:var(--paper)}
+  .pillstat i{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+  .empty{text-align:center;padding:46px 24px;color:var(--ink-soft)}
+  .empty .ic{width:62px;height:62px;border-radius:16px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;margin:0 auto 16px;color:var(--ink-faint);box-shadow:var(--shadow)}
+  .empty .ic svg{width:30px;height:30px}
+  .empty h3{font-family:"Barlow Condensed";font-weight:700;font-size:21px;letter-spacing:.02em;text-transform:uppercase;margin:0 0 6px;color:var(--ink)}
+  .empty p{margin:0 auto 18px;max-width:300px;font-size:14.5px;line-height:1.5}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:"Barlow Condensed";font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase;padding:12px 20px;border-radius:11px;transition:transform .1s,filter .15s}
+  .btn:active{transform:scale(.97)}
+  .btn svg{width:17px;height:17px}
+  .btn-pri{background:var(--hivis);color:var(--hivis-ink);box-shadow:0 3px 0 #c98a00}
+  .btn-pri:active{box-shadow:0 1px 0 #c98a00;transform:translateY(2px)}
+  .btn-ghost{background:var(--card);border:1px solid var(--line);color:var(--ink)}
+  .btn-block{width:100%}
+
+  .navwrap{position:fixed;left:0;right:0;bottom:0;z-index:30;pointer-events:none}
+  .navwrap .inner{max-width:520px;margin:0 auto;position:relative}
+  .nav{pointer-events:auto;background:var(--steel);padding:8px 12px calc(8px + var(--safe-b));display:grid;grid-template-columns:1fr 1fr 1.4fr 1fr 1fr;align-items:center;box-shadow:0 -2px 20px rgba(31,41,51,.18)}
+  .nav button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;color:#8895a2;font-family:"Barlow Condensed";font-weight:600;font-size:11px;letter-spacing:.07em;text-transform:uppercase;transition:color .15s}
+  .nav button svg{width:22px;height:22px}
+  .nav button.on{color:#fff}
+  .fab{pointer-events:auto;position:absolute;left:50%;transform:translateX(-50%);bottom:calc(20px + var(--safe-b));width:60px;height:60px;border-radius:50%;background:var(--hivis);color:var(--hivis-ink);display:grid;place-items:center;box-shadow:0 6px 18px rgba(255,176,0,.45),0 0 0 5px var(--paper);transition:transform .12s}
+  .fab:active{transform:translateX(-50%) scale(.93)}
+  .fab svg{width:30px;height:30px}
+
+  /* sheet + modal share base */
+  .scrim{position:fixed;inset:0;background:rgba(31,41,51,.5);z-index:40;opacity:0;transition:opacity .2s;pointer-events:none;backdrop-filter:blur(2px)}
+  .scrim.show{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:50;max-width:520px;margin:0 auto;background:var(--paper);border-radius:22px 22px 0 0;box-shadow:var(--sheet-shadow);max-height:94vh;max-height:94dvh;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .26s cubic-bezier(.32,.72,0,1)}
+  .sheet.show{transform:none}
+  .modal-scrim{z-index:60}
+  .modal{z-index:70}
+  .grab{width:38px;height:4px;border-radius:99px;background:#cfd4d9;margin:9px auto 2px}
+  .sh-head{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 12px;border-bottom:1px solid var(--line)}
+  .sh-head h3{font-family:"Barlow Condensed";font-weight:700;font-size:22px;letter-spacing:.03em;text-transform:uppercase;margin:0}
+  .sh-x{width:34px;height:34px;border-radius:9px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;color:var(--ink-soft)}
+  .sh-x svg{width:18px;height:18px}
+  .sh-body{overflow-y:auto;padding:16px 16px 14px;-webkit-overflow-scrolling:touch}
+  .sh-foot{padding:13px 16px calc(14px + var(--safe-b));border-top:1px solid var(--line);display:flex;gap:11px;background:var(--paper)}
+  .sh-foot .btn{flex:1}
+
+  .photozone{position:relative;width:100%;aspect-ratio:16/10;border-radius:14px;overflow:hidden;background:var(--card);border:1.5px dashed var(--line);display:grid;place-items:center;margin-bottom:18px;background-size:cover;background-position:center}
+  .photozone .ph-empty{display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--ink-faint)}
+  .photozone .ph-empty svg{width:30px;height:30px}
+  .photozone .ph-empty span{font-family:"Barlow Condensed";font-weight:600;font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+  .photozone.has{border-style:solid}
+  .ph-actions{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
+  .ph-actions button{width:38px;height:38px;border-radius:10px;background:rgba(31,41,51,.82);color:#fff;display:grid;place-items:center;backdrop-filter:blur(4px)}
+  .ph-actions button svg{width:18px;height:18px}
+
+  .field{margin-bottom:15px}
+  .field label{display:block;font-family:"Barlow Condensed";font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px}
+  .field .req{color:var(--over)}
+  .inp{width:100%;padding:12px 13px;border-radius:11px;border:1px solid var(--line);background:var(--card);color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s}
+  .inp:focus{border-color:var(--hivis);box-shadow:0 0 0 3px rgba(255,176,0,.18)}
+  textarea.inp{resize:vertical;min-height:64px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+
+  .seg{display:flex;gap:8px}
+  .seg button{flex:1;padding:11px 0;border-radius:11px;border:1px solid var(--line);background:var(--card);font-family:"Barlow Condensed";font-weight:700;font-size:15px;letter-spacing:.03em;color:var(--ink-soft);transition:.15s}
+  .seg button.on{background:var(--steel);color:#fff;border-color:var(--steel)}
+  .seg.use button.on.yes{background:var(--ok);border-color:var(--ok);color:#fff}
+  .seg.use button.on.no{background:var(--over);border-color:var(--over);color:#fff}
+  .seg.res button.on.pass{background:var(--ok);border-color:var(--ok);color:#fff}
+  .seg.res button.on.fail{background:var(--over);border-color:var(--over);color:#fff}
+
+  .nextline{font-family:"IBM Plex Mono";font-size:12.5px;margin-top:9px;padding:9px 11px;border-radius:9px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;gap:8px;color:var(--ink-soft)}
+  .nextline b{color:var(--ink)}
+  .danger{color:var(--over);font-family:"Barlow Condensed";font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px;margin-top:4px;border-radius:11px;border:1px solid #f0c9c9;background:#fdf2f2}
+  .danger svg{width:16px;height:16px}
+
+  /* detail */
+  .det-photo{position:relative;width:100%;aspect-ratio:16/10;border-radius:14px;background:var(--card);border:1px solid var(--line);background-size:cover;background-position:center;margin-bottom:14px;display:grid;place-items:center;color:var(--ink-faint);overflow:hidden}
+  .det-photo svg{width:40px;height:40px}
+  .oos-ribbon{position:absolute;inset:auto 0 0 0;background:rgba(214,69,69,.94);color:#fff;font-family:"Barlow Condensed";font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;text-align:center;padding:7px 0}
+  .det-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .det-head .dh-name{font-family:"Barlow Condensed";font-weight:700;font-size:24px;letter-spacing:.02em;line-height:1.05}
+  .det-head .dh-cat{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.06em;color:var(--ink-faint);margin-top:4px;text-transform:uppercase}
+  .det-chips{display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:none}
+  .qa{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0 6px}
+  .qa button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:11px 4px;border-radius:12px;background:var(--card);border:1px solid var(--line);transition:transform .1s}
+  .qa button:active{transform:scale(.95)}
+  .qa button .qi{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--paper);color:var(--steel)}
+  .qa button .qi svg{width:17px;height:17px}
+  .qa button span{font-family:"Barlow Condensed";font-weight:600;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft);text-align:center;line-height:1.05}
+  .qa button.accent .qi{background:var(--hivis);color:var(--hivis-ink)}
+
+  .sec{display:flex;align-items:center;justify-content:space-between;margin:22px 2px 11px}
+  .sec span{font-family:"Barlow Condensed";font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase}
+  .addlink{font-family:"Barlow Condensed";font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:#9a6a00;display:inline-flex;align-items:center;gap:4px;padding:6px 10px;border-radius:9px;background:var(--due-bg);border:1px solid #f6cda3}
+  .addlink svg{width:14px;height:14px}
+
+  .det-row{display:flex;justify-content:space-between;gap:14px;padding:12px 2px;border-bottom:1px solid var(--line)}
+  .det-row .k{font-family:"Barlow Condensed";font-weight:600;font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint);flex:none}
+  .det-row .v{text-align:right;font-size:15px}
+  .det-row .v.mono{font-size:13.5px}
+
+  .patrec{display:flex;gap:11px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:9px;box-shadow:var(--shadow)}
+  .patrec .pr-main{flex:1;min-width:0}
+  .patrec .pr-date{font-family:"IBM Plex Mono";font-weight:500;font-size:14px}
+  .patrec .pr-meta{font-size:12.5px;color:var(--ink-soft);margin-top:3px}
+  .patrec .pr-meta b{color:var(--ink)}
+  .patrec .pr-tester{font-size:12px;color:var(--ink-faint);margin-top:2px}
+  .patrec .pr-right{display:flex;flex-direction:column;gap:7px;align-items:flex-end;flex:none}
+  .cert-btn{display:inline-flex;align-items:center;gap:5px;font-family:"Barlow Condensed";font-weight:700;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);background:var(--paper);border:1px solid var(--line);padding:6px 9px;border-radius:8px}
+  .cert-btn svg{width:13px;height:13px}
+
+  .tl{position:relative;margin-left:6px;padding-left:20px}
+  .tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .tl-item{position:relative;padding:0 0 16px}
+  .tl-item .dot{position:absolute;left:-19px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--card);border:2px solid var(--steel-3);display:grid;place-items:center}
+  .tl-item .dot.move{border-color:var(--steel)}
+  .tl-item .dot.cond{border-color:var(--due)}
+  .tl-item .dot.pat{border-color:var(--ok)}
+  .tl-item .dot.oos{border-color:var(--over)}
+  .tl-item .ti-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .tl-item .ti-title{font-weight:600;font-size:14.5px}
+  .tl-item .ti-date{font-family:"IBM Plex Mono";font-size:10.5px;color:var(--ink-faint);flex:none}
+  .tl-item .ti-sub{font-size:13px;color:var(--ink-soft);margin-top:2px;line-height:1.4}
+  .tl-item .ti-photo{margin-top:8px;width:100%;max-width:200px;aspect-ratio:4/3;border-radius:10px;background-size:cover;background-position:center;border:1px solid var(--line)}
+  .move-arrow{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono";font-size:12.5px;margin-top:3px}
+  .move-arrow svg{width:13px;height:13px;color:var(--ink-faint)}
+
+  /* mini photo control (modals) */
+  .mphoto{display:flex;gap:11px;align-items:center;margin-bottom:4px}
+  .mphoto .prev{width:74px;height:74px;border-radius:11px;background:var(--card);border:1px solid var(--line);background-size:cover;background-position:center;display:grid;place-items:center;color:var(--ink-faint);flex:none}
+  .mphoto .prev svg{width:24px;height:24px}
+  .mphoto .addbtn{flex:1;padding:13px;border-radius:11px;border:1.5px dashed var(--line);background:var(--card);font-family:"Barlow Condensed";font-weight:600;font-size:14px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;gap:8px}
+  .mphoto .addbtn svg{width:18px;height:18px}
+  .mphoto .rm{font-family:"Barlow Condensed";font-weight:600;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--over);background:none;padding:6px}
+
+  .toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:calc(96px + var(--safe-b));z-index:95;background:var(--steel);color:#fff;padding:11px 18px;border-radius:11px;font-weight:500;font-size:14px;box-shadow:var(--shadow);opacity:0;transition:.25s;pointer-events:none;display:flex;align-items:center;gap:9px;max-width:90%}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast svg{width:18px;height:18px;color:var(--hivis);flex:none}
+
+  .export-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .export-card h4{font-family:"Barlow Condensed";font-weight:700;font-size:16px;letter-spacing:.04em;text-transform:uppercase;margin:0 0 4px}
+  .export-card p{margin:0 0 11px;font-size:13.5px;color:var(--ink-soft);line-height:1.45}
+  .export-card .row{display:flex;gap:9px}
+  .export-card .btn{flex:1;font-size:13.5px;padding:11px 10px}
+  textarea.exp{width:100%;height:140px;border:1px solid var(--line);border-radius:11px;padding:11px;font-family:"IBM Plex Mono";font-size:11px;line-height:1.4;background:var(--paper);color:var(--ink-soft);resize:none}
+
+  @media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important} }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M5 18V11a7 7 0 0 1 14 0v7"/><path d="M12 4v2"/></svg></div>
+      <div><h1>SiteKit</h1><small>Asset register</small></div>
+    </div>
+    <button class="icon-btn" id="exportBtn" aria-label="Share register with head office" title="Share with head office">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg>
+    </button>
+  </header>
+  <main id="view" class="scroll"></main>
+</div>
+
+<div class="navwrap"><div class="inner">
+  <nav class="nav" id="nav">
+    <button data-view="overview" class="on">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Overview
+    </button>
+    <button data-view="assets">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.27 6.96 8.73 5.04 8.73-5.04"/><path d="M12 22.08V12"/></svg>Assets
+    </button>
+    <span></span>
+    <button data-view="sites">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>Sites
+    </button>
+    <button data-view="assets" style="visibility:hidden">x</button>
+  </nav>
+  <button class="fab" id="fab" aria-label="Add asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+</div></div>
+
+<!-- primary sheet (detail / create / edit / export) -->
+<div class="scrim" id="scrim"></div>
+<section class="sheet" id="sheet" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="sh-head"><h3 id="sheetTitle">Add asset</h3>
+    <button class="sh-x" id="sheetClose" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+  <div class="sh-body" id="sheetBody"></div>
+</section>
+
+<!-- secondary modal (move / update / pat) layered above the detail sheet -->
+<div class="scrim modal-scrim" id="modalScrim"></div>
+<section class="sheet modal" id="modal" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="sh-head"><h3 id="modalTitle"></h3>
+    <button class="sh-x" id="modalClose" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+  <div class="sh-body" id="modalBody"></div>
+</section>
+
+<div class="toast" id="toast"><span id="toastMsg"></span></div>
+<input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
+
+<script>
+"use strict";
+/* ============================================================
+   SiteKit v2 — asset register with PAT records, moves,
+   condition updates, serviceability and certificate output.
+   ============================================================ */
+
+/* ---------- storage ---------- */
+const HAS_STORE = typeof window!=="undefined" && window.storage && typeof window.storage.list==="function";
+const mem = new Map();
+const Store = {
+  async list(){ if(HAS_STORE){ try{const r=await window.storage.list("asset:");return (r&&r.keys)||[];}catch(e){return [...mem.keys()];}} return [...mem.keys()].filter(k=>k.startsWith("asset:")); },
+  async get(k){ if(HAS_STORE){ try{const r=await window.storage.get(k);return r?r.value:null;}catch(e){return mem.get(k)||null;}} return mem.get(k)||null; },
+  async set(k,v){ if(HAS_STORE){ try{await window.storage.set(k,v);return;}catch(e){mem.set(k,v);return;}} mem.set(k,v); },
+  async del(k){ if(HAS_STORE){ try{await window.storage.delete(k);return;}catch(e){mem.delete(k);return;}} mem.delete(k); }
+};
+
+/* ---------- state ---------- */
+const state = { assets:[], view:"overview", filterSite:"__all", search:"" };
+let editingId=null, editFromDetail=false;
+let draftPhoto=null;
+let photoSink=null;           // callback for the shared file input
+const CATS=["Power tools","Plant & machinery","Access equipment","Site lighting","Leads & cables","Welfare unit","Survey equipment","Hand tools","Other"];
+
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const esc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const uid=()=>"a"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function parseD(s){ if(!s) return null; const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+function fmtD(s){ const d=(s instanceof Date)?s:parseD(s); if(!d) return "—"; return d.getDate()+" "+MON[d.getMonth()]+" "+d.getFullYear(); }
+function fmtShort(d){ const x=(d instanceof Date)?d:parseD(d); return x?x.getDate()+" "+MON[x.getMonth()]:"—"; }
+function isoLocal(d){ const m=String(d.getMonth()+1).padStart(2,"0"); const day=String(d.getDate()).padStart(2,"0"); return d.getFullYear()+"-"+m+"-"+day; }
+function addMonths(d,n){ const x=new Date(d.getTime()); const day=x.getDate(); x.setMonth(x.getMonth()+n); if(x.getDate()<day) x.setDate(0); return x; }
+function today0(){ const t=new Date(); return new Date(t.getFullYear(),t.getMonth(),t.getDate()); }
+function tsDate(ts){ return fmtD(isoLocal(new Date(ts))); }
+const boxIcon=\`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.27 6.96 8.73 5.04 8.73-5.04"/><path d="M12 22.08V12"/></svg>\`;
+const pinIcon=\`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>\`;
+
+/* ---------- PAT engine ---------- */
+function latestPat(a){ if(!a.patTests||!a.patTests.length) return null; return [...a.patTests].sort((x,y)=>(y.date||"").localeCompare(x.date||""))[0]; }
+function patExpiry(t,a){ if(!t||!t.date) return null; return addMonths(parseD(t.date), t.interval||(a&&a.interval)||3); }
+function patStatus(a){
+  const lp=latestPat(a);
+  if(!lp) return {key:"none",due:null,days:null};
+  const due=patExpiry(lp,a);
+  if(lp.result==="fail") return {key:"fail",due,days:null};
+  const days=Math.round((due-today0())/86400000);
+  return {key: days<0?"over":(days<=30?"due":"ok"), due, days};
+}
+function tagHTML(a){
+  const s=patStatus(a); let txt;
+  if(s.key==="none") txt="NO PAT TEST";
+  else if(s.key==="fail") txt="PAT FAILED";
+  else if(s.key==="over") txt="OVERDUE "+fmtShort(s.due);
+  else if(s.key==="due") txt="DUE "+fmtShort(s.due);
+  else txt="PAT OK · "+fmtShort(s.due);
+  const cls=(s.key==="fail")?"over":s.key;
+  return \`<span class="tag \${cls}"><span class="hole"></span><span class="lab">\${txt}</span></span>\`;
+}
+const oosTag=\`<span class="tag over"><span class="hole"></span><span class="lab">OUT OF SERVICE</span></span>\`;
+
+/* an asset needs attention if out of service or PAT over/due/failed */
+function attention(a){
+  if(a.usable===false) return {sev:0,label:"Out of service",reason:"oos"};
+  const s=patStatus(a);
+  if(s.key==="fail") return {sev:0,label:"PAT failed",reason:"fail"};
+  if(s.key==="over") return {sev:0,label:\`PAT overdue · \${Math.abs(s.days)}d\`,reason:"over"};
+  if(s.key==="due")  return {sev:1,label:\`PAT due \${fmtShort(s.due)} · \${s.days}d\`,reason:"due"};
+  return null;
 }
 
+/* ---------- load + migrate ---------- */
+async function loadAll(){
+  const keys=await Store.list();
+  const out=[];
+  for(const raw of keys){
+    const k=String(raw).startsWith("asset:")?String(raw):"asset:"+raw;
+    const v=await Store.get(k);
+    if(v){ try{ out.push(migrate(JSON.parse(v))); }catch(e){} }
+  }
+  out.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  state.assets=out;
+}
+function migrate(a){
+  if(a.usable===undefined) a.usable=true;
+  if(a.interval===undefined) a.interval=3;
+  if(!Array.isArray(a.activity)) a.activity=[];
+  if(!Array.isArray(a.patTests)){
+    a.patTests=[];
+    if(a.lastPat) a.patTests.push({id:uid(),date:a.lastPat,interval:a.interval||3,result:"pass",tester:"",notes:""});
+  }
+  return a;
+}
+async function saveAsset(a){ await Store.set("asset:"+a.id, JSON.stringify(a)); }
+async function deleteAsset(id){ await Store.del("asset:"+id); }
+function findAsset(id){ return state.assets.find(x=>x.id===id); }
+function logActivity(a,entry){ entry.id=uid(); entry.ts=entry.ts||Date.now(); a.activity=a.activity||[]; a.activity.unshift(entry); }
 
-// ─── Asset Register View (SiteKit) ───────────────────────────────────────────
-// Converted from site-assets.html to React — preserves identical UI/UX
-function AssetRegisterView(){
-  const CATS_A=["All","Power Tools","Hand Tools","Lifting","Access","Electrical","Vehicles","Other"];
-  const SITES_A=["All Sites","Paddington","Canary Wharf","Old Street"];
-  const uid=()=>Math.random().toString(36).slice(2,9);
-  const today=()=>new Date().toISOString().slice(0,10);
-  const addMonths=(d,n)=>{const x=new Date(d);x.setMonth(x.getMonth()+n);return x;};
-  const fmtD=(s)=>{if(!s)return "—";const d=new Date(s);return d.getDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" "+d.getFullYear();};
-  const patStatus=(a)=>{
-    const t=a.patTests&&[...a.patTests].sort((x,y)=>(y.date||"").localeCompare(x.date||""))[0];
-    if(!t)return "none";
-    const exp=addMonths(new Date(t.date),t.interval||3);
-    const diff=(exp-new Date())/86400000;
-    if(diff<0)return "over"; if(diff<30)return "due"; return "ok";
-  };
-  const [assets,setAssets]=useState([
-    {id:"a1",name:"Hilti TE 60-ATC/AVR Combihammer",cat:"Power Tools",site:"Paddington",serialNo:"HLT-2024-001",condition:"Good",oos:false,photo:"",patTests:[{id:"p1",date:"2024-09-01",interval:3,result:"pass",tester:"J.Smith"}],activity:[]},
-    {id:"a2",name:"Spider Crane SC-2A",cat:"Lifting",site:"Canary Wharf",serialNo:"SC-2023-007",condition:"Fair",oos:false,photo:"",patTests:[],activity:[]},
-    {id:"a3",name:"3.5t Transit Custom",cat:"Vehicles",site:"Old Street",serialNo:"VH-2022-003",condition:"Good",oos:false,photo:"",patTests:[{id:"p2",date:"2023-06-01",interval:3,result:"pass",tester:"M.Jones"}],activity:[]},
-    {id:"a4",name:"Full-Body Harness — Petzl Vertex",cat:"Access",site:"Paddington",serialNo:"HRN-2024-012",condition:"Good",oos:false,photo:"",patTests:[],activity:[]},
-    {id:"a5",name:"Extension Reel 25m 16A",cat:"Electrical",site:"Canary Wharf",serialNo:"ER-2023-045",condition:"Poor",oos:true,photo:"",patTests:[{id:"p3",date:"2024-01-15",interval:3,result:"fail",tester:"J.Smith"}],activity:[]},
-  ]);
-  const [catF,setCatF]=useState("All");
-  const [siteF,setSiteF]=useState("All Sites");
-  const [search,setSearch]=useState("");
-  const [view,setView]=useState("list"); // list | detail | add
-  const [sel,setSel]=useState(null);
-  const [sheet,setSheet]=useState(null); // null | "move" | "pat" | "condition" | "decommission"
-  const [form,setForm]=useState({});
-  const [navTab,setNavTab]=useState("assets"); // overview | assets | sites | alerts
-
-  const filtered=assets.filter(a=>{
-    if(catF!=="All"&&a.cat!==catF)return false;
-    if(siteF!=="All Sites"&&a.site!==siteF)return false;
-    if(search&&!a.name.toLowerCase().includes(search.toLowerCase())&&!a.serialNo?.toLowerCase().includes(search.toLowerCase()))return false;
+/* ---------- sites + filter ---------- */
+function sites(){ return [...new Set(state.assets.map(a=>a.site).filter(Boolean))].sort((a,b)=>a.localeCompare(b)); }
+function filteredAssets(){
+  const q=state.search.trim().toLowerCase();
+  return state.assets.filter(a=>{
+    if(state.filterSite!=="__all" && a.site!==state.filterSite) return false;
+    if(q){ const hay=[a.name,a.category,a.site,a.tag,a.notes].join(" ").toLowerCase(); if(!hay.includes(q)) return false; }
     return true;
   });
-
-  const alerts=assets.filter(a=>{const s=patStatus(a);return s==="over"||s==="due"||a.oos;});
-  const bySite={};assets.forEach(a=>{if(!bySite[a.site])bySite[a.site]={total:0,oos:0,due:0,over:0};bySite[a.site].total++;if(a.oos)bySite[a.site].oos++;const s=patStatus(a);if(s==="due")bySite[a.site].due++;if(s==="over")bySite[a.site].over++;});
-
-  const S={
-    app:{display:"flex",flexDirection:"column",minHeight:"100vh",background:"#f3f2ee",fontFamily:"'Barlow',system-ui,sans-serif",color:"#1f2933",maxWidth:520,margin:"0 auto"},
-    topbar:{background:"#1f2933",color:"#fff",padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"},
-    brand:{display:"flex",alignItems:"center",gap:10},
-    mark:{width:30,height:30,borderRadius:7,background:"#ffb000",color:"#3a2a00",display:"grid",placeItems:"center",fontWeight:700,fontSize:13},
-    h1:{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:21,letterSpacing:"0.06em",textTransform:"uppercase",margin:0},
-    small:{display:"block",fontSize:"9.5px",letterSpacing:"0.14em",textTransform:"uppercase",color:"#9aa5b1",marginTop:2},
-    scroll:{padding:"16px 14px 100px"},
-    card:{display:"flex",gap:12,background:"#fff",border:"1px solid #e2e0da",borderRadius:14,padding:12,marginBottom:10,boxShadow:"0 1px 2px rgba(31,41,51,.06)",cursor:"pointer",position:"relative"},
-    tag:(s)=>({display:"inline-flex",alignItems:"center",gap:6,padding:"3px 8px",borderRadius:5,fontSize:11,fontWeight:600,fontFamily:"monospace",
-      background:s==="ok"?"#e7f4ec":s==="due"?"#fdeede":s==="over"?"#fbe6e6":"#eceef0",
-      color:s==="ok"?"#1c6b3c":s==="due"?"#9a4e08":s==="over"?"#a32525":"#52606d",
-      border:`1px solid ${s==="ok"?"#bfe3cd":s==="due"?"#f6cda3":s==="over"?"#f0bcbc":"#d5dadf"}`}),
-    nav:{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:520,background:"#1f2933",padding:"8px 10px 16px",display:"grid",gridTemplateColumns:"1fr 1fr 1.4fr 1fr 1fr",alignItems:"center",boxShadow:"0 -2px 20px rgba(31,41,51,.18)",zIndex:30},
-    navBtn:(on)=>({display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 0",color:on?"#fff":"#8895a2",fontSize:11,fontWeight:600,fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.07em",textTransform:"uppercase",background:"none",border:"none",cursor:"pointer"}),
-    fab:{gridColumn:"3",width:56,height:56,borderRadius:"50%",background:"#ffb000",color:"#3a2a00",display:"grid",placeItems:"center",boxShadow:"0 4px 14px rgba(255,176,0,.4)",margin:"0 auto",border:"none",cursor:"pointer",fontSize:22},
-    sheet:{position:"fixed",left:"50%",transform:"translateX(-50%)",bottom:0,width:"100%",maxWidth:520,background:"#f3f2ee",borderRadius:"20px 20px 0 0",boxShadow:"0 -8px 40px rgba(31,41,51,.22)",zIndex:50,padding:"0 0 16px"},
-    scrim:{position:"fixed",inset:0,background:"rgba(31,41,51,.5)",zIndex:40},
-    inp:{width:"100%",padding:"11px 12px",borderRadius:10,border:"1px solid #e2e0da",background:"#fff",fontSize:15,outline:"none",boxSizing:"border-box",marginBottom:2},
-    btn:(pri)=>({display:"flex",alignItems:"center",justifyContent:"center",gap:7,padding:"12px 20px",borderRadius:10,border:"none",background:pri?"#ffb000":"#fff",color:pri?"#3a2a00":"#1f2933",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.05em",textTransform:"uppercase",cursor:"pointer",flex:1,border:pri?"none":"1px solid #e2e0da"}),
-  };
-
-  const saveAsset=(a)=>setAssets(prev=>prev.map(x=>x.id===a.id?a:x));
-  const addActivity=(a,entry)=>{const updated={...a,activity:[{...entry,id:uid(),ts:Date.now()},...(a.activity||[])]};saveAsset(updated);setSel(updated);};
-
-  const openSheet=(type,initForm={})=>{setForm(initForm);setSheet(type);};
-  const closeSheet=()=>setSheet(null);
-
-  const doMove=()=>{
-    if(!form.site)return;
-    const updated={...sel,site:form.site};
-    addActivity(updated,{type:"move",from:sel.site,to:form.site,note:form.note||""});
-    closeSheet();
-  };
-  const doPAT=()=>{
-    if(!form.date||!form.result)return;
-    const test={id:uid(),date:form.date,interval:Number(form.interval)||3,result:form.result,tester:form.tester||""};
-    const updated={...sel,patTests:[test,...(sel.patTests||[])],oos:form.result==="fail"?true:sel.oos};
-    addActivity(updated,{type:"pat",result:form.result,date:form.date});
-    saveAsset(updated);setSel(updated);closeSheet();
-  };
-  const doCondition=()=>{
-    if(!form.condition)return;
-    const updated={...sel,condition:form.condition,oos:form.condition==="Decommissioned"};
-    addActivity(updated,{type:"condition",value:form.condition,note:form.note||""});
-    saveAsset(updated);setSel(updated);closeSheet();
-  };
-  const doAdd=()=>{
-    if(!form.name)return;
-    const a={id:uid(),name:form.name,cat:form.cat||"Other",site:form.site||SITES_A[1],serialNo:form.serialNo||"",condition:"Good",oos:false,photo:"",patTests:[],activity:[{id:uid(),type:"added",ts:Date.now()}]};
-    setAssets(prev=>[a,...prev]);
-    setView("list");setForm({});
-  };
-
-  if(view==="detail"&&sel){
-    const ps=patStatus(sel);
-    const lastPAT=sel.patTests&&[...sel.patTests].sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0];
-    return <div style={S.app}>
-      <div style={S.topbar}>
-        <button onClick={()=>setView("list")} style={{background:"none",border:"none",color:"#9aa5b1",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",gap:5}}>← Back</button>
-        <div style={{fontSize:13,fontWeight:600}}>{sel.cat}</div>
-        <div style={{width:40}}/>
-      </div>
-      <div style={{...S.scroll,paddingBottom:30}}>
-        {/* Photo / placeholder */}
-        <div style={{width:"100%",aspectRatio:"16/9",borderRadius:14,background:sel.photo?`url(${sel.photo}) center/cover`:"#fff",border:"1px solid #e2e0da",display:"flex",alignItems:"center",justifyContent:"center",color:"#9aa5b1",fontSize:40,marginBottom:14,position:"relative",overflow:"hidden"}}>
-          {!sel.photo&&"🔧"}
-          {sel.oos&&<div style={{position:"absolute",bottom:0,left:0,right:0,background:"rgba(214,69,69,.92)",color:"#fff",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,letterSpacing:"0.12em",textTransform:"uppercase",textAlign:"center",padding:"6px 0"}}>OUT OF SERVICE</div>}
-        </div>
-        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:10}}>
-          <div><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:24,lineHeight:1.05}}>{sel.name}</div>
-            <div style={{fontFamily:"monospace",fontSize:11,letterSpacing:"0.06em",color:"#9aa5b1",marginTop:4,textTransform:"uppercase"}}>{sel.cat}</div></div>
-          <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
-            <span style={S.tag(ps)}>{ps==="ok"?"● PAT OK":ps==="due"?"⚠ PAT DUE":ps==="over"?"✗ PAT OVERDUE":"○ No PAT"}</span>
-            <span style={{...S.tag("none"),fontSize:10}}>{sel.condition}</span>
-          </div>
-        </div>
-        {/* Meta */}
-        <div style={{background:"#fff",borderRadius:12,border:"1px solid #e2e0da",padding:"12px 14px",marginBottom:12}}>
-          {[["Serial No",sel.serialNo||"—"],["Current Site",sel.site],["Last PAT",lastPAT?fmtD(lastPAT.date)+" · "+lastPAT.result.toUpperCase():"—"],["Interval",lastPAT?(lastPAT.interval||3)+"mo":"—"],["Condition",sel.condition]].map(([l,v])=>
-            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f0ede8",fontSize:13}}>
-              <span style={{color:"#64748b"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>
-            </div>)}
-        </div>
-        {/* Quick actions */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:16}}>
-          {[["📋 Log PAT",()=>openSheet("pat",{date:today(),interval:3,result:"pass",tester:""}),"#fffbeb","#3a2a00"],
-            ["🚛 Move Site",()=>openSheet("move",{site:sel.site,note:""}),"#eff6ff","#1e3a5f"],
-            ["🔧 Condition",()=>openSheet("condition",{condition:sel.condition,note:""}),"#f0fdf4","#14532d"],
-            [sel.oos?"✅ Return to Service":"⛔ Out of Service",()=>{const u={...sel,oos:!sel.oos};addActivity(u,{type:sel.oos?"returned":"oos"});saveAsset(u);setSel(u);},"#fef2f2","#991b1b"]
-          ].map(([l,fn,bg,col])=>
-            <button key={l} onClick={fn} style={{padding:"11px",borderRadius:11,background:bg,border:"1px solid #e2e0da",color:col,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,letterSpacing:"0.04em",cursor:"pointer"}}>{l}</button>
-          )}
-        </div>
-        {/* Activity */}
-        {(sel.activity||[]).length>0&&<div>
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:12,letterSpacing:"0.16em",textTransform:"uppercase",color:"#9aa5b1",marginBottom:8}}>Activity</div>
-          {sel.activity.map(a=><div key={a.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ede8",fontSize:12,color:"#52606d"}}>
-            <span style={{color:"#9aa5b1",fontFamily:"monospace",flexShrink:0}}>{a.ts?new Date(a.ts).toLocaleDateString("en-GB"):"—"}</span>
-            <span>{a.type==="move"?`Moved from ${a.from} → ${a.to}`:a.type==="pat"?`PAT ${a.result?.toUpperCase()} — ${fmtD(a.date)}`:a.type==="condition"?`Condition: ${a.value}`:a.type==="oos"?"Marked out of service":a.type==="returned"?"Returned to service":"Added to register"}</span>
-          </div>)}
-        </div>}
-      </div>
-      {/* Sheets */}
-      {sheet&&<div style={S.scrim} onClick={closeSheet}/>}
-      {sheet==="pat"&&<div style={S.sheet}>
-        <div style={{width:36,height:4,borderRadius:99,background:"#cfd4d9",margin:"9px auto 14px"}}/>
-        <div style={{padding:"0 16px 16px",borderBottom:"1px solid #e2e0da",marginBottom:14,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:22,letterSpacing:"0.03em",textTransform:"uppercase"}}>Log PAT Test</div>
-        <div style={{padding:"0 16px"}}>
-          {[["Date","date","date"],["Tester Name","text","tester"],["Interval (months)","number","interval"]].map(([l,t,k])=>
-            <div key={k} style={{marginBottom:12}}><label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:4}}>{l}</label>
-              <input type={t} value={form[k]||""} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={S.inp}/></div>
-          )}
-          <div style={{marginBottom:14}}><label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:6}}>Result</label>
-            <div style={{display:"flex",gap:9}}>
-              {["pass","fail"].map(r=><button key={r} onClick={()=>setForm(f=>({...f,result:r}))} style={{flex:1,padding:11,borderRadius:10,border:"1px solid #e2e0da",background:form.result===r?(r==="pass"?"#2e9e5b":"#d64545"):"#fff",color:form.result===r?"#fff":"#52606d",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,cursor:"pointer",textTransform:"uppercase"}}>{r}</button>)}
-            </div></div>
-        </div>
-        <div style={{display:"flex",gap:9,padding:"0 16px"}}><button style={S.btn(false)} onClick={closeSheet}>Cancel</button><button style={S.btn(true)} onClick={doPAT}>Save PAT</button></div>
-      </div>}
-      {sheet==="move"&&<div style={S.sheet}>
-        <div style={{width:36,height:4,borderRadius:99,background:"#cfd4d9",margin:"9px auto 14px"}}/>
-        <div style={{padding:"0 16px 16px",borderBottom:"1px solid #e2e0da",marginBottom:14,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:22,letterSpacing:"0.03em",textTransform:"uppercase"}}>Move to Site</div>
-        <div style={{padding:"0 16px"}}>
-          <div style={{marginBottom:12}}><label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:4}}>New Site</label>
-            <select value={form.site||""} onChange={e=>setForm(f=>({...f,site:e.target.value}))} style={S.inp}>
-              {SITES_A.slice(1).map(s=><option key={s} value={s}>{s}</option>)}
-            </select></div>
-          <div style={{marginBottom:14}}><label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:4}}>Note (optional)</label>
-            <input value={form.note||""} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="Reason for move…" style={S.inp}/></div>
-        </div>
-        <div style={{display:"flex",gap:9,padding:"0 16px"}}><button style={S.btn(false)} onClick={closeSheet}>Cancel</button><button style={S.btn(true)} onClick={doMove}>Confirm Move</button></div>
-      </div>}
-      {sheet==="condition"&&<div style={S.sheet}>
-        <div style={{width:36,height:4,borderRadius:99,background:"#cfd4d9",margin:"9px auto 14px"}}/>
-        <div style={{padding:"0 16px 16px",borderBottom:"1px solid #e2e0da",marginBottom:14,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:22,letterSpacing:"0.03em",textTransform:"uppercase"}}>Update Condition</div>
-        <div style={{padding:"0 16px"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:12}}>
-            {["Excellent","Good","Fair","Poor","Decommissioned"].map(c=><button key={c} onClick={()=>setForm(f=>({...f,condition:c}))} style={{padding:10,borderRadius:10,border:"1px solid #e2e0da",background:form.condition===c?"#1f2933":"#fff",color:form.condition===c?"#fff":"#1f2933",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,cursor:"pointer"}}>{c}</button>)}
-          </div>
-          <input value={form.note||""} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="Notes…" style={S.inp}/>
-        </div>
-        <div style={{display:"flex",gap:9,padding:"14px 16px 0"}}><button style={S.btn(false)} onClick={closeSheet}>Cancel</button><button style={S.btn(true)} onClick={doCondition}>Save</button></div>
-      </div>}
-    </div>;
-  }
-
-  if(view==="add") return <div style={S.app}>
-    <div style={S.topbar}>
-      <button onClick={()=>{setView("list");setForm({});}} style={{background:"none",border:"none",color:"#9aa5b1",cursor:"pointer",fontSize:13}}>← Cancel</button>
-      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,letterSpacing:"0.05em",textTransform:"uppercase"}}>Add Asset</div>
-      <div style={{width:60}}/>
-    </div>
-    <div style={S.scroll}>
-      {[["Asset Name *","text","name","e.g. Hilti TE 60 Combihammer"],["Serial / Asset No","text","serialNo",""],["Category","select","cat",""],["Site","select","site",""]].map(([l,t,k,ph])=>
-        <div key={k} style={{marginBottom:14}}>
-          <label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:5}}>{l}</label>
-          {t==="select"?<select value={form[k]||""} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={S.inp}>
-            <option value="">— Select —</option>
-            {(k==="cat"?CATS_A.slice(1):SITES_A.slice(1)).map(o=><option key={o} value={o}>{o}</option>)}
-          </select>:<input type={t} value={form[k]||""} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} placeholder={ph} style={S.inp}/>}
-        </div>
-      )}
-      <button onClick={doAdd} style={{...S.btn(true),width:"100%",marginTop:8}}>+ Add to Register</button>
-    </div>
-  </div>;
-
-  // ── LIST VIEW ────────────────────────────────────────────────────────────────
-  return <div style={S.app}>
-    <div style={S.topbar}>
-      <div style={S.brand}>
-        <div style={S.mark}>⚙</div>
-        <div><h1 style={S.h1}>SiteKit</h1><small style={S.small}>Asset Register</small></div>
-      </div>
-      <span style={{fontFamily:"monospace",fontSize:11,color:"#9aa5b1"}}>{assets.length} assets</span>
-    </div>
-
-    <div style={{...S.scroll,paddingTop:8}}>
-      {/* Summary tiles */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
-        {[
-          {n:assets.length,l:"Total Assets",cls:""},
-          {n:assets.filter(a=>a.oos).length,l:"Out of Service",cls:"over"},
-          {n:alerts.length,l:"Need Attention",cls:"due"},
-          {n:assets.filter(a=>patStatus(a)==="ok").length,l:"PAT Current",cls:"acc"},
-        ].map((t,i)=><div key={i} style={{background:"#fff",borderRadius:14,padding:"14px 14px 12px",boxShadow:"0 1px 2px rgba(31,41,51,.06)",border:"1px solid #e2e0da",position:"relative",overflow:"hidden"}}>
-          <div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:t.cls==="over"?"#d64545":t.cls==="due"?"#ef7d18":t.cls==="acc"?"#ffb000":"#3e4c59"}}/>
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:36,color:t.cls==="over"?"#d64545":t.cls==="due"?"#ef7d18":"#1f2933",lineHeight:0.95}}>{t.n}</div>
-          <div style={{fontSize:12.5,color:"#52606d",marginTop:5,fontWeight:500}}>{t.l}</div>
-        </div>)}
-      </div>
-
-      {/* Nav tabs */}
-      <div style={{display:"flex",gap:7,overflowX:"auto",marginBottom:12,paddingBottom:4}}>
-        {[["assets","All Assets"],["sites","By Site"],["alerts","⚠ Alerts"]].map(([k,l])=>
-          <button key={k} onClick={()=>setNavTab(k)} style={{flexShrink:0,padding:"7px 14px",borderRadius:999,background:navTab===k?"#1f2933":"#fff",border:`1px solid ${navTab===k?"#1f2933":"#e2e0da"}`,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13.5,letterSpacing:"0.04em",textTransform:"uppercase",color:navTab===k?"#fff":"#52606d",cursor:"pointer"}}>{l}</button>
-        )}
-      </div>
-
-      {navTab==="assets"&&<>
-        {/* Search + filter */}
-        <div style={{display:"flex",alignItems:"center",gap:9,background:"#fff",border:"1px solid #e2e0da",borderRadius:11,padding:"10px 13px",marginBottom:11,boxShadow:"0 1px 2px rgba(31,41,51,.06)"}}>
-          <span style={{fontSize:16,color:"#9aa5b1"}}>🔍</span>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or serial…" style={{border:"none",outline:"none",background:"none",width:"100%",fontSize:14,color:"#1f2933"}}/>
-        </div>
-        <div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:10,marginBottom:4}}>
-          {CATS_A.map(c=><button key={c} onClick={()=>setCatF(c)} style={{flexShrink:0,padding:"6px 12px",borderRadius:999,background:catF===c?"#1f2933":"#fff",border:`1px solid ${catF===c?"#1f2933":"#e2e0da"}`,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:12.5,letterSpacing:"0.04em",textTransform:"uppercase",color:catF===c?"#fff":"#52606d",cursor:"pointer"}}>{c}</button>)}
-        </div>
-        {filtered.map(a=>{
-          const ps=patStatus(a);
-          return <div key={a.id} onClick={()=>{setSel(a);setView("detail");}} style={{...S.card,borderColor:a.oos?"#f0bcbc":"#e2e0da",borderLeft:a.oos?"4px solid #d64545":"1px solid #e2e0da"}}>
-            <div style={{width:72,height:72,borderRadius:11,background:"#f3f2ee",border:"1px solid #e2e0da",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0}}>🔧</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:600,fontSize:15,lineHeight:1.2,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
-              <div style={{fontFamily:"monospace",fontSize:10.5,letterSpacing:"0.06em",textTransform:"uppercase",color:"#9aa5b1",marginBottom:8}}>{a.cat}</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                <span style={S.tag(ps)}>{ps==="ok"?"✓ PAT":ps==="due"?"⚠ DUE":ps==="over"?"✗ OVERDUE":"○ No PAT"}</span>
-                {a.oos&&<span style={S.tag("over")}>OOS</span>}
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:5,marginTop:8,fontSize:11,color:"#52606d"}}>
-                <span>📍</span><span>{a.site}</span>
-                <span style={{margin:"0 4px",color:"#d5dadf"}}>·</span>
-                <span style={{fontFamily:"monospace",fontSize:10}}>{a.serialNo||"—"}</span>
-              </div>
-            </div>
-          </div>;
-        })}
-        {filtered.length===0&&<div style={{textAlign:"center",padding:"46px 20px",color:"#52606d"}}>
-          <div style={{fontSize:40,marginBottom:12}}>📦</div>
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:21,textTransform:"uppercase",color:"#1f2933",marginBottom:6}}>No Assets Found</div>
-          <div style={{fontSize:14.5,lineHeight:1.5}}>Try adjusting your filters or add a new asset.</div>
-        </div>}
-      </>}
-
-      {navTab==="sites"&&Object.entries(bySite).map(([site,s])=><div key={site} style={{background:"#fff",border:"1px solid #e2e0da",borderRadius:14,padding:"13px 14px",marginBottom:10,boxShadow:"0 1px 2px rgba(31,41,51,.06)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:9}}>
-            <div style={{width:32,height:32,borderRadius:8,background:"#f3f2ee",border:"1px solid #e2e0da",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>📍</div>
-            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,letterSpacing:"0.02em",textTransform:"uppercase"}}>{site}</span>
-          </div>
-          <span style={{fontFamily:"monospace",fontSize:12,color:"#52606d"}}>{s.total} assets</span>
-        </div>
-        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {[["✓ Active",s.total-s.oos,"#1c6b3c","#e7f4ec"],["⛔ OOS",s.oos,"#a32525","#fbe6e6"],["⚠ PAT Due",s.due,"#9a4e08","#fdeede"]].filter(([,n])=>n>0).map(([l,n,c,bg])=>
-            <div key={l} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,padding:"4px 8px",borderRadius:6,background:bg,color:c,fontFamily:"monospace",fontWeight:500}}><span style={{width:7,height:7,borderRadius:"50%",background:c,display:"inline-block"}}/>{n} {l}</div>
-          )}
-        </div>
-      </div>)}
-
-      {navTab==="alerts"&&(alerts.length===0?<div style={{textAlign:"center",padding:"46px 20px",color:"#52606d"}}><div style={{fontSize:40,marginBottom:12}}>✅</div><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:21,textTransform:"uppercase",color:"#1f2933",marginBottom:6}}>All Clear</div><div style={{fontSize:14.5}}>No assets need attention right now.</div></div>
-        :alerts.map(a=>{const ps=patStatus(a);return <div key={a.id} onClick={()=>{setSel(a);setView("detail");}} style={{display:"flex",alignItems:"center",gap:12,background:"#fff",border:"1px solid #e2e0da",borderRadius:12,padding:"11px 13px",marginBottom:9,boxShadow:"0 1px 2px rgba(31,41,51,.06)",cursor:"pointer"}}>
-          <div style={{width:42,height:42,borderRadius:9,background:"#f3f2ee",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🔧</div>
-          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div><div style={{fontSize:12,color:"#52606d",marginTop:2}}>{a.site} · {a.serialNo||"—"}</div></div>
-          <span style={S.tag(a.oos?"over":ps)}>{a.oos?"OOS":ps==="over"?"PAT OVERDUE":"PAT DUE"}</span>
-        </div>;})
-      )}
-    </div>
-
-    {/* FAB */}
-    <div style={{position:"fixed",bottom:74,right:"calc(50% - 246px)",zIndex:25}}>
-      <button onClick={()=>setView("add")} style={{width:54,height:54,borderRadius:"50%",background:"#ffb000",color:"#3a2a00",border:"none",cursor:"pointer",fontSize:24,boxShadow:"0 4px 14px rgba(255,176,0,.4)",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-    </div>
-  </div>;
 }
+
+/* ============================================================
+   RENDER VIEWS
+   ============================================================ */
+function render(){
+  document.querySelectorAll(".nav button[data-view]").forEach(b=>{ if(b.style.visibility==="hidden") return; b.classList.toggle("on", b.dataset.view===state.view); });
+  const v=$("#view");
+  v.style.animation="none"; void v.offsetWidth; v.style.animation="";
+  if(state.view==="overview") v.innerHTML=renderOverview();
+  else if(state.view==="assets") v.innerHTML=renderAssets();
+  else if(state.view==="sites") v.innerHTML=renderSites();
+  wire();
+}
+
+function renderOverview(){
+  const total=state.assets.length;
+  if(total===0) return emptyState();
+  const nSites=sites().length;
+  let patAtt=0, oos=0;
+  state.assets.forEach(a=>{ const s=patStatus(a); if(s.key==="due"||s.key==="over"||s.key==="fail") patAtt++; if(a.usable===false) oos++; });
+
+  const alerts=state.assets.map(a=>({a,att:attention(a)})).filter(x=>x.att).sort((x,y)=> x.att.sev-y.att.sev);
+
+  let html=\`<p class="eyebrow">Site overview</p>
+    <div class="tiles">
+      <div class="tile acc"><span class="bar"></span><div class="n">\${total}</div><div class="l">Assets tracked</div></div>
+      <div class="tile"><span class="bar"></span><div class="n">\${nSites}</div><div class="l">Active site\${nSites===1?"":"s"}</div></div>
+      <div class="tile due"><span class="bar"></span><div class="n">\${patAtt}</div><div class="l">Need PAT attention</div></div>
+      <div class="tile over"><span class="bar"></span><div class="n">\${oos}</div><div class="l">Out of service</div></div>
+    </div>
+    <div class="h-row"><h2>Action needed</h2></div>\`;
+
+  if(!alerts.length){
+    html+=\`<div class="alert" style="color:var(--ink-soft)">
+      <div class="thumb" style="background:var(--ok-bg);color:var(--ok)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <div class="mid"><div class="nm">All clear</div><div class="sub">No PAT due and nothing out of service.</div></div></div>\`;
+  } else {
+    alerts.forEach(({a,att})=>{
+      const ph=a.photo?\`style="background-image:url('\${a.photo}')"\`:"";
+      const t = att.reason==="oos" ? oosTag : tagHTML(a);
+      html+=\`<div class="alert" data-open="\${a.id}">
+        <div class="thumb" \${ph}>\${a.photo?"":boxIcon}</div>
+        <div class="mid"><div class="nm">\${esc(a.name)}</div><div class="sub">\${esc(a.site||"No site")} · \${esc(att.label)}</div></div>
+        \${t}</div>\`;
+    });
+  }
+  return html;
+}
+
+function renderAssets(){
+  if(state.assets.length===0) return emptyState();
+  const list=filteredAssets(), ss=sites();
+  let chips=\`<button class="chip \${state.filterSite==="__all"?"on":""}" data-site="__all">All sites</button>\`;
+  ss.forEach(s=> chips+=\`<button class="chip \${state.filterSite===s?"on":""}" data-site="\${esc(s)}">\${esc(s)}</button>\`);
+
+  let html=\`<div class="h-row"><h2>Assets</h2><span class="mono" style="font-size:12px;color:var(--ink-faint)">\${list.length} item\${list.length===1?"":"s"}</span></div>
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="searchInput" type="search" placeholder="Search name, tag, category…" value="\${esc(state.search)}"></div>
+    <div class="chips">\${chips}</div>\`;
+
+  if(!list.length){ html+=\`<div class="empty"><div class="ic">\${boxIcon}</div><h3>Nothing here</h3><p>No assets match your search or this site.</p></div>\`; return html; }
+
+  list.forEach(a=>{
+    const ph=a.photo?\`style="background-image:url('\${a.photo}')"\`:"";
+    const oos=a.usable===false;
+    html+=\`<div class="card \${oos?"oos":""}" data-open="\${a.id}">
+      <div class="photo" \${ph}>\${a.photo?"":boxIcon}\${oos?'<div class="oosdot">Out of service</div>':""}</div>
+      <div class="body">
+        <div class="name">\${esc(a.name)}</div>
+        <div class="cat">\${esc(a.category||"Uncategorised")}\${a.tag?" · "+esc(a.tag):""}</div>
+        <div class="tagrow">\${tagHTML(a)}\${oos?oosTag:""}</div>
+        <div class="meta">\${pinIcon}\${esc(a.site||"No site")}\${a.delivered?\`&nbsp;·&nbsp;<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> \${fmtShort(a.delivered)}\`:""}</div>
+      </div></div>\`;
+  });
+  return html;
+}
+
+function renderSites(){
+  if(state.assets.length===0) return emptyState();
+  const ss=sites();
+  let html=\`<div class="h-row"><h2>Sites</h2><span class="mono" style="font-size:12px;color:var(--ink-faint)">\${ss.length} active</span></div>\`;
+  if(!ss.length){ html+=\`<div class="empty"><div class="ic">\${pinIcon}</div><h3>No sites yet</h3><p>Add a site when you create an asset and it will appear here.</p></div>\`; return html; }
+  ss.forEach(site=>{
+    const items=state.assets.filter(a=>a.site===site);
+    let ok=0,due=0,over=0,oos=0;
+    items.forEach(a=>{ if(a.usable===false){oos++;return;} const s=patStatus(a); if(s.key==="ok")ok++; else if(s.key==="due")due++; else over++; });
+    const seg=(n,c,l)=> n>0?\`<span class="pillstat"><i style="background:\${c}"></i>\${n} \${l}</span>\`:"";
+    html+=\`<div class="site" data-site-open="\${esc(site)}">
+      <div class="st-top"><div class="st-name"><div class="pin">\${pinIcon}</div><b>\${esc(site)}</b></div>
+        <span class="count">\${items.length} asset\${items.length===1?"":"s"}</span></div>
+      <div class="breakdown">\${seg(oos,"var(--over)","out of service")}\${seg(over,"var(--over)","PAT issue")}\${seg(due,"var(--due)","PAT due")}\${seg(ok,"var(--ok)","ready")}</div>
+    </div>\`;
+  });
+  return html;
+}
+
+function emptyState(){
+  return \`<div class="empty"><div class="ic">\${boxIcon}</div><h3>No assets yet</h3>
+    <p>Add the tools, plant and equipment on your sites. Then move them, log condition and track PAT tests over time.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+      <button class="btn btn-pri" id="emptyAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add your first asset</button>
+      <button class="btn btn-ghost" id="emptySample">Load sample assets</button>
+    </div></div>\`;
+}
+
+/* ---------- wiring ---------- */
+function wire(){
+  document.querySelectorAll("[data-open]").forEach(n=> n.onclick=()=>openDetail(n.dataset.open));
+  document.querySelectorAll(".chip[data-site]").forEach(n=> n.onclick=()=>{state.filterSite=n.dataset.site;render();});
+  document.querySelectorAll("[data-site-open]").forEach(n=> n.onclick=()=>{state.filterSite=n.dataset.siteOpen;state.view="assets";render();});
+  const si=$("#searchInput"); if(si) si.oninput=()=>{ state.search=si.value; renderAssetsInPlace(); };
+  const ea=$("#emptyAdd"); if(ea) ea.onclick=()=>openSheet(null);
+  const es=$("#emptySample"); if(es) es.onclick=loadSamples;
+}
+function renderAssetsInPlace(){
+  const v=$("#view"); const val=$("#searchInput")?$("#searchInput").value:null;
+  v.innerHTML=renderAssets(); wire();
+  const si=$("#searchInput"); if(si&&val!=null){ si.focus(); si.setSelectionRange(val.length,val.length); }
+}
+
+$("#nav").addEventListener("click",e=>{ const b=e.target.closest("button[data-view]"); if(!b||b.style.visibility==="hidden") return; state.view=b.dataset.view; render(); });
+$("#fab").onclick=()=>openSheet(null);
+
+/* ============================================================
+   DETAIL  (primary sheet)
+   ============================================================ */
+function openDetail(id){
+  const a=findAsset(id); if(!a) return;
+  const s=patStatus(a);
+  const ph=a.photo?\`style="background-image:url('\${a.photo}')"\`:"";
+  const oos=a.usable===false;
+  const useChip = oos
+    ? \`<span class="tag over"><span class="hole"></span><span class="lab">NOT USABLE</span></span>\`
+    : \`<span class="tag ok"><span class="hole"></span><span class="lab">USABLE</span></span>\`;
+
+  $("#sheetTitle").textContent="Asset details";
+  $("#sheetBody").innerHTML=\`
+    <div class="det-photo" \${ph}>\${a.photo?"":boxIcon}\${oos?'<div class="oos-ribbon">Out of service</div>':""}</div>
+    <div class="det-head">
+      <div><div class="dh-name">\${esc(a.name)}</div><div class="dh-cat">\${esc(a.category||"Uncategorised")}\${a.tag?" · "+esc(a.tag):""}</div></div>
+      <div class="det-chips">\${tagHTML(a)}\${useChip}</div>
+    </div>
+
+    <div class="qa">
+      <button id="detMove"><span class="qi">\${pinIcon}</span><span>Move</span></button>
+      <button id="detUpdate" class="accent"><span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg></span><span>Update</span></button>
+      <button id="detPat"><span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 5c0 1.66 4 3 9 3s9-1.34 9-3-4-3-9-3-9 1.34-9 3"/></svg></span><span>PAT test</span></button>
+      <button id="detEdit"><span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span><span>Edit</span></button>
+    </div>
+
+    <div class="sec"><span>Details</span></div>
+    <div class="det-row"><span class="k">Current site</span><span class="v">\${esc(a.site||"—")}</span></div>
+    <div class="det-row"><span class="k">Asset tag</span><span class="v mono">\${esc(a.tag||"—")}</span></div>
+    <div class="det-row"><span class="k">Delivered to site</span><span class="v mono">\${a.delivered?fmtD(a.delivered):"—"}</span></div>
+    <div class="det-row"><span class="k">Next PAT due</span><span class="v mono">\${s.due?fmtD(s.due):"—"}</span></div>
+    \${a.notes?\`<div class="det-row" style="flex-direction:column;align-items:flex-start"><span class="k" style="margin-bottom:6px">Notes</span><span class="v" style="text-align:left;font-size:14px;color:var(--ink-soft);line-height:1.5">\${esc(a.notes)}</span></div>\`:""}
+
+    <div class="sec"><span>PAT tests</span><button class="addlink" id="patAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add test</button></div>
+    <div id="patList">\${patListHTML(a)}</div>
+
+    <div class="sec"><span>Activity</span></div>
+    <div id="actList">\${activityHTML(a)}</div>
+    <div style="height:8px"></div>\`;
+  showSheet();
+
+  $("#detMove").onclick=()=>openMove(id);
+  $("#detUpdate").onclick=()=>openUpdate(id);
+  $("#detPat").onclick=()=>openPat(id);
+  $("#patAdd").onclick=()=>openPat(id);
+  $("#detEdit").onclick=()=>{ editFromDetail=true; openSheet(id); };
+  wireCertButtons(a);
+}
+
+function patListHTML(a){
+  if(!a.patTests||!a.patTests.length) return \`<p class="muted">No PAT tests recorded. Add one to start tracking the expiry date.</p>\`;
+  return [...a.patTests].sort((x,y)=>(y.date||"").localeCompare(x.date||"")).map(t=>{
+    const exp=patExpiry(t,a);
+    const pass=t.result!=="fail";
+    return \`<div class="patrec">
+      <div class="pr-main">
+        <div class="pr-date">\${fmtD(t.date)}</div>
+        <div class="pr-meta">Retest every \${t.interval||a.interval||3} mo · expires <b>\${fmtD(exp)}</b></div>
+        \${t.tester?\`<div class="pr-tester">Tested by \${esc(t.tester)}</div>\`:""}
+      </div>
+      <div class="pr-right">
+        <span class="tag \${pass?"ok":"over"}"><span class="hole"></span><span class="lab">\${pass?"PASS":"FAIL"}</span></span>
+        <button class="cert-btn" data-cert="\${t.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg> Certificate</button>
+      </div></div>\`;
+  }).join("");
+}
+function wireCertButtons(a){ document.querySelectorAll("[data-cert]").forEach(b=> b.onclick=()=>generateCert(a.id,b.dataset.cert)); }
+
+function activityHTML(a){
+  if(!a.activity||!a.activity.length) return \`<p class="muted">No activity yet. Moves, condition photos and comments will appear here.</p>\`;
+  return \`<div class="tl">\`+a.activity.map(e=>{
+    let dotCls="", title="", sub="";
+    if(e.type==="create"){ title="Added to register"; sub=e.to?\`Initial location: \${esc(e.to)}\`:""; }
+    else if(e.type==="move"){ dotCls="move"; title="Moved"; sub=\`<span class="move-arrow">\${esc(e.from||"—")} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg> \${esc(e.to||"—")}</span>\${e.text?\`<br>\${esc(e.text)}\`:""}\`; }
+    else if(e.type==="condition"){ dotCls=e.usable===false?"oos":"cond"; title="Condition update"; const bits=[]; if(e.usable===true)bits.push("Marked usable"); if(e.usable===false)bits.push("Marked not usable"); if(e.text)bits.push(esc(e.text)); sub=bits.join(" · "); }
+    else if(e.type==="pat"){ dotCls=e.result==="fail"?"oos":"pat"; title=\`PAT test — \${e.result==="fail"?"failed":"passed"}\`; sub=e.expiry?\`Expires \${fmtD(e.expiry)}\`:""; }
+    const date = e.effDate?fmtD(e.effDate):tsDate(e.ts);
+    const photo = e.photo?\`<div class="ti-photo" style="background-image:url('\${e.photo}')"></div>\`:"";
+    return \`<div class="tl-item"><div class="dot \${dotCls}"></div>
+      <div class="ti-top"><div class="ti-title">\${title}</div><div class="ti-date">\${date}</div></div>
+      \${sub?\`<div class="ti-sub">\${sub}</div>\`:""}\${photo}</div>\`;
+  }).join("")+\`</div>\`;
+}
+
+/* ============================================================
+   CREATE / EDIT  (primary sheet)
+   ============================================================ */
+let formUsable=true;
+function openSheet(id){
+  editingId=id;
+  const a=id?findAsset(id):null;
+  draftPhoto=a?(a.photo||null):null;
+  formUsable=a?(a.usable!==false):true;
+  $("#sheetTitle").textContent=a?"Edit asset":"Add asset";
+  const siteOpts=sites().map(s=>\`<option value="\${esc(s)}">\`).join("");
+  const catOpts=CATS.map(c=>\`<option value="\${esc(c)}">\`).join("");
+  const todayISO=isoLocal(today0());
+
+  $("#sheetBody").innerHTML=\`
+    <div class="photozone \${draftPhoto?"has":""}" id="photozone" \${draftPhoto?\`style="background-image:url('\${draftPhoto}')"\`:""}>
+      \${draftPhoto?"":\`<div class="ph-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Tap to add photo</span></div>\`}
+      <div class="ph-actions"><button type="button" id="photoBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>\${draftPhoto?\`<button type="button" id="photoDel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>\`:""}</div>
+    </div>
+    <div class="field"><label for="f_name">Asset name <span class="req">*</span></label><input class="inp" id="f_name" placeholder="e.g. 110V transformer" value="\${a?esc(a.name):""}"></div>
+    <div class="two">
+      <div class="field"><label for="f_cat">Category</label><input class="inp" id="f_cat" list="catList" placeholder="Choose / type" value="\${a?esc(a.category||""):""}"><datalist id="catList">\${catOpts}</datalist></div>
+      <div class="field"><label for="f_tag">Asset tag / serial</label><input class="inp mono" id="f_tag" placeholder="e.g. TRF-0142" value="\${a?esc(a.tag||""):""}"></div>
+    </div>
+    <div class="field"><label for="f_site">\${a?"Current site":"Site"} <span class="req">*</span></label><input class="inp" id="f_site" list="siteList" placeholder="e.g. Riverside Plot 4" value="\${a?esc(a.site||""):""}"><datalist id="siteList">\${siteOpts}</datalist>
+      \${a?\`<div class="nextline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg><span>To record a relocation with history, use <b>Move</b> instead of editing this field.</span></div>\`:""}
+    </div>
+    <div class="field"><label for="f_delivered">Delivered to site</label><input class="inp mono" id="f_delivered" type="date" max="\${todayISO}" value="\${a?esc(a.delivered||""):""}"></div>
+    <div class="field"><label>Serviceability</label>
+      <div class="seg use" id="useSel"><button type="button" class="yes" data-u="1">Usable</button><button type="button" class="no" data-u="0">Not usable</button></div>
+    </div>
+    <div class="field"><label for="f_notes">Notes</label><textarea class="inp" id="f_notes" placeholder="Condition, accessories, who delivered it…">\${a?esc(a.notes||""):""}</textarea></div>
+    \${id?\`<button class="danger" id="deleteBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg> Delete this asset</button>\`:""}\`;
+
+  // footer
+  let foot=$("#sheetFoot"); if(foot) foot.remove();
+  foot=el("div","sh-foot"); foot.id="sheetFoot";
+  foot.innerHTML=\`<button class="btn btn-ghost" id="cancelBtn">\${editFromDetail?"Back":"Cancel"}</button><button class="btn btn-pri" id="saveBtn">\${id?"Save changes":"Add asset"}</button>\`;
+  $("#sheet").appendChild(foot);
+
+  function paintUse(){ document.querySelectorAll("#useSel button").forEach(b=> b.classList.toggle("on", (b.dataset.u==="1")===formUsable)); }
+  document.querySelectorAll("#useSel button").forEach(b=> b.onclick=()=>{ formUsable=(b.dataset.u==="1"); paintUse(); });
+  paintUse();
+
+  $("#photoBtn").onclick=()=>pickPhoto(u=>{draftPhoto=u;refreshPhotoZone();});
+  $("#photozone").onclick=(e)=>{ if(e.target.closest(".ph-actions")) return; pickPhoto(u=>{draftPhoto=u;refreshPhotoZone();}); };
+  const pd=$("#photoDel"); if(pd) pd.onclick=()=>{draftPhoto=null;refreshPhotoZone();};
+
+  const db=$("#deleteBtn");
+  if(db) db.onclick=async()=>{ if(!confirm("Delete this asset? This cannot be undone.")) return; await deleteAsset(id); await loadAll(); closeSheet(); render(); toast("Asset deleted"); };
+
+  $("#cancelBtn").onclick=()=>{ if(editFromDetail){ editFromDetail=false; openDetail(id); } else closeSheet(); };
+  $("#saveBtn").onclick=saveFromForm;
+  showSheet();
+  setTimeout(()=>{ const n=$("#f_name"); if(n&&!id) n.focus(); },320);
+}
+function refreshPhotoZone(){
+  const z=$("#photozone"); if(!z) return;
+  z.classList.toggle("has",!!draftPhoto);
+  z.style.backgroundImage=draftPhoto?\`url('\${draftPhoto}')\`:"";
+  z.innerHTML = (draftPhoto?"":\`<div class="ph-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Tap to add photo</span></div>\`)
+    + \`<div class="ph-actions"><button type="button" id="photoBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>\${draftPhoto?\`<button type="button" id="photoDel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>\`:""}</div>\`;
+  $("#photoBtn").onclick=()=>pickPhoto(u=>{draftPhoto=u;refreshPhotoZone();});
+  const pd=$("#photoDel"); if(pd) pd.onclick=()=>{draftPhoto=null;refreshPhotoZone();};
+}
+
+async function saveFromForm(){
+  const name=$("#f_name").value.trim(), site=$("#f_site").value.trim();
+  if(!name){ toast("Please enter an asset name"); $("#f_name").focus(); return; }
+  if(!site){ toast("Please enter a site"); $("#f_site").focus(); return; }
+  const isNew=!editingId;
+  let a = isNew ? {id:uid(),patTests:[],activity:[],interval:3,created:Date.now()} : Object.assign({},findAsset(editingId));
+  const prevUsable = a.usable;
+  a.name=name; a.category=$("#f_cat").value.trim(); a.tag=$("#f_tag").value.trim();
+  a.site=site; a.delivered=$("#f_delivered").value||""; a.notes=$("#f_notes").value.trim();
+  a.photo=draftPhoto||null; a.usable=formUsable;
+  if(isNew){ logActivity(a,{type:"create",to:site,effDate:a.delivered||isoLocal(today0())}); }
+  else if(prevUsable!==formUsable){ logActivity(a,{type:"condition",usable:formUsable,text:"Updated from edit screen"}); }
+  await saveAsset(a);
+  await loadAll();
+  const back=editFromDetail; editFromDetail=false;
+  if(back){ openDetail(a.id); } else { closeSheet(); }
+  render();
+  toast(isNew?"Asset added":"Asset updated");
+}
+
+/* ---------- primary sheet open/close ---------- */
+function showSheet(){ $("#scrim").classList.add("show"); $("#sheet").classList.add("show"); $("#sheet").setAttribute("aria-hidden","false"); document.body.style.overflow="hidden"; }
+function closeSheet(){ $("#scrim").classList.remove("show"); $("#sheet").classList.remove("show"); $("#sheet").setAttribute("aria-hidden","true"); document.body.style.overflow=""; editingId=null; editFromDetail=false; draftPhoto=null; }
+$("#scrim").onclick=closeSheet; $("#sheetClose").onclick=()=>{ if(editFromDetail){ const id=editingId; editFromDetail=false; openDetail(id);} else closeSheet(); };
+
+/* ============================================================
+   MODAL LAYER  (move / update / pat)  — above the detail sheet
+   ============================================================ */
+let modalPhoto=null;
+function showModal(title){ $("#modalTitle").textContent=title; $("#modalScrim").classList.add("show"); $("#modal").classList.add("show"); $("#modal").setAttribute("aria-hidden","false"); }
+function closeModal(){ $("#modalScrim").classList.remove("show"); $("#modal").classList.remove("show"); $("#modal").setAttribute("aria-hidden","true"); modalPhoto=null; }
+$("#modalScrim").onclick=closeModal; $("#modalClose").onclick=closeModal;
+function modalFoot(saveLabel){
+  let f=$("#modalFoot"); if(f) f.remove();
+  f=el("div","sh-foot"); f.id="modalFoot";
+  f.innerHTML=\`<button class="btn btn-ghost" id="mCancel">Cancel</button><button class="btn btn-pri" id="mSave">\${saveLabel}</button>\`;
+  $("#modal").appendChild(f); $("#mCancel").onclick=closeModal;
+}
+function refreshDetailSections(a){ const p=$("#patList"); if(p)p.innerHTML=patListHTML(a); const ac=$("#actList"); if(ac)ac.innerHTML=activityHTML(a); wireCertButtons(a); }
+
+/* MOVE */
+function openMove(id){
+  const a=findAsset(id); if(!a) return;
+  const siteOpts=sites().filter(s=>s!==a.site).map(s=>\`<option value="\${esc(s)}">\`).join("");
+  const todayISO=isoLocal(today0());
+  $("#modalBody").innerHTML=\`
+    <div class="nextline" style="margin:0 0 16px"><span>Currently at <b>\${esc(a.site||"—")}</b></span></div>
+    <div class="field"><label for="m_site">New location <span class="req">*</span></label><input class="inp" id="m_site" list="moveSites" placeholder="e.g. Eastgate Phase 2" autocomplete="off"><datalist id="moveSites">\${siteOpts}</datalist></div>
+    <div class="field"><label for="m_date">Date moved</label><input class="inp mono" id="m_date" type="date" max="\${todayISO}" value="\${todayISO}"></div>
+    <div class="field"><label for="m_note">Note (optional)</label><input class="inp" id="m_note" placeholder="e.g. transferred with the breaker set"></div>\`;
+  modalFoot("Move asset"); showModal("Move asset");
+  setTimeout(()=>$("#m_site").focus(),320);
+  $("#mSave").onclick=async()=>{
+    const to=$("#m_site").value.trim();
+    if(!to){ toast("Enter the new location"); $("#m_site").focus(); return; }
+    const from=a.site||""; const date=$("#m_date").value||todayISO;
+    a.site=to; logActivity(a,{type:"move",from,to,text:$("#m_note").value.trim(),effDate:date});
+    await saveAsset(a); closeModal(); openDetail(id); render(); toast("Moved to "+to);
+  };
+}
+
+/* UPDATE CONDITION (photo + comment + usable) */
+function openUpdate(id){
+  const a=findAsset(id); if(!a) return;
+  modalPhoto=null;
+  let mUse=a.usable!==false;
+  $("#modalBody").innerHTML=\`
+    <div class="field"><label>Current condition photo</label><div class="mphoto" id="mPhotoWrap"></div></div>
+    <div class="field"><label for="u_comment">Comment</label><textarea class="inp" id="u_comment" placeholder="e.g. casing cracked, guard missing, serviced and cleaned…"></textarea></div>
+    <div class="field"><label>Serviceability</label><div class="seg use" id="uUse"><button type="button" class="yes" data-u="1">Usable</button><button type="button" class="no" data-u="0">Not usable</button></div></div>\`;
+  modalFoot("Save update"); showModal("Update condition");
+  function paintU(){ document.querySelectorAll("#uUse button").forEach(b=> b.classList.toggle("on",(b.dataset.u==="1")===mUse)); }
+  document.querySelectorAll("#uUse button").forEach(b=> b.onclick=()=>{ mUse=(b.dataset.u==="1"); paintU(); });
+  paintU();
+  function paintPhoto(){
+    const w=$("#mPhotoWrap"); if(!w) return;
+    if(modalPhoto){ w.innerHTML=\`<div class="prev" style="background-image:url('\${modalPhoto}')"></div><button type="button" class="rm" id="mRm">Remove</button>\`; $("#mRm").onclick=()=>{modalPhoto=null;paintPhoto();}; }
+    else { w.innerHTML=\`<div class="prev">\${boxIcon}</div><button type="button" class="addbtn" id="mAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg> Take / choose photo</button>\`; $("#mAdd").onclick=()=>pickPhoto(u=>{modalPhoto=u;paintPhoto();}); }
+  }
+  paintPhoto();
+  $("#mSave").onclick=async()=>{
+    const comment=$("#u_comment").value.trim();
+    const usableChanged = (a.usable!==false)!==mUse;
+    if(!modalPhoto && !comment && !usableChanged){ toast("Add a photo, comment or change status"); return; }
+    if(modalPhoto) a.photo=modalPhoto;            // newest photo = current condition
+    a.usable=mUse;
+    logActivity(a,{type:"condition",photo:modalPhoto||null,text:comment,usable:mUse});
+    await saveAsset(a); closeModal(); openDetail(id); render(); toast("Condition updated");
+  };
+}
+
+/* ADD PAT TEST */
+function openPat(id){
+  const a=findAsset(id); if(!a) return;
+  let pInt=a.interval||3, pRes="pass";
+  const todayISO=isoLocal(today0());
+  $("#modalBody").innerHTML=\`
+    <div class="field"><label for="p_date">Test date <span class="req">*</span></label><input class="inp mono" id="p_date" type="date" max="\${todayISO}" value="\${todayISO}"></div>
+    <div class="field"><label>Retest every</label><div class="seg" id="pInt"><button type="button" data-m="3">3 mo</button><button type="button" data-m="6">6 mo</button><button type="button" data-m="12">12 mo</button></div>
+      <div class="nextline" id="pNext"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="pNextTxt"></span></div></div>
+    <div class="field"><label>Result</label><div class="seg res" id="pRes"><button type="button" class="pass" data-r="pass">Pass</button><button type="button" class="fail" data-r="fail">Fail</button></div></div>
+    <div class="field"><label for="p_tester">Tested by (optional)</label><input class="inp" id="p_tester" placeholder="e.g. J. Doe / Acme PAT Ltd"></div>
+    <div class="field"><label for="p_notes">Notes (optional)</label><input class="inp" id="p_notes" placeholder="e.g. replaced plug, retest passed"></div>\`;
+  modalFoot("Save test"); showModal("Add PAT test");
+  function paintInt(){ document.querySelectorAll("#pInt button").forEach(b=> b.classList.toggle("on",Number(b.dataset.m)===pInt)); updNext(); }
+  function paintRes(){ document.querySelectorAll("#pRes button").forEach(b=> b.classList.toggle("on",b.dataset.r===pRes)); }
+  function updNext(){
+    const d=$("#p_date").value; const t=$("#pNextTxt");
+    if(!d){ t.textContent="Pick a test date to see the expiry."; return; }
+    const due=addMonths(parseD(d),pInt); const days=Math.round((due-today0())/86400000);
+    t.innerHTML=\`Expires <b>\${fmtD(due)}</b>\${days>=0?\` · in \${days} day\${days===1?"":"s"}\`:\` · \${Math.abs(days)} day\${Math.abs(days)===1?"":"s"} ago\`}\`;
+  }
+  document.querySelectorAll("#pInt button").forEach(b=> b.onclick=()=>{pInt=Number(b.dataset.m);paintInt();});
+  document.querySelectorAll("#pRes button").forEach(b=> b.onclick=()=>{pRes=b.dataset.r;paintRes();});
+  $("#p_date").addEventListener("change",updNext);
+  paintInt(); paintRes();
+  $("#mSave").onclick=async()=>{
+    const date=$("#p_date").value;
+    if(!date){ toast("Pick a test date"); return; }
+    const test={id:uid(),date,interval:pInt,result:pRes,tester:$("#p_tester").value.trim(),notes:$("#p_notes").value.trim()};
+    a.patTests=a.patTests||[]; a.patTests.push(test); a.interval=pInt;
+    const exp=patExpiry(test,a);
+    logActivity(a,{type:"pat",result:pRes,expiry:isoLocal(exp),effDate:date});
+    let msg="PAT test added";
+    if(pRes==="fail"){ a.usable=false; logActivity(a,{type:"condition",usable:false,text:"Failed PAT test"}); msg="Recorded as failed — asset set out of service"; }
+    await saveAsset(a); closeModal(); openDetail(id); render(); toast(msg);
+  };
+}
+
+/* ---------- shared photo capture + compress ---------- */
+function pickPhoto(cb){ photoSink=cb; const fi=$("#fileInput"); fi.value=""; fi.click(); }
+$("#fileInput").addEventListener("change",function(){
+  const f=this.files&&this.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=e=>{ const img=new Image(); img.onload=()=>{
+    const max=1024; let w=img.width,h=img.height;
+    if(w>max||h>max){ const r=Math.min(max/w,max/h); w=Math.round(w*r); h=Math.round(h*r); }
+    const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(img,0,0,w,h);
+    const data=c.toDataURL("image/jpeg",0.72); if(photoSink) photoSink(data); photoSink=null;
+  }; img.src=e.target.result; };
+  reader.readAsDataURL(f);
+});
+
+/* ---------- toast ---------- */
+let toastT=null;
+function toast(msg){
+  const t=$("#toast"); $("#toastMsg").textContent=msg;
+  const old=t.querySelector("svg"); if(old) old.remove();
+  t.insertAdjacentHTML("afterbegin",\`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>\`);
+  t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2400);
+}
+
+/* ============================================================
+   PAT CERTIFICATE  (document generator)
+   ============================================================ */
+function generateCert(assetId,testId){
+  const a=findAsset(assetId); if(!a) return;
+  const t=(a.patTests||[]).find(x=>x.id===testId); if(!t) return;
+  const exp=patExpiry(t,a);
+  const pass=t.result!=="fail";
+  const html=certHTML(a,t,exp,pass);
+  const fname=\`PAT-cert-\${(a.tag||a.name||"asset").replace(/[^\\w-]+/g,"_")}-\${t.date}.html\`;
+  const ok=download(fname,html,"text/html");
+  toast(ok?"Certificate downloaded — open & print to PDF":"Use the on-screen copy instead");
+  if(!ok){ // fallback: show in modal to copy
+    $("#modalBody").innerHTML=\`<p class="muted">Couldn't download automatically. Copy this certificate file and save it as <b>\${esc(fname)}</b>, then open it in a browser to print.</p><textarea class="exp" readonly id="certArea" style="height:240px">\${esc(html)}</textarea>\`;
+    modalFoot("Copy"); showModal("PAT certificate");
+    $("#mSave").textContent="Copy"; $("#mSave").onclick=async()=>{ const ta=$("#certArea"); try{ await navigator.clipboard.writeText(ta.value); toast("Certificate copied"); }catch(e){ ta.focus(); ta.select(); toast("Selected — copy manually"); } };
+  }
+}
+function certHTML(a,t,exp,pass){
+  const E=esc;
+  return \`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>PAT Certificate — \${E(a.name)}</title>
+<style>
+@page{size:A4;margin:18mm}
+*{box-sizing:border-box;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+body{margin:0;color:#1f2933;background:#f3f2ee;padding:24px}
+.sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e0da;border-radius:10px;overflow:hidden}
+.head{background:#1f2933;color:#fff;padding:22px 26px;display:flex;justify-content:space-between;align-items:flex-start}
+.head h1{font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0}
+.head .sub{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#9aa5b1;margin-top:6px}
+.mark{background:#ffb000;color:#3a2a00;font-weight:800;border-radius:8px;padding:8px 12px;font-size:13px;letter-spacing:.12em}
+.body{padding:26px}
+.result{display:flex;align-items:center;gap:16px;margin-bottom:22px}
+.stamp{font-size:26px;font-weight:800;letter-spacing:.08em;padding:10px 22px;border-radius:8px;border:3px solid}
+.pass{color:#1c6b3c;border-color:#2e9e5b;background:#e7f4ec}
+.fail{color:#a32525;border-color:#d64545;background:#fbe6e6}
+.result .meta{font-size:13px;color:#52606d}
+table{width:100%;border-collapse:collapse;margin-bottom:8px}
+td{padding:11px 6px;border-bottom:1px solid #eceae4;font-size:14px;vertical-align:top}
+td.k{width:42%;color:#7b8794;text-transform:uppercase;letter-spacing:.06em;font-size:11px;font-weight:700;padding-top:13px}
+.expiry{margin-top:18px;padding:14px 16px;border-radius:8px;background:#f3f2ee;border:1px solid #e2e0da;display:flex;justify-content:space-between;font-size:14px}
+.expiry b{font-size:16px}
+.sign{display:flex;gap:40px;margin-top:34px}
+.sign div{flex:1}
+.line{border-top:1px solid #1f2933;margin-top:34px;padding-top:6px;font-size:11px;color:#7b8794;text-transform:uppercase;letter-spacing:.06em}
+.foot{padding:16px 26px;border-top:1px solid #eceae4;font-size:11px;color:#9aa5b1;display:flex;justify-content:space-between}
+.print{position:fixed;right:18px;bottom:18px;background:#ffb000;color:#3a2a00;border:none;border-radius:10px;padding:13px 20px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;font-size:13px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+@media print{.print{display:none}body{background:#fff;padding:0}.sheet{border:none}}
+</style></head><body>
+<div class="sheet">
+  <div class="head"><div><h1>Portable Appliance Test</h1><div class="sub">Test certificate</div></div><div class="mark">SITEKIT</div></div>
+  <div class="body">
+    <div class="result"><span class="stamp \${pass?"pass":"fail"}">\${pass?"PASS":"FAIL"}</span><div class="meta">Test performed on <b>\${fmtD(t.date)}</b>\${t.tester?\`<br>by \${E(t.tester)}\`:""}</div></div>
+    <table>
+      <tr><td class="k">Asset</td><td>\${E(a.name)}</td></tr>
+      <tr><td class="k">Category</td><td>\${E(a.category||"—")}</td></tr>
+      <tr><td class="k">Asset tag / serial</td><td>\${E(a.tag||"—")}</td></tr>
+      <tr><td class="k">Location at test</td><td>\${E(a.site||"—")}</td></tr>
+      <tr><td class="k">Test result</td><td>\${pass?"Pass — safe for use":"Fail — removed from service"}</td></tr>
+      <tr><td class="k">Retest interval</td><td>Every \${t.interval||a.interval||3} months</td></tr>
+      \${t.notes?\`<tr><td class="k">Notes</td><td>\${E(t.notes)}</td></tr>\`:""}
+    </table>
+    <div class="expiry"><span>Next test due</span><b>\${fmtD(exp)}</b></div>
+    <div class="sign"><div><div class="line">Tester signature</div></div><div><div class="line">Date</div></div></div>
+  </div>
+  <div class="foot"><span>Generated by SiteKit asset register</span><span>\${fmtD(isoLocal(new Date()))}</span></div>
+</div>
+<button class="print" onclick="window.print()">Print / Save as PDF</button>
+</body></html>\`;
+}
+
+/* ============================================================
+   EXPORT / SHARE WITH HEAD OFFICE
+   ============================================================ */
+function buildCSV(){
+  const head=["Name","Category","Asset tag","Current site","Delivered","Usable","Last PAT","Last result","Next PAT due","PAT status","PAT tests (count)","Notes"];
+  const rows=state.assets.map(a=>{
+    const s=patStatus(a), lp=latestPat(a);
+    const st=s.key==="none"?"No test":s.key==="fail"?"Failed":s.key==="over"?"Overdue":s.key==="due"?"Due soon":"Valid";
+    const cells=[a.name,a.category,a.tag,a.site,a.delivered,(a.usable===false?"No":"Yes"),lp?lp.date:"",lp?(lp.result==="fail"?"Fail":"Pass"):"",s.due?isoLocal(s.due):"",st,(a.patTests||[]).length,(a.notes||"").replace(/\\n/g," ")];
+    return cells.map(v=>{ v=v==null?"":String(v); return /[",\\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(",");
+  });
+  return [head.join(","),...rows].join("\\n");
+}
+function buildJSON(){
+  return JSON.stringify({
+    exported:new Date().toISOString(), site_count:sites().length, asset_count:state.assets.length,
+    assets:state.assets.map(a=>{ const {photo,activity,patTests,...rest}=a; return {...rest, patTests:patTests||[], activity:(activity||[]).map(({photo,...e})=>e)}; })
+  },null,2);
+}
+function download(filename,text,mime){
+  try{ const blob=new Blob([text],{type:mime}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},500); return true; }catch(e){ return false; }
+}
+async function copyText(t){ try{ await navigator.clipboard.writeText(t); return true; }catch(e){ return false; } }
+
+$("#exportBtn").onclick=()=>{
+  if(state.assets.length===0){ toast("Add some assets first"); return; }
+  closeModal();
+  $("#sheetTitle").textContent="Share with head office";
+  const csv=buildCSV();
+  $("#sheetBody").innerHTML=\`
+    <p style="font-size:14px;color:var(--ink-soft);line-height:1.5;margin:2px 2px 16px">Export the full register to send or upload to the parent company. In a live system this would sync automatically.</p>
+    <div class="export-card"><h4>Spreadsheet (CSV)</h4><p>Opens in Excel or Sheets — every asset, location, PAT date and status.</p>
+      <div class="row"><button class="btn btn-pri" id="csvDl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Download CSV</button><button class="btn btn-ghost" id="csvCopy">Copy</button></div></div>
+    <div class="export-card"><h4>Data backup (JSON)</h4><p>Full structured backup including PAT history for re-import or integration.</p>
+      <div class="row"><button class="btn btn-pri" id="jsonDl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Download JSON</button><button class="btn btn-ghost" id="jsonCopy">Copy</button></div></div>
+    <label class="field" style="margin-top:4px"><span style="font-family:'Barlow Condensed';font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Preview (CSV)</span></label>
+    <textarea class="exp" id="expArea" readonly>\${esc(csv)}</textarea>\`;
+  let foot=$("#sheetFoot"); if(foot) foot.remove();
+  foot=el("div","sh-foot"); foot.id="sheetFoot"; foot.innerHTML=\`<button class="btn btn-ghost btn-block" id="expClose">Done</button>\`;
+  $("#sheet").appendChild(foot); $("#expClose").onclick=closeSheet;
+  const stamp=isoLocal(new Date());
+  $("#csvDl").onclick=()=>{ download(\`site-assets-\${stamp}.csv\`,csv,"text/csv")?toast("CSV downloaded"):toast("Use Copy instead"); };
+  $("#jsonDl").onclick=()=>{ download(\`site-assets-\${stamp}.json\`,buildJSON(),"application/json")?toast("JSON downloaded"):toast("Use Copy instead"); };
+  $("#csvCopy").onclick=async()=>{ (await copyText(csv))?toast("CSV copied"):selArea(); };
+  $("#jsonCopy").onclick=async()=>{ const ar=$("#expArea"); ar.value=buildJSON(); (await copyText(ar.value))?toast("JSON copied"):selArea(); };
+  showSheet();
+};
+function selArea(){ const a=$("#expArea"); a.focus(); a.select(); toast("Selected — copy manually"); }
+
+/* ============================================================
+   SAMPLE DATA  (new shape)
+   ============================================================ */
+async function loadSamples(){
+  const t=today0(); const ago=d=>{ const x=new Date(t); x.setDate(x.getDate()-d); return isoLocal(x); };
+  const now=Date.now(), DAY=86400000;
+  const mk=(o)=>{ o.id=uid(); o.created=now; if(o.usable===undefined)o.usable=true; return o; };
+  const samples=[
+    mk({name:"110V site transformer 3.3kVA",category:"Power tools",tag:"TRF-0142",site:"Riverside Plot 4",delivered:ago(40),notes:"Yellow casing, twin outlet.",interval:3,
+        patTests:[{id:uid(),date:ago(98),interval:3,result:"pass",tester:"Acme PAT Ltd",notes:""}],
+        activity:[{id:uid(),ts:now-40*DAY,type:"create",to:"Riverside Plot 4",effDate:ago(40)}]}),
+    mk({name:"Kango breaker K900",category:"Power tools",tag:"BRK-0098",site:"Riverside Plot 4",delivered:ago(22),notes:"In flight case with chisel set.",interval:3,
+        patTests:[{id:uid(),date:ago(20),interval:3,result:"pass",tester:"J. Mara",notes:""}],
+        activity:[{id:uid(),ts:now-20*DAY,type:"pat",result:"pass",expiry:ago(-70),effDate:ago(20)},{id:uid(),ts:now-22*DAY,type:"create",to:"Riverside Plot 4",effDate:ago(22)}]}),
+    mk({name:"LED tower light",category:"Site lighting",tag:"LGT-0031",site:"Riverside Plot 4",delivered:ago(60),notes:"",interval:6,usable:false,
+        patTests:[{id:uid(),date:ago(170),interval:6,result:"pass",tester:"Acme PAT Ltd",notes:""}],
+        activity:[{id:uid(),ts:now-3*DAY,type:"condition",usable:false,text:"Mast won't extend — sent for repair",photo:null},{id:uid(),ts:now-60*DAY,type:"create",to:"Riverside Plot 4",effDate:ago(60)}]}),
+    mk({name:"Belle cement mixer 150L",category:"Plant & machinery",tag:"MIX-0007",site:"Eastgate Phase 2",delivered:ago(12),notes:"",interval:6,
+        patTests:[{id:uid(),date:ago(5),interval:6,result:"pass",tester:"",notes:""}],
+        activity:[{id:uid(),ts:now-9*DAY,type:"move",from:"Riverside Plot 4",to:"Eastgate Phase 2",text:"Moved with the gang",effDate:ago(9)},{id:uid(),ts:now-12*DAY,type:"create",to:"Riverside Plot 4",effDate:ago(40)}]}),
+    mk({name:"Extension lead 25m 110V",category:"Leads & cables",tag:"LD-0204",site:"Eastgate Phase 2",delivered:ago(12),notes:"Awaiting first PAT test.",interval:3,
+        patTests:[],activity:[{id:uid(),ts:now-12*DAY,type:"create",to:"Eastgate Phase 2",effDate:ago(12)}]}),
+    mk({name:"Podium step access platform",category:"Access equipment",tag:"ACC-0019",site:"Eastgate Phase 2",delivered:ago(30),notes:"",interval:6,
+        patTests:[{id:uid(),date:ago(85),interval:6,result:"pass",tester:"",notes:""}],
+        activity:[{id:uid(),ts:now-30*DAY,type:"create",to:"Eastgate Phase 2",effDate:ago(30)}]}),
+  ];
+  for(const s of samples){ s.photo=null; await saveAsset(s); }
+  await loadAll(); render(); toast("Sample assets loaded");
+}
+
+/* ---------- boot ---------- */
+(async function init(){ await loadAll(); render(); })();
+</script>
+</body>
+</html>
+`;
+  return(
+    <div style={{position:"absolute",top:0,left:200,right:0,bottom:0,zIndex:10}}>
+      <iframe srcDoc={assetHtml} style={{width:"100%",height:"100%",border:"none",display:"block"}} title="SiteKit Asset Register" sandbox="allow-scripts allow-same-origin allow-forms"/>
+    </div>
+  );
+}
+
+// ─── Site Manager App (isolated closure) ─────────────────────────────────────
+const SiteManagerView = (()=>{
 
 // ─────────────────────────────────────────────────────────
 //  HELPERS
@@ -5506,7 +6195,7 @@ const MONTHS    = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","
 function weekMonday(off=0){ const d=new Date(BASE_MON); d.setDate(d.getDate()+off*7); return d; }
 function weekDates(off=0){ const m=weekMonday(off); return Array.from({length:6},(_,i)=>{ const d=new Date(m); d.setDate(d.getDate()+i); return d; }); }
 function weekKey(off=0){ const d=weekMonday(off); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
-function smFmtDate(d){ return `${d.getDate()} ${MONTHS[d.getMonth()]}`; }
+function fmtDate(d){ return `${d.getDate()} ${MONTHS[d.getMonth()]}`; }
 function dateToWK(ds){ const d=new Date(ds); const di=(d.getDay()+6)%7; const m=new Date(d); m.setDate(d.getDate()-di); return `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,"0")}-${String(m.getDate()).padStart(2,"0")}`; }
 function dateToDI(ds){ return (new Date(ds).getDay()+6)%7; }  // 0=Mon…5=Sat
 
@@ -5816,7 +6505,7 @@ function Shell({view,siteId,go,toast,fin,scopes,widgetOpen,onWidgetToggle,childr
 // ─────────────────────────────────────────────────────────
 //  MAIN APP
 // ─────────────────────────────────────────────────────────
-function SiteManagerView() {
+return function SiteManagerView(){
   // Navigation
   const [view,setView]      =useState("dashboard");
   const [siteId,setSiteId]  =useState(null);
@@ -5893,7 +6582,7 @@ function SiteManagerView() {
       <div style={{background:`${NM}18`,border:`1px solid ${NM}30`,borderRadius:10,padding:"10px 14px",marginBottom:18,fontSize:12,color:NM}}>
         🔗 <strong>Labour Schedule sync active.</strong> Site access and labour allocations are managed by your admin in Labour Schedule.
       </div>
-      <h2 style={{color:SM_N,fontSize:21,fontWeight:800,margin:"0 0 3px"}}>My Sites</h2>
+      <h2 style={{color:N,fontSize:21,fontWeight:800,margin:"0 0 3px"}}>My Sites</h2>
       <p style={{color:MU,fontSize:13,margin:"0 0 18px"}}>{SITES.length} sites assigned to you</p>
       {SITES.map(s=>{
         const ss=scopes[s.id]||[];
@@ -5907,7 +6596,7 @@ function SiteManagerView() {
             onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
               <div>
-                <div style={{fontWeight:800,fontSize:15,color:SM_N,marginBottom:2}}>{s.name}</div>
+                <div style={{fontWeight:800,fontSize:15,color:N,marginBottom:2}}>{s.name}</div>
                 <div style={{color:MU,fontSize:12}}>{s.client} · {s.address}</div>
               </div>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -5937,11 +6626,11 @@ function SiteManagerView() {
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name}]}/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-          <div><h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>{site.name}</h2><div style={{color:MU,fontSize:12}}>{site.client} · {site.address}</div></div>
+          <div><h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>{site.name}</h2><div style={{color:MU,fontSize:12}}>{site.client} · {site.address}</div></div>
           <Badge s={site.appStatus}/>
         </div>
         {/* Earned value summary */}
-        <div style={{background:SM_N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+        <div style={{background:N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
           {[["Earned to Date",fmt(earned),OR],["Workers (this wk)",activeW+"/"+workers.length,"#FFF"],["Scopes",siteScopes.length+" active","#FFF"]].map(([l,v,c])=>(
             <div key={l}><div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>{l}</div><div style={{color:c,fontSize:18,fontWeight:800}}>{v}</div></div>
           ))}
@@ -5996,7 +6685,7 @@ function SiteManagerView() {
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Scopes & Budget"}]}/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Scopes & Budget</h2>
+          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Scopes & Budget</h2>
           <div style={{fontSize:11,color:MU,background:"#F1F5F9",borderRadius:7,padding:"4px 10px",fontWeight:600}}>Profit & overhead excluded from values shown</div>
         </div>
         {siteScopes.map(s=>{
@@ -6012,7 +6701,7 @@ function SiteManagerView() {
               {/* Scope header */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                 <div>
-                  <div style={{fontWeight:800,fontSize:15,color:SM_N,marginBottom:2}}>{s.name}</div>
+                  <div style={{fontWeight:800,fontSize:15,color:N,marginBottom:2}}>{s.name}</div>
                   <div style={{fontSize:11,color:MU}}>Allocated budget (your portion) · {s.completed}% work complete</div>
                 </div>
                 <div style={{textAlign:"right"}}>
@@ -6066,7 +6755,7 @@ function SiteManagerView() {
     return(
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Scopes",fn:()=>go("scopes")},{label:"Assess"}]}/>
-        <div style={{background:SM_N,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+        <div style={{background:N,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
           <div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Scope Assessment</div>
           <div style={{color:"#FFF",fontSize:16,fontWeight:700,marginBottom:14}}>{scope.name}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
@@ -6076,7 +6765,7 @@ function SiteManagerView() {
           </div>
         </div>
         <div style={card}>
-          <div style={{fontWeight:800,fontSize:14,color:SM_N,marginBottom:14}}>Volume of Work Completed</div>
+          <div style={{fontWeight:800,fontSize:14,color:N,marginBottom:14}}>Volume of Work Completed</div>
           <div style={{fontSize:52,fontWeight:900,color:OR,textAlign:"center",lineHeight:1,marginBottom:10}}>{pct}%</div>
           <Bar pct={pct}/>
           <input type="range" min={0} max={100} step={5} value={pct} onChange={e=>setScopePct(Number(e.target.value))} style={{width:"100%",marginTop:12,accentColor:OR,cursor:"pointer"}}/>
@@ -6128,7 +6817,7 @@ function SiteManagerView() {
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Daily Sign-In"}]}/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-          <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Daily Sign-In</h2>
+          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Daily Sign-In</h2>
           <div style={{display:"flex",alignItems:"center",gap:6,background:"#F1F5F9",borderRadius:8,padding:"5px 11px",fontSize:11,color:MU,fontWeight:600}}>
             <span style={{width:7,height:7,background:GN,borderRadius:"50%",display:"inline-block"}}/>
             Costs logged against scope budgets
@@ -6236,7 +6925,7 @@ function SiteManagerView() {
       <Shell {...shellProps}>
         <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Labour Schedule"}]}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
-          <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Labour Schedule</h2>
+          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Labour Schedule</h2>
           <div style={{display:"flex",gap:8}}>
             <div style={{display:"flex",alignItems:"center",gap:5,background:"#F1F5F9",borderRadius:8,padding:"5px 11px",fontSize:11,color:MU,fontWeight:600}}>
               <span style={{width:7,height:7,background:GN,borderRadius:"50%",display:"inline-block"}}/>Read only · Labour Schedule
@@ -6244,7 +6933,7 @@ function SiteManagerView() {
             <button style={btn("primary")} onClick={()=>go("signin")}>✅ Sign In Today</button>
           </div>
         </div>
-        <div style={{background:SM_N,borderRadius:12,padding:"14px 18px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+        <div style={{background:N,borderRadius:12,padding:"14px 18px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
           {[["Workers This Week",`${totalW}/${workers.length}`,"#FFF"],["Person-Days",totalPD,OR],["Trades",uniqueT.length,"#FFF"]].map(([l,v,c])=>(
             <div key={l}><div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:19,fontWeight:800}}>{v}</div></div>
           ))}
@@ -6252,9 +6941,9 @@ function SiteManagerView() {
         {uniqueT.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{uniqueT.map(t=><span key={t} style={{background:`${TRADE_COL[t]||NM}18`,color:TRADE_COL[t]||NM,border:`1px solid ${TRADE_COL[t]||NM}40`,borderRadius:999,padding:"3px 10px",fontSize:11,fontWeight:700}}>{t}</span>)}</div>}
         {/* Week nav */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-          <button onClick={()=>setWeekOff(o=>o-1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>‹ {smFmtDate(weekMonday(weekOffset-1))}</button>
-          <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:13,color:N}}>Week of {smFmtDate(monDate)}</div>{weekOffset===0&&<div style={{fontSize:10,color:OR,fontWeight:700}}>CURRENT WEEK</div>}</div>
-          <button onClick={()=>setWeekOff(o=>o+1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>{smFmtDate(weekMonday(weekOffset+1))} ›</button>
+          <button onClick={()=>setWeekOff(o=>o-1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>‹ {fmtDate(weekMonday(weekOffset-1))}</button>
+          <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:13,color:N}}>Week of {fmtDate(monDate)}</div>{weekOffset===0&&<div style={{fontSize:10,color:OR,fontWeight:700}}>CURRENT WEEK</div>}</div>
+          <button onClick={()=>setWeekOff(o=>o+1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>{fmtDate(weekMonday(weekOffset+1))} ›</button>
         </div>
         {/* Grid */}
         <div style={{...card,padding:0,overflow:"hidden"}}>
@@ -6263,7 +6952,7 @@ function SiteManagerView() {
               <thead>
                 <tr style={{background:"#F8FAFC"}}>
                   <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:MU,textTransform:"uppercase",minWidth:170,borderBottom:`1px solid ${BD}`}}>Worker</th>
-                  {dates.map((d,i)=><th key={i} style={{padding:"8px",textAlign:"center",fontSize:10,fontWeight:700,color:i<5?MU:"#94A3B8",minWidth:60,borderBottom:`1px solid ${BD}`,borderLeft:`1px solid ${BD}`}}><div>{DAY_SHORT[i]}</div><div style={{fontWeight:500,color:"#94A3B8"}}>{smFmtDate(d)}</div></th>)}
+                  {dates.map((d,i)=><th key={i} style={{padding:"8px",textAlign:"center",fontSize:10,fontWeight:700,color:i<5?MU:"#94A3B8",minWidth:60,borderBottom:`1px solid ${BD}`,borderLeft:`1px solid ${BD}`}}><div>{DAY_SHORT[i]}</div><div style={{fontWeight:500,color:"#94A3B8"}}>{fmtDate(d)}</div></th>)}
                   <th style={{padding:"8px",textAlign:"center",fontSize:10,fontWeight:700,color:MU,minWidth:44,borderBottom:`1px solid ${BD}`,borderLeft:`1px solid ${BD}`}}>Days</th>
                 </tr>
               </thead>
@@ -6287,14 +6976,14 @@ function SiteManagerView() {
                              :<div style={{width:26,height:26,borderRadius:6,background:"#F8FAFC",border:`1px solid ${BD}`,margin:"0 auto"}}/>}
                         </td>;
                       })}
-                      <td style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><span style={{fontWeight:800,fontSize:12,color:days.length>0?SM_N:MU}}>{days.length}</span></td>
+                      <td style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><span style={{fontWeight:800,fontSize:12,color:days.length>0?N:MU}}>{days.length}</span></td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr style={{background:"#F0F4F8",borderTop:`1px solid ${BD}`}}>
-                  <td style={{padding:"9px 14px",fontSize:11,fontWeight:800,color:SM_N,borderRight:`1px solid ${BD}`}}>Daily Headcount</td>
+                  <td style={{padding:"9px 14px",fontSize:11,fontWeight:800,color:N,borderRight:`1px solid ${BD}`}}>Daily Headcount</td>
                   {dayTotals.map((t,i)=><td key={i} style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><div style={{fontWeight:800,fontSize:12,color:t>0?OR:MU}}>{t}</div><div style={{fontSize:9,color:"#94A3B8"}}>ppl</div></td>)}
                   <td style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><div style={{fontWeight:800,fontSize:12,color:N}}>{totalPD}</div><div style={{fontSize:9,color:"#94A3B8"}}>total</div></td>
                 </tr>
@@ -6312,7 +7001,7 @@ function SiteManagerView() {
     return(<Shell {...shellProps}>
       <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Expenses"}]}/>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <div><h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>Expenses</h2><div style={{color:MU,fontSize:12}}>Total: <strong style={{color:OR}}>{fmt(total)}</strong></div></div>
+        <div><h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>Expenses</h2><div style={{color:MU,fontSize:12}}>Total: <strong style={{color:OR}}>{fmt(total)}</strong></div></div>
         <button style={btn("primary")} onClick={()=>go("expense-new")}>+ New</button>
       </div>
       {siteExp.length===0?<div style={{textAlign:"center",padding:"60px 20px",color:"#9CA3AF"}}><div style={{fontSize:48,marginBottom:10}}>🧾</div><div>No expenses yet.</div></div>
@@ -6321,7 +7010,7 @@ function SiteManagerView() {
         return(<div key={e.id} style={card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
             <div style={{flex:1,marginRight:12}}><div style={{fontWeight:700,fontSize:13,color:TX,marginBottom:2}}>{e.desc}</div><div style={{fontSize:11,color:MU}}>{e.category}{sc?` · ${sc.name}`:""} · {e.date}</div></div>
-            <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:SM_N,marginBottom:4}}>{fmt(e.amount)}</div><Badge s={e.status}/></div>
+            <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:N,marginBottom:4}}>{fmt(e.amount)}</div><Badge s={e.status}/></div>
           </div>
           {e.files.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{e.files.map((f,i)=><Pill key={i} name={f}/>)}</div>}
         </div>);
@@ -6331,7 +7020,7 @@ function SiteManagerView() {
 
   if(view==="expense-new") return(<Shell {...shellProps}>
     <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Expenses",fn:()=>go("expenses")},{label:"New Expense"}]}/>
-    <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Expense</h2>
+    <h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Expense</h2>
     <div style={card}>
       <div style={{marginBottom:12}}><label style={lbl}>Description *</label><input style={inp} placeholder="e.g. Concrete delivery — Pour 3" value={expForm.desc} onChange={e=>setEF(p=>({...p,desc:e.target.value}))}/></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
@@ -6356,7 +7045,7 @@ function SiteManagerView() {
   if(view==="variations") return(<Shell {...shellProps}>
     <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Variations"}]}/>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-      <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Variations</h2>
+      <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Variations</h2>
       <button style={btn("primary")} onClick={()=>go("variation-new")}>+ New</button>
     </div>
     {siteVar.length===0?<div style={{textAlign:"center",padding:"60px 20px",color:"#9CA3AF"}}><div style={{fontSize:48,marginBottom:10}}>📐</div><div>No variations yet.</div></div>
@@ -6364,7 +7053,7 @@ function SiteManagerView() {
       <div key={v.id} style={card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
           <div style={{flex:1,marginRight:12}}><div style={{fontSize:10,color:"#94A3B8",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{v.ref}</div><div style={{fontWeight:700,fontSize:13,color:TX,marginBottom:3}}>{v.title}</div>{v.desc&&<div style={{fontSize:12,color:MU}}>{v.desc}</div>}</div>
-          <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:SM_N,marginBottom:4}}>{fmt(v.amount)}</div><Badge s={v.status}/></div>
+          <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:N,marginBottom:4}}>{fmt(v.amount)}</div><Badge s={v.status}/></div>
         </div>
         {v.files.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{v.files.map((f,i)=><Pill key={i} name={f}/>)}</div>}
       </div>
@@ -6373,7 +7062,7 @@ function SiteManagerView() {
 
   if(view==="variation-new") return(<Shell {...shellProps}>
     <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Variations",fn:()=>go("variations")},{label:"New Variation"}]}/>
-    <h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Variation</h2>
+    <h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Variation</h2>
     <div style={card}>
       <div style={{marginBottom:12}}><label style={lbl}>Title *</label><input style={inp} placeholder="Brief description of scope change" value={varForm.title} onChange={e=>setVF(p=>({...p,title:e.target.value}))}/></div>
       <div style={{marginBottom:12}}><label style={lbl}>Details / Justification</label><textarea style={{...inp,height:90,resize:"vertical"}} value={varForm.desc} onChange={e=>setVF(p=>({...p,desc:e.target.value}))}/></div>
@@ -6399,18 +7088,18 @@ function SiteManagerView() {
     const appStat=site?.appStatus||"draft";
     return(<Shell {...shellProps}>
       <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Application"}]}/>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{color:SM_N,fontSize:19,fontWeight:800,margin:0}}>Payment Application</h2><Badge s={appStat}/></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Payment Application</h2><Badge s={appStat}/></div>
       <div style={{...card,padding:0,overflow:"hidden",marginBottom:12}}>
-        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:SM_N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Scope Claims (your allocated values)</div>
+        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Scope Claims (your allocated values)</div>
         {siteScopes.map(s=>{const av=allocVal(s);const ev=earnedVal(s);return(<div key={s.id} style={{padding:"10px 18px",borderBottom:"1px solid #F8FAFC",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:13,fontWeight:600,color:TX}}>{s.name}</div><div style={{fontSize:11,color:MU}}>{s.completed}% complete · allocated {fmt(av)}</div></div><div style={{fontWeight:800,fontSize:13,color:N}}>{fmt(ev)}</div></div>);})}
         <div style={{padding:"11px 18px",background:"#F0F4F8",display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,fontSize:12,color:N}}>Scope Subtotal</span><span style={{fontWeight:800,fontSize:14,color:OR}}>{fmt(scopeTotal)}</span></div>
       </div>
       {approvedVars.length>0&&<div style={{...card,padding:0,overflow:"hidden",marginBottom:12}}>
-        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:SM_N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Approved Variations</div>
+        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Approved Variations</div>
         {approvedVars.map(v=><div key={v.id} style={{padding:"10px 18px",borderBottom:"1px solid #F8FAFC",display:"flex",justifyContent:"space-between"}}><div style={{fontSize:13,fontWeight:600,color:TX}}>{v.ref} — {v.title}</div><div style={{fontWeight:800,color:N}}>{fmt(v.amount)}</div></div>)}
         <div style={{padding:"11px 18px",background:"#F0F4F8",display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,fontSize:12,color:N}}>Variations Subtotal</span><span style={{fontWeight:800,fontSize:14,color:OR}}>{fmt(varTotal)}</span></div>
       </div>}
-      <div style={{background:SM_N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div style={{background:N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div><div style={{color:"#94A3B8",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Manager's Total (excl. margin)</div><div style={{color:"#64748B",fontSize:11,marginTop:1}}>Director will add full margin values before issuing to client</div></div>
         <div style={{color:OR,fontSize:28,fontWeight:900}}>{fmt(scopeTotal+varTotal)}</div>
       </div>
@@ -6422,6 +7111,10 @@ function SiteManagerView() {
 
   return null;
 }
+
+})();
+// ─── Site Doc Generator (isolated closure) ───────────────────────────────────
+const SiteDocGeneratorView = (()=>{
 
 // ═══════════════════════════════════════════════════════
 // DATA
@@ -6658,7 +7351,7 @@ async function saveDoc(doc, existing) {
 // TOKENS
 // ═══════════════════════════════════════════════════════
 
-const SM_BG = "#F5F4F0", DARK = "#111318", HDR = "#0F1117", AMB = "#F5A623",
+const BG = "#F5F4F0", DARK = "#111318", HDR = "#0F1117", AMB = "#F5A623",
   GY1 = "#F3F4F6", GY2 = "#E5E7EB", GY3 = "#D1D5DB",
   GY5 = "#6B7280", GY6 = "#4B5563", GY7 = "#374151", GY8 = "#1F2937",
   GRN = "#15803D", GBG = "#DCFCE7", GRL = "#86EFAC",
@@ -6691,7 +7384,7 @@ function Field({ label, value, onChange, multi, span }) {
   );
 }
 
-function SdgSec({ title, children }) {
+function Sec({ title, children }) {
   return (
     <div style={{ background: "#fff", border: `1px solid ${GY2}`, borderRadius: 10, padding: "14px 17px", marginBottom: 12 }}>
       <p style={{ margin: "0 0 11px", fontSize: 10, fontWeight: 700, color: GY5, textTransform: "uppercase", letterSpacing: "0.08em" }}>{title}</p>
@@ -6780,7 +7473,7 @@ function Sidebar({ sites, sel, setSel, sync, syncSt, onRep, docsCount }) {
 // MAIN APP
 // ═══════════════════════════════════════════════════════
 
-function SiteDocGeneratorView() {
+return function SiteDocGeneratorView() {
   const [sites, setSites] = useState([]);
   const [sel, setSel] = useState(null);
   const [syncSt, setSyncSt] = useState("demo");
@@ -6833,7 +7526,7 @@ function SiteDocGeneratorView() {
   );
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui, -apple-system, sans-serif", background: SDG_BG }}>
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui, -apple-system, sans-serif", background: BG }}>
       <Sidebar sites={sites} sel={sel} setSel={setSel} sync={sync} syncSt={syncSt} onRep={() => setView("reports")} docsCount={docs.length} />
       <main style={{ flex: 1, padding: "22px 26px", overflowY: "auto" }}>
         <div style={{ marginBottom: 18 }}>
@@ -6903,7 +7596,7 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
   );
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: SDG_BG, minHeight: "100vh" }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
       <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 13, position: "sticky", top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
         <div style={{ flex: 1 }}>
@@ -6915,7 +7608,7 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
 
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "18px 16px 40px" }}>
         {/* Always: site details */}
-        <SdgSec title="Site details">
+        <Sec title="Site details">
           <Grid>
             <Field label="Site name" value={fd.site} onChange={v => set("site", v)} />
             <Field label="Date" value={fd.date} onChange={v => set("date", v)} />
@@ -6925,53 +7618,53 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
             <Field label="Contact number" value={fd.supPhone} onChange={v => set("supPhone", v)} />
             <Field label="Prepared by" value={fd.preparedBy} onChange={v => set("preparedBy", v)} />
           </Grid>
-        </SdgSec>
+        </Sec>
 
         {/* Inspection: equipment */}
         {isCl && (
-          <SdgSec title="Equipment details">
+          <Sec title="Equipment details">
             <Grid cols={3}>
               <Field label="Equipment ID / serial" value={fd.equipmentId} onChange={v => set("equipmentId", v)} />
               <Field label="Make" value={fd.make} onChange={v => set("make", v)} />
               <Field label="Model" value={fd.model} onChange={v => set("model", v)} />
             </Grid>
-          </SdgSec>
+          </Sec>
         )}
 
         {/* Daily Safe Start */}
         {dt.id === "daily_safe_start" && (
-          <SdgSec title="Briefing content">
+          <Sec title="Briefing content">
             <Grid cols={1}>
               <Field label="Hazards identified" value={fd.hazards} onChange={v => set("hazards", v)} multi />
               <Field label="Control measures in place" value={fd.controls} onChange={v => set("controls", v)} multi />
               <Field label="PPE required" value={fd.ppe} onChange={v => set("ppe", v)} />
               <Field label="Emergency procedure / muster point" value={fd.emergencyProc} onChange={v => set("emergencyProc", v)} />
             </Grid>
-          </SdgSec>
+          </Sec>
         )}
 
         {/* Toolbox Talk */}
         {dt.id === "toolbox_talk" && (
-          <SdgSec title="Talk content">
+          <Sec title="Talk content">
             <Grid cols={1}>
               <Field label="Topic / title" value={fd.topic} onChange={v => set("topic", v)} />
               <Field label="Key points covered" value={fd.hazards} onChange={v => set("hazards", v)} multi />
               <Field label="Actions arising / follow-up" value={fd.controls} onChange={v => set("controls", v)} multi />
             </Grid>
-          </SdgSec>
+          </Sec>
         )}
 
         {/* PUWER */}
         {dt.id === "puwer" && (<>
-          <SdgSec title="Equipment">
+          <Sec title="Equipment">
             <Grid>
               <Field label="Equipment / machine" value={fd.equipment} onChange={v => set("equipment", v)} />
               <Field label="Equipment ID / ref" value={fd.equipmentId} onChange={v => set("equipmentId", v)} />
               <Field label="Make" value={fd.make} onChange={v => set("make", v)} />
               <Field label="Model" value={fd.model} onChange={v => set("model", v)} />
             </Grid>
-          </SdgSec>
-          <SdgSec title="Risk assessment & controls">
+          </Sec>
+          <Sec title="Risk assessment & controls">
             <Grid cols={1}>
               <Field label="Hazards associated with equipment" value={fd.hazards} onChange={v => set("hazards", v)} multi />
               <Field label="Risk level (High / Medium / Low)" value={fd.riskLevel} onChange={v => set("riskLevel", v)} />
@@ -6980,12 +7673,12 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="Maintenance schedule" value={fd.maintenance} onChange={v => set("maintenance", v)} />
               <Field label="Inspection frequency" value={fd.frequency} onChange={v => set("frequency", v)} />
             </Grid>
-          </SdgSec>
+          </Sec>
         </>)}
 
         {/* LOLER */}
         {dt.id === "loler" && (<>
-          <SdgSec title="Lifting equipment">
+          <Sec title="Lifting equipment">
             <Grid>
               <Field label="Equipment type" value={fd.liftingEquip} onChange={v => set("liftingEquip", v)} />
               <Field label="SWL / WLL" value={fd.swl} onChange={v => set("swl", v)} />
@@ -6994,19 +7687,19 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="Last examination date" value={fd.examDate} onChange={v => set("examDate", v)} />
               <Field label="Next examination due" value={fd.nextExam} onChange={v => set("nextExam", v)} />
             </Grid>
-          </SdgSec>
-          <SdgSec title="Lift plan">
+          </Sec>
+          <Sec title="Lift plan">
             <Grid cols={1}>
               <Field label="Lift description / method" value={fd.liftPlan} onChange={v => set("liftPlan", v)} multi />
               <Field label="Lifting equipment to be used" value={fd.resources} onChange={v => set("resources", v)} multi />
               <Field label="Hazards / special precautions" value={fd.hazards} onChange={v => set("hazards", v)} multi />
             </Grid>
-          </SdgSec>
+          </Sec>
         </>)}
 
         {/* COSHH */}
         {dt.id === "coshh" && (<>
-          <SdgSec title="Substance">
+          <Sec title="Substance">
             <Grid>
               <Field label="Substance name" value={fd.substance} onChange={v => set("substance", v)} />
               <Field label="Supplier / manufacturer" value={fd.supplier} onChange={v => set("supplier", v)} />
@@ -7014,20 +7707,20 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="WEL (workplace exposure limit)" value={fd.exposureLimits} onChange={v => set("exposureLimits", v)} />
               <Field label="Health effects of exposure" value={fd.healthEffects} onChange={v => set("healthEffects", v)} span multi />
             </Grid>
-          </SdgSec>
-          <SdgSec title="Controls">
+          </Sec>
+          <Sec title="Controls">
             <Grid cols={1}>
               <Field label="Exposure routes (inhalation / dermal / ingestion)" value={fd.exposureRoutes} onChange={v => set("exposureRoutes", v)} />
               <Field label="Engineering / substitution controls" value={fd.cohhControls} onChange={v => set("cohhControls", v)} multi />
               <Field label="PPE required" value={fd.cohhPpe} onChange={v => set("cohhPpe", v)} />
               <Field label="Emergency actions (spillage / fire / first aid)" value={fd.emergencyActions} onChange={v => set("emergencyActions", v)} multi />
             </Grid>
-          </SdgSec>
+          </Sec>
         </>)}
 
         {/* Task Briefing */}
         {dt.id === "task_briefing" && (
-          <SdgSec title="Task details">
+          <Sec title="Task details">
             <Grid cols={1}>
               <Field label="Task description" value={fd.taskDesc} onChange={v => set("taskDesc", v)} multi />
               <Field label="Method statement reference" value={fd.methodRef} onChange={v => set("methodRef", v)} />
@@ -7035,20 +7728,20 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="Task-specific risks" value={fd.taskRisks} onChange={v => set("taskRisks", v)} multi />
               <Field label="Controls / safe working methods" value={fd.taskControls} onChange={v => set("taskControls", v)} multi />
             </Grid>
-          </SdgSec>
+          </Sec>
         )}
 
         {/* PAT Testing */}
         {dt.id === "pat_testing" && (<>
-          <SdgSec title="Appliance details">
+          <Sec title="Appliance details">
             <Grid>
               <Field label="Appliance description" value={fd.applianceDesc} onChange={v => set("applianceDesc", v)} />
               <Field label="Asset / inventory number" value={fd.assetNo} onChange={v => set("assetNo", v)} />
               <Field label="Location on site" value={fd.location} onChange={v => set("location", v)} />
               <Field label="Tested by" value={fd.testedBy} onChange={v => set("testedBy", v)} />
             </Grid>
-          </SdgSec>
-          <SdgSec title="Test results">
+          </Sec>
+          <Sec title="Test results">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead><tr style={{ background: GY1 }}>
                 <th style={{ padding: "7px 10px", textAlign: "left", fontWeight: 600, color: GY7 }}>Test</th>
@@ -7069,20 +7762,20 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               ))}
             </div>
             <div style={{ marginTop: 10 }}><Field label="Next test date" value={fd.nextTestDate} onChange={v => set("nextTestDate", v)} /></div>
-          </SdgSec>
+          </Sec>
         </>)}
 
         {/* Thorough Examination */}
         {dt.id === "thorough_exam" && (<>
-          <SdgSec title="Equipment">
+          <Sec title="Equipment">
             <Grid>
               <Field label="Equipment type" value={fd.examEquipment} onChange={v => set("examEquipment", v)} />
               <Field label="Equipment ID / serial" value={fd.examId} onChange={v => set("examId", v)} />
               <Field label="SWL / WLL" value={fd.examSWL} onChange={v => set("examSWL", v)} />
               <Field label="Examination reference" value={fd.examRef} onChange={v => set("examRef", v)} />
             </Grid>
-          </SdgSec>
-          <SdgSec title="Examination details">
+          </Sec>
+          <Sec title="Examination details">
             <Grid>
               <Field label="Examiner name" value={fd.examiner} onChange={v => set("examiner", v)} />
               <Field label="Examination body / company" value={fd.examBody} onChange={v => set("examBody", v)} />
@@ -7096,18 +7789,18 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
                 <button key={o.v} onClick={() => set("safeForUse", o.v)} style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${fd.safeForUse === o.v ? BLU : GY2}`, background: fd.safeForUse === o.v ? BBG : "#fff", color: fd.safeForUse === o.v ? BLU : GY5, fontWeight: fd.safeForUse === o.v ? 600 : 400, cursor: "pointer", fontSize: 12 }}>{o.l}</button>
               ))}
             </div>
-          </SdgSec>
+          </Sec>
         </>)}
 
         {/* QA Handover */}
         {dt.id === "qa_handover" && (<>
-          <SdgSec title="Contract details">
+          <Sec title="Contract details">
             <Grid>
               <Field label="Contract reference" value={fd.contractRef} onChange={v => set("contractRef", v)} />
               <Field label="Work package" value={fd.workPackage} onChange={v => set("workPackage", v)} />
             </Grid>
-          </SdgSec>
-          <SdgSec title="Quality checklist">
+          </Sec>
+          <Sec title="Quality checklist">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead><tr style={{ background: GY1 }}>
                 <th style={{ padding: "7px 10px", textAlign: "left", fontWeight: 600, color: GY7 }}>Item</th>
@@ -7133,12 +7826,12 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               </tbody>
             </table>
             <div style={{ marginTop: 10 }}><Field label="Deficiencies / outstanding items" value={fd.deficiencies} onChange={v => set("deficiencies", v)} multi /></div>
-          </SdgSec>
+          </Sec>
         </>)}
 
         {/* NCR */}
         {dt.id === "ncr" && (
-          <SdgSec title="Non-conformance details">
+          <Sec title="Non-conformance details">
             <Grid>
               <Field label="NCR reference number" value={fd.ncrRef} onChange={v => set("ncrRef", v)} />
               <Field label="Target closure date" value={fd.targetDate} onChange={v => set("targetDate", v)} />
@@ -7147,20 +7840,20 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               <Field label="Corrective action required" value={fd.correctiveAction} onChange={v => set("correctiveAction", v)} span multi />
               <Field label="Closed by" value={fd.closedBy} onChange={v => set("closedBy", v)} />
             </Grid>
-          </SdgSec>
+          </Sec>
         )}
 
         {/* Early Delay / Delay Notice */}
         {(dt.id === "early_delay" || dt.id === "delay_notice") && (<>
-          <SdgSec title="Contract details">
+          <Sec title="Contract details">
             <Grid>
               <Field label="Contract number" value={fd.contractNo} onChange={v => set("contractNo", v)} />
               <Field label="Programme reference" value={fd.programmeRef} onChange={v => set("programmeRef", v)} />
               <Field label="Employer" value={fd.employer} onChange={v => set("employer", v)} />
               <Field label="Contractor" value={fd.contractor} onChange={v => set("contractor", v)} />
             </Grid>
-          </SdgSec>
-          <SdgSec title="Event details">
+          </Sec>
+          <Sec title="Event details">
             <Grid>
               <Field label="Date of event" value={fd.eventDate} onChange={v => set("eventDate", v)} />
               <Field label="Reply required by" value={fd.replyBy} onChange={v => set("replyBy", v)} />
@@ -7169,12 +7862,12 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               {dt.id === "delay_notice" && <Field label="Cost impact (£)" value={fd.costImpact} onChange={v => set("costImpact", v)} />}
               <Field label="Programme impact / consequences" value={fd.delayImpact} onChange={v => set("delayImpact", v)} span multi />
             </Grid>
-          </SdgSec>
+          </Sec>
         </>)}
 
         {/* Inspection checklist */}
         {isCl && cl && (<>
-          <SdgSec title="Inspection checklist">
+          <Sec title="Inspection checklist">
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead><tr style={{ background: GY1 }}>
@@ -7205,8 +7898,8 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
                 </tbody>
               </table>
             </div>
-          </SdgSec>
-          <SdgSec title="Overall result">
+          </Sec>
+          <Sec title="Overall result">
             <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
               {[
                 { v: "safe",   l: "✓ Safe to use",         bg: GBG,      c: GRN },
@@ -7217,12 +7910,12 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
               ))}
             </div>
             <div style={{ marginTop: 10 }}><Field label="Additional notes" value={fd.notes} onChange={v => set("notes", v)} multi /></div>
-          </SdgSec>
+          </Sec>
         </>)}
 
         {/* Attendees & responsible signatories */}
         {!noAtt && fd.attendees?.length > 0 && (
-          <SdgSec title="Team & responsible signatories">
+          <Sec title="Team & responsible signatories">
             <p style={{ margin: "0 0 9px", fontSize: 11, color: GY5 }}>Tick who is present. Mark as responsible the person(s) who sign off this document.</p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))", gap: 8 }}>
               {fd.attendees.map(a => (
@@ -7246,7 +7939,7 @@ function DocForm({ dt, initFd: init, onBack, onGen }) {
                 </div>
               ))}
             </div>
-          </SdgSec>
+          </Sec>
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, paddingTop: 4 }}>
@@ -7298,13 +7991,13 @@ function Preview({ dt, fd, onBack, onNew, onRep }) {
     );
   }
 
-  function SdgBadge({ val, pass = "pass", fail = "fail" }) {
+  function Badge({ val, pass = "pass", fail = "fail" }) {
     const isP = val === pass, isF = val === fail;
     return <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: isP ? GBG : isF ? RBG : GY1, color: isP ? GRN : isF ? RED : GY5 }}>{val?.toUpperCase() || "—"}</span>;
   }
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: SDG_BG, minHeight: "100vh" }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
       <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
         <span style={{ color: "#fff", fontSize: 14, fontWeight: 700, flex: 1 }}>{dt.label}</span>
@@ -7577,7 +8270,7 @@ function Reports({ docs, sites, onBack, onView }) {
     .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: SDG_BG, minHeight: "100vh" }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
       <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
         <span style={{ color: "#fff", fontSize: 15, fontWeight: 700, flex: 1 }}>Document reports</span>
@@ -7640,6 +8333,23 @@ function Reports({ docs, sites, onBack, onView }) {
     </div>
   );
 }
+
+})();
+      case "bank":          return <DBankFull {...SP}/>;
+      case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+      case "app_sitemanager": return <SiteManagerView/>;
+      case "app_sitedocs":    return <SiteDocGeneratorView/>;
+      case "app_assets":      return <AssetRegisterView/>;
+      default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
+    }
+  };
+
+
+  // DashboardView only renders the page content — sidebar is in App
+  return <div style={{height:"100%",background:"#080d14",overflowY:"auto"}}>{renderPage()}</div>;
+}
+
+
 // ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App(){
   const [workers,setWorkers]=useState([]);
