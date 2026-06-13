@@ -186,7 +186,7 @@ function ColorPicker({value,onChange}){
 }
 
 // ─── Inline Cell ──────────────────────────────────────────────────────────────
-function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate,confirmed=false}){
+function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate}){
   const [editing,setEditing]=useState(false);
   const [val,setVal]=useState(value||"");
   const ref=useRef(null);
@@ -201,13 +201,9 @@ function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate,confirmed
       style={{width:"100%",background:"#0d1117",border:`2px solid ${getSiteColor(val,allSites)||"#3b82f6"}`,borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
     <datalist id={uid}>{allSiteNames.map(s=><option key={s} value={s}/>)}</datalist>
   </div>;
-  return <div onClick={()=>setEditing(true)} title={confirmed?"✅ GPS confirmed":"📋 Forecast — not yet confirmed"} style={{cursor:"text",minWidth:110,padding:"3px 4px",borderRadius:5,border:`1px solid ${confirmed?"#34d39955":"transparent"}`,background:confirmed?"#0d221855":"transparent",transition:"border-color 0.15s"}}
-    onMouseEnter={e=>!confirmed&&(e.currentTarget.style.borderColor="#2d3555")} onMouseLeave={e=>!confirmed&&(e.currentTarget.style.borderColor="transparent")}>
-    {value?<div style={{display:"flex",alignItems:"center",gap:4}}>
-      <Bdg label={value.trim()} color={getSiteColor(value,allSites)}/>
-      {confirmed?<span style={{fontSize:9,color:"#34d399",fontWeight:700}}>✓</span>
-       :<span style={{fontSize:9,color:"#64748b"}}>📋</span>}
-    </div>:<span style={{color:"#374151",fontSize:11}}>— click —</span>}
+  return <div onClick={()=>setEditing(true)} title="Click to edit" style={{cursor:"text",minWidth:110,padding:"3px 4px",borderRadius:5,border:"1px solid transparent",transition:"border-color 0.15s"}}
+    onMouseEnter={e=>e.currentTarget.style.borderColor="#2d3555"} onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>
+    {value?<Bdg label={value.trim()} color={getSiteColor(value,allSites)}/>:<span style={{color:"#374151",fontSize:11}}>— click —</span>}
   </div>;
 }
 
@@ -497,182 +493,54 @@ function doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites){
 // ─── Manage Sites Modal ───────────────────────────────────────────────────────
 function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
   const [sites,setSites]=useState(allSites.map(s=>({...s})));
-  const [nn,setNn]=useState("");
-  const [nc,setNc]=useState(PRESET_COLORS[0]);
-  const [ncl,setNcl]=useState("");
-  const [locating,setLocating]=useState({});
-  const [expanded,setExpanded]=useState(null); // which site card is expanded
-
-  const up=(id,k,v)=>setSites(s=>s.map(x=>x.id===id?{...x,[k]:v}:x));
+  const [nn,setNn]=useState(""),[nc,setNc]=useState(PRESET_COLORS[0]),[ncl,setNcl]=useState("");
+  const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false}]);setNn("");};
   const rm=id=>{if(window.confirm("Delete this site?"))setSites(s=>s.filter(x=>x.id!==id));};
-  const add=()=>{
-    const n=nn.trim();
-    if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;
-    const newSite={id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,
-      lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9,
-      contractType:"dayrate",pohPct:0,retentionPct:0};
-    setSites(s=>[...s,newSite]);
-    setNn("");
-    setExpanded(newSite.id); // auto-expand new site
-  };
-  const useMyLocation=(id)=>{
-    setLocating(l=>({...l,[id]:true}));
-    navigator.geolocation.getCurrentPosition(
-      pos=>{up(id,"lat",+pos.coords.latitude.toFixed(6));up(id,"lng",+pos.coords.longitude.toFixed(6));setLocating(l=>({...l,[id]:false}));},
-      ()=>{alert("Could not get location. Please type coordinates manually.");setLocating(l=>({...l,[id]:false}));},
-      {enableHighAccuracy:true,timeout:10000}
-    );
-  };
-
-  const SiteCard=({s,canDelete=false})=>{
-    const isOpen=expanded===s.id;
-    const hasGps=!!(s.lat&&s.lng);
-    return <div style={{background:"#0f1421",borderRadius:10,border:`1px solid ${s.color}55`,marginBottom:8,overflow:"hidden"}}>
-      {/* Header row — always visible */}
-      <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 13px",cursor:"pointer"}}
-        onClick={()=>setExpanded(isOpen?null:s.id)}>
-        <div style={{width:10,height:10,borderRadius:"50%",background:s.color,flexShrink:0}}/>
-        <div style={{flex:1}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>{s.name}</div>
-          <div style={{fontSize:10,color:"#64748b",marginTop:1,display:"flex",gap:8,flexWrap:"wrap"}}>
-            <span>{clients.find(c=>c.id===s.clientId)?.name||"No client"}</span>
-            <span style={{color:s.contractType==="pricework"?"#a78bfa":"#34d399",fontWeight:700}}>{s.contractType==="pricework"?"📐 Price Work":"🔧 Day Rate"}</span>
-            {s.contractType==="pricework"&&s.pohPct>0&&<span style={{color:"#a78bfa"}}>P&OH {s.pohPct}%</span>}
-            {s.contractType==="pricework"&&s.retentionPct>0&&<span style={{color:"#fbbf24"}}>Ret. {s.retentionPct}%</span>}
-            <span style={{color:hasGps?"#34d399":"#f87171"}}>{hasGps?`📍 GPS ✓ · ${s.radius||100}m`:"🔒 No GPS"}</span>
-            <span>⏱ {s.stdHours||9}h/day · starts {s.startTime||"07:30"}</span>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:5,alignItems:"center"}}>
-          {canDelete&&<button onClick={e=>{e.stopPropagation();rm(s.id);}} style={{padding:"3px 8px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>Del</button>}
-          <button onClick={e=>{e.stopPropagation();onSave(sites);onOpenDetail&&onOpenDetail(s);}} title="Open site detail" style={{padding:"3px 8px",background:"#1a3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11}}>📂</button>
-          <span style={{color:"#64748b",fontSize:13}}>{isOpen?"▲":"▼"}</span>
-        </div>
-      </div>
-
-      {/* Expanded settings */}
-      {isOpen&&<div style={{borderTop:"1px solid #1e2535",padding:"12px 13px"}}>
-
-        {/* Name + colour */}
-        <div style={{marginBottom:10}}>
-          <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Site Name</div>
-          <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)}
-            style={{width:"100%",background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:6,padding:"7px 10px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none",boxSizing:"border-box"}}/>
-        </div>
-        <div style={{marginBottom:12}}>
-          <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Colour</div>
-          <ColorPicker value={s.color} onChange={c=>up(s.id,"color",c)}/>
-        </div>
-        <div style={{marginBottom:12}}>
-          <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Client</div>
-          <select value={s.clientId||""} onChange={e=>up(s.id,"clientId",e.target.value||null)}
-            style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:6,padding:"7px 9px",color:s.clientId?"#e2e8f0":"#64748b",fontSize:12,outline:"none",boxSizing:"border-box",cursor:"pointer"}}>
-            <option value="">No client</option>
-            {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-
-        {/* ── Working Hours & OT ── */}
-        <div style={{background:"#0a0e1a",borderRadius:8,padding:"10px 12px",marginBottom:10,border:"1px solid #1e2535"}}>
-          <div style={{fontSize:9,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>⏱ Working Hours & Overtime</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            <div>
-              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Start Time</div>
-              <input type="time" value={s.startTime||"07:30"} onChange={e=>up(s.id,"startTime",e.target.value)}
-                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Std Hours/Day</div>
-              <input type="number" min="1" max="24" step="0.5" value={s.stdHours||9} onChange={e=>up(s.id,"stdHours",+e.target.value||9)}
-                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>OT After (hrs)</div>
-              <input type="number" min="1" max="24" step="0.5" value={s.otThreshold||s.stdHours||9} onChange={e=>up(s.id,"otThreshold",+e.target.value||9)}
-                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-          </div>
-          <div style={{marginTop:8,fontSize:10,color:"#64748b",lineHeight:1.6}}>
-            Start: <span style={{color:"#60a5fa",fontWeight:600}}>{s.startTime||"07:30"}</span> · 
-            Standard day: <span style={{color:"#60a5fa",fontWeight:600}}>{s.stdHours||9}h</span> · 
-            OT kicks in after: <span style={{color:"#fbbf24",fontWeight:600}}>{s.otThreshold||s.stdHours||9}h</span> · 
-            Finish time: <span style={{color:"#34d399",fontWeight:600}}>{(()=>{const[h,m]=(s.startTime||"07:30").split(":").map(Number);const end=h*60+m+(s.stdHours||9)*60;return`${String(Math.floor(end/60)%24).padStart(2,"0")}:${String(end%60).padStart(2,"0")}`;})()}</span>
-          </div>
-        </div>
-
-        {/* ── GPS ── */}
-        <div style={{background:"#0a0e1a",borderRadius:8,padding:"10px 12px",border:"1px solid #1e2535"}}>
-          <div style={{fontSize:9,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>📍 GPS Location — Worker Sign In/Out</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:9}}>
-            <div>
-              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Latitude</div>
-              <input type="number" step="0.000001" value={s.lat||""} onChange={e=>up(s.id,"lat",+e.target.value||null)} placeholder="51.509865"
-                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Longitude</div>
-              <input type="number" step="0.000001" value={s.lng||""} onChange={e=>up(s.id,"lng",+e.target.value||null)} placeholder="-0.118092"
-                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Radius (m)</div>
-              <input type="number" min="10" max="2000" step="10" value={s.radius||100} onChange={e=>up(s.id,"radius",+e.target.value||100)}
-                style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"6px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:9}}>
-            <button onClick={()=>useMyLocation(s.id)} disabled={locating[s.id]}
-              style={{padding:"6px 12px",background:"#0d2218",border:"1px solid #10b981",borderRadius:6,color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:700,opacity:locating[s.id]?0.6:1}}>
-              {locating[s.id]?"📡 Getting location…":"📍 Use My Current Location"}
-            </button>
-            {hasGps
-              ?<span style={{fontSize:10,color:"#34d399",fontWeight:600}}>✓ GPS set · {s.radius||100}m perimeter</span>
-              :<span style={{fontSize:10,color:"#f87171",fontWeight:700}}>🔒 No GPS — workers cannot sign in</span>}
-          </div>
-          {hasGps&&<div style={{marginTop:6,fontSize:10,color:"#64748b"}}>
-            Coords: {s.lat?.toFixed(5)}, {s.lng?.toFixed(5)}
-          </div>}
-        </div>
-      </div>}
-    </div>;
-  };
-
+  const up=(id,k,v)=>setSites(s=>s.map(x=>x.id===id?{...x,[k]:v}:x));
   const builtins=sites.filter(s=>s.builtin);
   const custom=sites.filter(s=>!s.builtin);
-
   return <Overlay onClose={onClose} wide>
     <MH title="🏗 Manage Sites" onClose={onClose}/>
-
-    {/* Add new site */}
     <Sec title="Add New Site">
       <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
-        <div style={{flex:2,minWidth:160}}><label style={LBL}>Site Name</label>
-          <input value={nn} onChange={e=>setNn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="e.g. JAUK - New Road" style={INP}/></div>
-        <div style={{flex:1,minWidth:130}}><label style={LBL}>Client</label>
-          <select value={ncl} onChange={e=>setNcl(e.target.value)} style={{...INP,cursor:"pointer"}}>
-            <option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-          </select></div>
+        <div style={{flex:2,minWidth:160}}><label style={LBL}>Site Name</label><input value={nn} onChange={e=>setNn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="e.g. JAUK - New Road" style={INP}/></div>
+        <div style={{flex:1,minWidth:130}}><label style={LBL}>Client</label><select value={ncl} onChange={e=>setNcl(e.target.value)} style={{...INP,cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
         <div style={{minWidth:260}}><label style={LBL}>Colour</label><ColorPicker value={nc} onChange={setNc}/></div>
         <button onClick={add} style={{...BP,whiteSpace:"nowrap"}}>+ Add</button>
       </div>
-      {nn&&<div style={{marginTop:6,fontSize:12,color:"#64748b"}}>Preview: <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:12,fontWeight:600,color:"#fff",background:nc,marginLeft:4}}>{nn}</span></div>}
+      {nn&&<div style={{marginTop:8}}><span style={{fontSize:12,color:"#64748b",marginRight:8}}>Preview:</span><span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:12,fontWeight:600,color:"#fff",background:nc}}>{nn}</span></div>}
     </Sec>
 
-    <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>Click a site to expand and edit GPS, working hours and overtime settings.</div>
-
-    {/* Built-in sites */}
-    <div style={{marginBottom:16}}>
-      <div style={{fontSize:10,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Built-in Sites</div>
-      {builtins.map(s=><SiteCard key={s.id} s={s} canDelete={false}/>)}
+    {/* Built-in sites — now fully editable */}
+    <div style={{marginBottom:18}}>
+      <div style={{fontSize:11,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>Built-in Sites — Now Editable ✏️</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {builtins.map(s=><div key={s.id} style={{padding:"10px 12px",background:"#0f1421",borderRadius:8,border:`1px solid ${s.color}55`}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
+            <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)} style={{flex:1,background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:5,padding:"5px 8px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none"}}/>
+            <button onClick={()=>{onSave(sites);onOpenDetail&&onOpenDetail(s);}} title="Open site detail (scopes & variations)" style={{padding:"4px 9px",background:"#1a3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:12}}>📂</button>
+          </div>
+          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
+          <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        </div>)}
+      </div>
     </div>
 
-    {/* Custom sites */}
-    {custom.length>0&&<div style={{marginBottom:16}}>
-      <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Custom Sites ({custom.length})</div>
-      {custom.map(s=><SiteCard key={s.id} s={s} canDelete={true}/>)}
+    {custom.length>0&&<div>
+      <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>Custom Sites ({custom.length})</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {custom.map(s=><div key={s.id} style={{padding:"10px 12px",background:"#0f1421",borderRadius:8,border:`1px solid ${s.color}55`}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
+            <input value={s.name} onChange={e=>up(s.id,"name",e.target.value)} style={{flex:1,background:"#1a1f2e",border:`1px solid ${s.color}`,borderRadius:5,padding:"5px 8px",color:"#e2e8f0",fontSize:13,fontWeight:600,outline:"none"}}/>
+            <button onClick={()=>rm(s.id)} style={{background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,padding:"4px 8px",fontWeight:700}}>Delete</button>
+          </div>
+          <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
+          <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        </div>)}
+      </div>
     </div>}
 
-    <div style={{display:"flex",gap:10,justifyContent:"flex-end",borderTop:"1px solid #1e2535",paddingTop:16,marginTop:8}}>
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,borderTop:"1px solid #1e2535",paddingTop:16}}>
       <button onClick={onClose} style={{padding:"8px 18px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer"}}>Cancel</button>
       <button onClick={()=>onSave(sites)} style={BG}>Save All Sites</button>
     </div>
@@ -1047,73 +915,32 @@ ${(inv.lineItems||inv.items||[]).map(li=>`<tr><td>${li.description||li.desc||""}
 
 // ─── Site Detail Modal ────────────────────────────────────────────────────────
 function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClose}){
-  const [s,setS]=useState({
-    ...site,
-    scopes:[...(site.scopes||[])],
-    variations:[...(site.variations||[])],
-    contractType:site.contractType||"dayrate", // "dayrate" | "pricework"
-    pohPct:site.pohPct||0,       // P&OH % for price work
-    retentionPct:site.retentionPct||0, // Retention %
-  });
-  const [tab,setTab]=useState("contract");
+  const [s,setS]=useState({...site,scopes:[...(site.scopes||[])],variations:[...(site.variations||[])]});
+  const [tab,setTab]=useState("scopes");
   const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
-  const upS=(k,v)=>setS(x=>({...x,[k]:v}));
 
   const addScope=()=>setS(x=>({...x,scopes:[...x.scopes,{id:uid(),description:"",unit:"",qty:0,rate:0}]}));
   const updScope=(id,k,v)=>setS(x=>({...x,scopes:x.scopes.map(sc=>sc.id===id?{...sc,[k]:v}:sc)}));
   const delScope=id=>setS(x=>({...x,scopes:x.scopes.filter(sc=>sc.id!==id)}));
+
   const addVar=()=>setS(x=>({...x,variations:[...x.variations,{id:uid(),description:"",value:0,type:"addition",approved:false}]}));
   const updVar=(id,k,v)=>setS(x=>({...x,variations:x.variations.map(vr=>vr.id===id?{...vr,[k]:v}:vr)}));
   const delVar=id=>setS(x=>({...x,variations:x.variations.filter(vr=>vr.id!==id)}));
 
   const labourCost=useMemo(()=>{let t=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.toUpperCase().includes(site.name.toUpperCase()))t+=b.gross;});});return t;},[workers,activeDays,siteHours,site.name]);
-
-  // ── Financial calculations differ by contract type ────────────────────────
-  const isPriceWork=s.contractType==="pricework";
-  const pohPct=Number(s.pohPct)||0;
-  const retPct=Number(s.retentionPct)||0;
-
-  const scopeNet=s.scopes.reduce((a,sc)=>a+(Number(sc.qty||0)*Number(sc.rate||0)),0);
+  const scopeTotal=s.scopes.reduce((a,sc)=>a+(Number(sc.qty||0)*Number(sc.rate||0)),0);
   const varTotal=s.variations.reduce((a,vr)=>a+(vr.type==="addition"?Number(vr.value||0):-Number(vr.value||0)),0);
-
-  // Price work: gross = net + P&OH
-  // P&OH is deducted from agreed price: net = agreed - P&OH
-  const pohAmount=isPriceWork ? scopeNet*(pohPct/100) : 0;
-  const scopeNet_afterPOH=isPriceWork ? scopeNet-pohAmount : scopeNet;
-  const scopeGross=scopeNet; // agreed (gross) price stays as is
-  const contractValue=scopeGross+varTotal;
-
-  // Retention
-  const retentionHeld=isPriceWork ? (contractValue-pohAmount)*(retPct/100) : 0;
-  const netCertified=(contractValue-pohAmount)-retentionHeld;
+  const contractValue=scopeTotal+varTotal;
   const profit=contractValue-labourCost;
-  const margin=contractValue>0?(profit/contractValue*100):0;
-
-  const C2={net:"#60a5fa",gross:"#34d399",poh:"#a78bfa",ret:"#fbbf24",labour:"#f87171",profit:"#34d399"};
 
   return <Overlay onClose={onClose} wide>
     <MH title={<span style={{display:"flex",alignItems:"center",gap:10}}>
-      <span style={{width:14,height:14,borderRadius:"50%",background:s.color,display:"inline-block"}}/>
-      {s.name} — Site Detail
-      <span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:isPriceWork?"#1a0d2e":"#0d2218",color:isPriceWork?"#a78bfa":"#34d399",border:`1px solid ${isPriceWork?"#a78bfa44":"#34d39944"}`}}>
-        {isPriceWork?"📐 Price Work":"🔧 Day Rate"}
-      </span>
+      <span style={{width:14,height:14,borderRadius:"50%",background:s.color,display:"inline-block"}}/>{s.name} — Site Detail
     </span>} onClose={onClose}/>
 
-    {/* Summary cards — adapt to contract type */}
-    <div style={{display:"grid",gridTemplateColumns:isPriceWork?"repeat(5,1fr)":"repeat(4,1fr)",gap:10,marginBottom:18}}>
-      {isPriceWork?[
-        ["Net Value",`£${scopeNet.toFixed(2)}`,C2.net],
-        [`P&OH (${pohPct}%)`,`-£${pohAmount.toFixed(2)}`,C2.poh],
-        ["Net to BM",`£${scopeNet_afterPOH.toFixed(2)}`,C2.gross],
-        [`Retention (${retPct}%)`,`-£${retentionHeld.toFixed(2)}`,C2.ret],
-        ["Net Certified",`£${netCertified.toFixed(2)}`,"#34d399"],
-      ]:[
-        ["Contract Value",`£${contractValue.toFixed(2)}`,C2.gross],
-        ["Labour Cost",`£${labourCost.toFixed(2)}`,C2.labour],
-        ["Variations",`${varTotal>=0?"+":""}£${varTotal.toFixed(2)}`,"#fbbf24"],
-        ["Profit / Loss",`£${profit.toFixed(2)}`,profit>=0?"#34d399":"#f87171"],
-      ].map(([l,v,c])=>(
+    {/* Summary cards */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+      {[["Contract Value",`£${contractValue.toFixed(2)}`,"#60a5fa"],["Labour Cost",`£${labourCost.toFixed(2)}`,"#f87171"],["Variations",`${varTotal>=0?"+":""}£${varTotal.toFixed(2)}`,"#fbbf24"],["Profit / Loss",`£${profit.toFixed(2)}`,profit>=0?"#34d399":"#f87171"]].map(([l,v,c])=>(
         <div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:10,padding:"11px 14px"}}>
           <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
           <div style={{fontSize:18,fontWeight:800,color:c,marginTop:3}}>{v}</div>
@@ -1121,241 +948,60 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
       ))}
     </div>
 
-    <TabBar tabs={[
-      ["contract","⚙ Contract"],
-      ["scopes","📋 Scopes"],
-      ["variations","⚡ Variations"],
-      ["workers","👷 Workers"],
-      ["costs","💷 Financials"],
-    ]} active={tab} onChange={setTab}/>
+    <TabBar tabs={[["scopes","📋 Scopes of Work"],["variations","⚡ Variations"],["workers","👷 Workers"],["costs","💷 Cost Breakdown"]]} active={tab} onChange={setTab}/>
 
-    {/* ── CONTRACT TYPE TAB ── */}
-    {tab==="contract"&&<div>
-      <div style={{marginBottom:20}}>
-        <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Contract Type</div>
-        <div style={{display:"flex",gap:10}}>
-          {[["dayrate","🔧 Day Rate","Labour charged per day · simple day works invoicing","#34d399"],
-            ["pricework","📐 Price Work","Fixed price per scope element · P&OH + retention applied","#a78bfa"]
-          ].map(([val,label,desc,col])=>(
-            <div key={val} onClick={()=>upS("contractType",val)}
-              style={{flex:1,padding:"14px 16px",background:s.contractType===val?"#0d1421":"#111827",border:`2px solid ${s.contractType===val?col:C2.net+"33"}`,borderRadius:10,cursor:"pointer"}}>
-              <div style={{fontSize:14,fontWeight:800,color:s.contractType===val?col:"#94a3b8",marginBottom:4}}>{label}</div>
-              <div style={{fontSize:11,color:"#64748b",lineHeight:1.5}}>{desc}</div>
-              {s.contractType===val&&<div style={{marginTop:8,fontSize:10,color:col,fontWeight:700}}>✓ Selected</div>}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Price Work fields */}
-      {isPriceWork&&<div style={{background:"#0f1421",borderRadius:10,padding:"16px 18px",border:"1px solid #a78bfa33",marginBottom:16}}>
-        <div style={{fontSize:11,color:"#a78bfa",fontWeight:700,textTransform:"uppercase",marginBottom:14}}>📐 Price Work Parameters</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 20px"}}>
-
-          {/* P&OH */}
-          <div style={{marginBottom:14}}>
-            <label style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:5}}>
-              P&OH — Profit & Overhead %
-            </label>
-            <div style={{position:"relative"}}>
-              <input type="number" min="0" max="100" step="0.5" value={s.pohPct||""} onChange={e=>upS("pohPct",+e.target.value||0)}
-                placeholder="e.g. 15"
-                style={{width:"100%",background:"#1a1f2e",border:"1px solid #a78bfa44",borderRadius:8,padding:"10px 32px 10px 12px",color:"#e2e8f0",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
-              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#a78bfa",fontWeight:700,fontSize:13}}>%</span>
-            </div>
-            {pohPct>0&&<div style={{marginTop:6,background:"#1a0d2e",borderRadius:6,padding:"6px 10px",fontSize:11,color:"#a78bfa"}}>
-              Agreed price <span style={{fontWeight:700}}>£{scopeNet.toFixed(2)}</span> − {pohPct}% P&OH = net to BM <span style={{fontWeight:700}}>£{scopeNet_afterPOH.toFixed(2)}</span>
-              <div style={{color:"#64748b",marginTop:2}}>P&OH deduction: £{pohAmount.toFixed(2)}</div>
-            </div>}
-          </div>
-
-          {/* Retention */}
-          <div style={{marginBottom:14}}>
-            <label style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:5}}>
-              Retention %
-            </label>
-            <div style={{position:"relative"}}>
-              <input type="number" min="0" max="20" step="0.5" value={s.retentionPct||""} onChange={e=>upS("retentionPct",+e.target.value||0)}
-                placeholder="e.g. 5"
-                style={{width:"100%",background:"#1a1f2e",border:"1px solid #fbbf2444",borderRadius:8,padding:"10px 32px 10px 12px",color:"#e2e8f0",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
-              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#fbbf24",fontWeight:700,fontSize:13}}>%</span>
-            </div>
-            {retPct>0&&<div style={{marginTop:6,background:"#1a1500",borderRadius:6,padding:"6px 10px",fontSize:11,color:"#fbbf24"}}>
-              {retPct}% retention held from each invoice until practical completion
-              <div style={{marginTop:2}}>Current retention held: <span style={{fontWeight:700}}>£{retentionHeld.toFixed(2)}</span></div>
-              <div style={{color:"#64748b"}}>Net certified after retention: <span style={{color:"#34d399",fontWeight:700}}>£{netCertified.toFixed(2)}</span></div>
-            </div>}
-          </div>
-        </div>
-
-        {/* Live calculation summary */}
-        {(pohPct>0||retPct>0)&&scopeNet>0&&<div style={{background:"#0a0e1a",borderRadius:8,padding:"12px 14px",border:"1px solid #2d3555"}}>
-          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Live Calculation</div>
-          {[
-            ["Net Scope Value",`£${scopeNet.toFixed(2)}`,"#60a5fa"],
-            [`− P&OH (${pohPct}%)`,`-£${pohAmount.toFixed(2)}`,"#fbbf24"],
-            ["= Net to BM",`£${scopeNet_afterPOH.toFixed(2)}`,"#34d399"],
-            [`− Retention (${retPct}%)`,`£${retentionHeld.toFixed(2)}`,"#fbbf24"],
-            ["= Net Certified",`£${netCertified.toFixed(2)}`,"#34d399"],
-          ].map(([l,v,c])=>(
-            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #1e2535"}}>
-              <span style={{fontSize:12,color:"#94a3b8"}}>{l}</span>
-              <span style={{fontSize:13,fontWeight:700,color:c}}>{v}</span>
-            </div>
-          ))}
-        </div>}
-      </div>}
-
-      {/* Day Rate info */}
-      {!isPriceWork&&<div style={{background:"#0f1421",borderRadius:10,padding:"14px 18px",border:"1px solid #34d39933"}}>
-        <div style={{fontSize:11,color:"#34d399",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>🔧 Day Rate — How it works</div>
-        <div style={{fontSize:12,color:"#64748b",lineHeight:1.7}}>
-          Labour is charged per day at the agreed day rates set on each client profile.
-          Invoices are created as day works line items. No P&OH or retention calculations applied.
-          Use the <strong style={{color:"#60a5fa"}}>Scopes</strong> tab to record what work is included in the agreed rates.
-        </div>
-      </div>}
-    </div>}
-
-    {/* ── SCOPES TAB ── */}
     {tab==="scopes"&&<div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div>
-          <div style={{fontSize:13,color:"#94a3b8"}}>
-            {isPriceWork?"Agreed scope items — P&OH and retention calculated per line":"Agreed scope line items for this site"}
-          </div>
-          {isPriceWork&&(pohPct>0||retPct>0)&&<div style={{fontSize:11,color:"#64748b",marginTop:3,display:"flex",gap:10}}>
-            {pohPct>0&&<span style={{color:"#a78bfa"}}>P&OH: {pohPct}%</span>}
-            {retPct>0&&<span style={{color:"#fbbf24"}}>Retention: {retPct}%</span>}
-          </div>}
-        </div>
+        <div style={{fontSize:13,color:"#94a3b8"}}>Agreed scope line items for this site</div>
         <button onClick={addScope} style={{...BP,padding:"6px 14px",fontSize:12}}>+ Add Scope Item</button>
       </div>
-
-      {s.scopes.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No scope items yet.</div>}
-
-      {s.scopes.length>0&&<>
-        {/* Column headers */}
-        {isPriceWork
-          ?<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 80px 80px 80px 36px",gap:6,padding:"4px 10px",marginBottom:4}}>
-            {["Description","Unit","Qty","Net Rate","Net Total","P&OH Amt","Gross Total","Retention",""].map((h,i)=>
-              <div key={i} style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",textAlign:i>1?"right":"left"}}>{h}</div>
-            )}
-          </div>
-          :<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 36px",gap:6,padding:"4px 10px",marginBottom:4}}>
-            {["Description","Unit","Qty","Rate £","Total £",""].map((h,i)=>
-              <div key={i} style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",textAlign:i>1?"right":"left"}}>{h}</div>
-            )}
-          </div>}
-
-        {/* Scope rows */}
-        {s.scopes.map((sc,i)=>{
-          const netTotal  = Number(sc.qty||0)*Number(sc.rate||0);
-          const pohAmt    = isPriceWork ? netTotal*(pohPct/100) : 0;
-          const netAfterPOH = netTotal-pohAmt;
-          const grossTotal= netTotal; // agreed price
-          const retAmt    = isPriceWork ? netAfterPOH*(retPct/100) : 0;
-          const netCert   = netAfterPOH-retAmt;
-          return <div key={sc.id}>
-            {/* Input row */}
-            {isPriceWork
-              ?<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 80px 80px 80px 36px",gap:6,alignItems:"center",padding:"8px 10px",background:i%2===0?"#0f1421":"#111827",borderRadius:"8px 8px 0 0",borderBottom:"1px solid #1e2535"}}>
-                <input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item…" style={{...INP,fontSize:11,padding:"5px 7px"}}/>
-                <input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="nr" style={{...INP,fontSize:11,padding:"5px 7px"}}/>
-                <input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
-                <input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
-                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#60a5fa"}}>£{netTotal.toFixed(2)}</div>
-                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#fbbf24"}}>-£{pohAmt.toFixed(2)}</div>
-                <div style={{textAlign:"right",fontSize:12,fontWeight:800,color:"#34d399"}}>£{netAfterPOH.toFixed(2)}</div>
-                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#fbbf24"}}>-£{retAmt.toFixed(2)}</div>
-                <button onClick={()=>delScope(sc.id)} style={{padding:"4px 7px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
-              </div>
-              :<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 36px",gap:6,alignItems:"center",padding:"8px 10px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:4}}>
-                <input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item…" style={{...INP,fontSize:11,padding:"5px 7px"}}/>
-                <input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="nr" style={{...INP,fontSize:11,padding:"5px 7px"}}/>
-                <input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
-                <input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
-                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#34d399"}}>£{netTotal.toFixed(2)}</div>
-                <button onClick={()=>delScope(sc.id)} style={{padding:"4px 7px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
-              </div>}
-
-            {/* Price Work: per-line breakdown sub-row */}
-            {isPriceWork&&<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 80px 80px 80px 36px",gap:6,padding:"4px 10px 8px",background:i%2===0?"#0a0e1a":"#0d1117",borderRadius:"0 0 8px 8px",marginBottom:4}}>
-              <div style={{fontSize:9,color:"#374151",fontStyle:"italic",paddingLeft:2}}>per {sc.unit||"unit"}: net £{Number(sc.rate||0).toFixed(2)}</div>
-              <div/>
-              <div/>
-              <div style={{textAlign:"right",fontSize:9,color:"#374151"}}>net/unit</div>
-              <div style={{textAlign:"right",fontSize:9,color:"#60a5fa"}}>net total</div>
-              <div style={{textAlign:"right",fontSize:9,color:"#fbbf24"}}>−{pohPct}% P&OH</div>
-              <div style={{textAlign:"right",fontSize:9,color:"#34d399"}}>gross total</div>
-              <div style={{textAlign:"right",fontSize:9,color:"#fbbf24"}}>{retPct}% ret.</div>
-              <div style={{textAlign:"right",fontSize:9,color:"#34d399"}}>{retPct>0?"net cert.":""}</div>
-            </div>}
-          </div>;
-        })}
-
-        {/* Totals footer */}
-        <div style={{marginTop:8,background:"#0d1421",borderRadius:8,border:"1px solid #1e2535",overflow:"hidden"}}>
-          {isPriceWork
-            ?<>
-              {[
-                ["Agreed Price (Gross)",`£${scopeNet.toFixed(2)}`,"#60a5fa","total agreed contract value"],
-                [`− P&OH (${pohPct}%)`,`-£${pohAmount.toFixed(2)}`,"#fbbf24",`${pohPct}% deducted = £${pohAmount.toFixed(2)}`],
-                ["= Net to BM",`£${scopeNet_afterPOH.toFixed(2)}`,"#34d399","after P&OH deduction"],
-                [`− Retention (${retPct}%)`,`-£${retentionHeld.toFixed(2)}`,"#fbbf24",`${retPct}% held until completion`],
-                ["= Net Certified",`£${netCertified.toFixed(2)}`,"#34d399","net to BM after retention"],
-              ].map(([l,v,c,hint],idx,arr)=>(
-                <div key={l} style={{display:"flex",alignItems:"center",padding:"8px 14px",borderBottom:idx<arr.length-1?"1px solid #1e2535":"none",background:idx===arr.length-1?"#0d2218":"transparent"}}>
-                  <span style={{fontSize:12,color:"#94a3b8",flex:1}}>{l}</span>
-                  <span style={{fontSize:11,color:"#374151",marginRight:14,fontStyle:"italic"}}>{hint}</span>
-                  <span style={{fontSize:idx===arr.length-1?16:13,fontWeight:idx===arr.length-1?900:700,color:c,minWidth:80,textAlign:"right"}}>{v}</span>
-                </div>
-              ))}
-            </>
-            :<div style={{display:"flex",justifyContent:"space-between",padding:"10px 14px"}}>
-              <span style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>Scope Total</span>
-              <span style={{color:"#34d399",fontWeight:800,fontSize:16}}>£{scopeNet.toFixed(2)}</span>
-            </div>}
+      {s.scopes.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No scope items yet. Click "+ Add Scope Item" to start.</div>}
+      {s.scopes.map((sc,i)=>(
+        <div key={sc.id} style={{display:"grid",gridTemplateColumns:"3fr 80px 80px 90px 90px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
+          <div><label style={LBL}>Description</label><input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item description…" style={INP}/></div>
+          <div><label style={LBL}>Unit</label><input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="m², nr…" style={INP}/></div>
+          <div><label style={LBL}>Qty</label><input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
+          <div><label style={LBL}>Rate £</label><input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
+          <div><label style={LBL}>Total</label><div style={{...INP,background:"#1a1f2e",color:"#34d399",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>£{(Number(sc.qty||0)*Number(sc.rate||0)).toFixed(2)}</div></div>
+          <button onClick={()=>delScope(sc.id)} style={{padding:"6px 10px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
         </div>
-      </>}
+      ))}
+      {s.scopes.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:10,padding:"10px 14px",background:"#0d2218",border:"1px solid #065f46",borderRadius:8}}>
+        <span style={{color:"#94a3b8",marginRight:14}}>Scope Total:</span>
+        <span style={{color:"#34d399",fontSize:17,fontWeight:800}}>£{scopeTotal.toFixed(2)}</span>
+      </div>}
     </div>}
 
-    {/* ── VARIATIONS TAB ── */}
     {tab==="variations"&&<div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div style={{fontSize:13,color:"#94a3b8"}}>Variations and change orders{isPriceWork?" — P&OH applied to additions":""}</div>
+        <div style={{fontSize:13,color:"#94a3b8"}}>Variations and change orders</div>
         <button onClick={addVar} style={{...BP,padding:"6px 14px",fontSize:12}}>+ Add Variation</button>
       </div>
       {s.variations.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No variations yet.</div>}
-      {s.variations.map((vr,i)=>{
-        const grossVal=Number(vr.value||0); // variation value is agreed price
-        const varPohAmt=isPriceWork&&vr.type==="addition"?grossVal*(pohPct/100):0;
-        const varNetToMB=grossVal-varPohAmt; // net to BM after P&OH deduction
-        return <div key={vr.id} style={{display:"grid",gridTemplateColumns:isPriceWork?"3fr 110px 110px 110px 110px 40px":"3fr 110px 110px 110px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
+      {s.variations.map((vr,i)=>(
+        <div key={vr.id} style={{display:"grid",gridTemplateColumns:"3fr 110px 110px 110px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
           <div><label style={LBL}>Description</label><input value={vr.description} onChange={e=>updVar(vr.id,"description",e.target.value)} placeholder="Variation description…" style={INP}/></div>
           <div><label style={LBL}>Type</label>
             <select value={vr.type} onChange={e=>updVar(vr.id,"type",e.target.value)} style={{...INP,cursor:"pointer"}}>
-              <option value="addition">Addition (+)</option><option value="omission">Omission (−)</option>
-            </select></div>
-          <div><label style={LBL}>Net Value £</label><input type="number" value={vr.value} onChange={e=>updVar(vr.id,"value",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
-          {isPriceWork&&<div><label style={LBL}>Net to BM (after P&OH)</label>
-            <div style={{...INP,background:"#1a0d2e",color:"#a78bfa",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>
-              {vr.type==="addition"?`£${grossVal.toFixed(2)}`:`-£${Number(vr.value||0).toFixed(2)}`}
-            </div></div>}
+              <option value="addition">Addition (+)</option>
+              <option value="omission">Omission (−)</option>
+            </select>
+          </div>
+          <div><label style={LBL}>Value £</label><input type="number" value={vr.value} onChange={e=>updVar(vr.id,"value",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
           <div><label style={LBL}>Approved</label>
             <select value={vr.approved?"yes":"no"} onChange={e=>updVar(vr.id,"approved",e.target.value==="yes")} style={{...INP,cursor:"pointer",color:vr.approved?"#34d399":"#fbbf24"}}>
               <option value="no">⏳ Pending</option><option value="yes">✓ Approved</option>
-            </select></div>
+            </select>
+          </div>
           <button onClick={()=>delVar(vr.id)} style={{padding:"6px 10px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
-        </div>;
-      })}
+        </div>
+      ))}
       {s.variations.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:10,padding:"10px 14px",background:"#0d2218",border:"1px solid #065f46",borderRadius:8}}>
         <span style={{color:"#94a3b8",marginRight:14}}>Variations Net:</span>
         <span style={{color:varTotal>=0?"#34d399":"#f87171",fontSize:17,fontWeight:800}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span>
       </div>}
     </div>}
 
-    {/* ── WORKERS TAB ── */}
     {tab==="workers"&&<div style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
         <thead><tr><th style={TH}>Worker</th><th style={TH}>Position</th>{activeDays.map(d=><th key={d} style={TH}>{d}</th>)}<th style={TH}>Hrs</th><th style={TH}>Cost</th></tr></thead>
@@ -1378,28 +1024,21 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
       {workers.filter(w=>activeDays.some(d=>(w.days[d]||"").includes(site.name))).length===0&&<div style={{textAlign:"center",padding:28,color:"#374151"}}>No workers allocated to this site this week.</div>}
     </div>}
 
-    {/* ── FINANCIALS TAB ── */}
     {tab==="costs"&&<div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        {/* Income side */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
           <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Income</div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Scope Net</span><span style={{fontWeight:700,color:"#60a5fa"}}>£{scopeNet.toFixed(2)}</span></div>
-          {isPriceWork&&<div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>P&OH deducted ({pohPct}%)</span><span style={{fontWeight:700,color:"#fbbf24"}}>-£{pohAmount.toFixed(2)}</span></div>}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Variations</span><span style={{fontWeight:700,color:varTotal>=0?"#34d399":"#f87171"}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:isPriceWork?"1px solid #1e2535":"none"}}><span style={{color:"#e2e8f0",fontWeight:700,fontSize:12}}>Contract Value</span><span style={{fontWeight:800,color:"#34d399",fontSize:15}}>£{contractValue.toFixed(2)}</span></div>
-          {isPriceWork&&<><div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Retention ({retPct}%)</span><span style={{fontWeight:700,color:"#fbbf24"}}>-£{retentionHeld.toFixed(2)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0"}}><span style={{color:"#e2e8f0",fontWeight:700,fontSize:12}}>Net Certified</span><span style={{fontWeight:800,color:"#34d399",fontSize:15}}>£{netCertified.toFixed(2)}</span></div></>}
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Agreed Scope</span><span style={{fontWeight:700,color:"#60a5fa"}}>£{scopeTotal.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Variations</span><span style={{fontWeight:700,color:varTotal>=0?"#34d399":"#f87171"}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4}}><span style={{color:"#e2e8f0",fontWeight:700}}>Total Contract Value</span><span style={{fontWeight:800,color:"#34d399",fontSize:16}}>£{contractValue.toFixed(2)}</span></div>
         </div>
-        {/* Cost side */}
         <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
-          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Costs & Margin</div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Labour (this week)</span><span style={{fontWeight:700,color:"#f87171"}}>£{labourCost.toFixed(2)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:profit>=0?"#e2e8f0":"#e2e8f0",fontWeight:700,fontSize:12}}>{profit>=0?"Profit":"Loss"}</span><span style={{fontWeight:800,color:profit>=0?"#34d399":"#f87171",fontSize:15}}>£{Math.abs(profit).toFixed(2)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0"}}><span style={{color:"#94a3b8",fontSize:12}}>Margin %</span><span style={{fontWeight:700,color:margin>=10?"#34d399":margin>=0?"#fbbf24":"#f87171"}}>{margin.toFixed(1)}%</span></div>
-          {isPriceWork&&retentionHeld>0&&<div style={{marginTop:10,padding:"8px 10px",background:"#1a1500",borderRadius:7,border:"1px solid #fbbf2444",fontSize:11,color:"#fbbf24"}}>
-            🔒 £{retentionHeld.toFixed(2)} retention held — released at practical completion
-          </div>}
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Internal Costs</div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Labour (this week)</span><span style={{fontWeight:700,color:"#f87171"}}>£{labourCost.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4}}>
+            <span style={{color:"#e2e8f0",fontWeight:700}}>{profit>=0?"Profit":"Loss"}</span>
+            <span style={{fontWeight:800,color:profit>=0?"#34d399":"#f87171",fontSize:16}}>£{Math.abs(profit).toFixed(2)}</span>
+          </div>
         </div>
       </div>
     </div>}
@@ -2850,8 +2489,6 @@ const DASH_NAV=[
   {id:"stats",          icon:"🔢", label:"Stats",             group:"analysis"},
   {id:"bank",           icon:"🏦", label:"Bank Import",       group:"analysis"},
   {id:"expenses",       icon:"💸", label:"Expenses",           group:"analysis"},
-  // ── Portal
-  {id:"pending_reg",    icon:"🆕", label:"New Registrations",  group:"portal"},
 ];
 
 function DStat({label,value,color,sub}){
@@ -2927,7 +2564,20 @@ function DashSidebar({page,setPage,workers,allSites,clients,invoices,bankTransac
       <button onClick={()=>setModal({type:"clients"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:12,marginBottom:6}}>👔 Manage Clients</button>
       <button onClick={()=>setModal({type:"trainingMatrix"})} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:12,marginBottom:6}}>🛡 Training Matrix PDF</button>
       <button onClick={()=>exportSchedulePDF(workers,activeDays,weekLabel,allSites)} style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #ef4444",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:12,marginBottom:6}}>📄 Schedule PDF</button>
-      <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites)} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>⬇ Export Excel</button>
+      <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites)} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:6}}>⬇ Export Excel</button>
+      {/* ── App Launchers ── */}
+      <div style={{borderTop:"1px solid #1e2535",paddingTop:8,marginTop:4}}>
+        <div style={{fontSize:9,color:"#374151",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6,paddingLeft:2}}>Tools</div>
+        <button onClick={()=>setPage("app_sitemanager")} style={{width:"100%",padding:"8px 10px",background:"#0c1a2e",border:"1px solid #1e3a5f",borderRadius:8,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>📊</span><span>Site Manager</span>
+        </button>
+        <button onClick={()=>setPage("app_sitedocs")} style={{width:"100%",padding:"8px 10px",background:"#0c1a2e",border:"1px solid #1e3a5f",borderRadius:8,color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>📋</span><span>Site Documents</span>
+        </button>
+        <button onClick={()=>setPage("app_assets")} style={{width:"100%",padding:"8px 10px",background:"#1a1400",border:"1px solid #ffb00055",borderRadius:8,color:"#ffb000",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:0,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>⚙</span><span>Asset Register</span>
+        </button>
+      </div>
     </div>
   </div>;
 }
@@ -3509,163 +3159,15 @@ function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetail
 }
 
 // ── Dashboard Site Detail ─────────────────────────────────────────────────────
-// ─── Workers On Site — GPS confirmed attendees + scope cost allocation ─────────
-function WorkersOnSite({site,siteWorkers,workers,activeDays,siteHours,scopes,setPage,setDetailId}){
-  const weekLabel=activeDays&&workers[0]?.days?"":"";//just need any ref
-  const TODAY_KEY=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
-
-  // Workers who have GPS-confirmed attendance on this site
-  const confirmedWorkers=useMemo(()=>{
-    return siteWorkers.map(w=>{
-      const logs=(w.attendanceLogs||[]).filter(l=>
-        l.signIn&&l.signOut&&(l.siteId===site.id||l.siteName===site.name)
-      );
-      const totalHrs=logs.reduce((a,l)=>a+hoursFromMs(new Date(l.signOut)-new Date(l.signIn)),0);
-      const grossCost=totalHrs*(w.agreedRate||0);
-      return{...w,confirmedLogs:logs,confirmedHours:totalHrs,confirmedCost:grossCost};
-    }).filter(w=>w.confirmedLogs.length>0||activeDays.some(d=>(w.days?.[d]||"").includes(site.name)));
-  },[siteWorkers,site,activeDays]);
-
-  // Scope assignment state — per worker which scope they are assigned to
-  const [scopeAssignment,setScopeAssignment]=useState(()=>{
-    const m={};
-    siteWorkers.forEach(w=>{if(w.scopeAssignment?.[site.id])m[w.id]=w.scopeAssignment[site.id];});
-    return m;
-  });
-
-  // Cost per scope
-  const costPerScope=useMemo(()=>{
-    const m={};
-    confirmedWorkers.forEach(w=>{
-      const scopeId=scopeAssignment[w.id]||"unassigned";
-      m[scopeId]=(m[scopeId]||0)+w.confirmedCost;
-    });
-    return m;
-  },[confirmedWorkers,scopeAssignment]);
-
-  const totalConfirmedCost=confirmedWorkers.reduce((a,w)=>a+w.confirmedCost,0);
-
-  const fmtH=(h)=>h>0?h.toFixed(1)+"h":"—";
-  const C2={green:"#34d399",blue:"#60a5fa",yellow:"#fbbf24",red:"#f87171",purple:"#a78bfa",muted:"#64748b"};
-
-  return <div>
-    {/* Summary strip */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
-      {[
-        ["GPS Confirmed",confirmedWorkers.filter(w=>w.confirmedLogs.length>0).length+" workers",C2.green],
-        ["Forecast Only",confirmedWorkers.filter(w=>w.confirmedLogs.length===0).length+" workers",C2.yellow],
-        ["Total Conf. Hours",confirmedWorkers.reduce((a,w)=>a+w.confirmedHours,0).toFixed(1)+"h",C2.blue],
-        ["Total Labour Cost","£"+totalConfirmedCost.toFixed(2),C2.red],
-      ].map(([l,v,c])=><div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:9,padding:"10px 13px"}}>
-        <div style={{fontSize:9,color:C2.muted,fontWeight:700,textTransform:"uppercase"}}>{l}</div>
-        <div style={{fontSize:16,fontWeight:800,color:c,marginTop:3}}>{v}</div>
-      </div>)}
-    </div>
-
-    {/* Cost per scope breakdown */}
-    {scopes.length>0&&<div style={{marginBottom:16,background:"#0f1421",borderRadius:10,padding:"12px 14px",border:"1px solid #1e2535"}}>
-      <div style={{fontSize:10,color:C2.muted,fontWeight:700,textTransform:"uppercase",marginBottom:9}}>Labour Cost Per Scope</div>
-      <div style={{display:"flex",flexDirection:"column",gap:5}}>
-        {scopes.map(sc=>{
-          const cost=costPerScope[sc.id]||0;
-          const scopeValue=(Number(sc.qty)||0)*(Number(sc.rate)||0);
-          const pct=scopeValue>0?Math.min(100,cost/scopeValue*100):0;
-          return <div key={sc.id} style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{fontSize:11,color:"#94a3b8",minWidth:200,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={sc.description}>{sc.description||"—"}</div>
-            <div style={{flex:1,height:6,background:"#1e2535",borderRadius:3,overflow:"hidden"}}>
-              <div style={{height:"100%",borderRadius:3,background:pct>80?"#f87171":pct>50?"#fbbf24":"#34d399",width:pct+"%"}}/>
-            </div>
-            <div style={{fontSize:11,fontWeight:700,color:"#f87171",minWidth:70,textAlign:"right"}}>£{cost.toFixed(2)}</div>
-            <div style={{fontSize:10,color:C2.muted,minWidth:45,textAlign:"right"}}>{pct.toFixed(0)}%</div>
-          </div>;
-        })}
-        {(costPerScope["unassigned"]||0)>0&&<div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{fontSize:11,color:"#374151",minWidth:200,flex:1,fontStyle:"italic"}}>Unassigned</div>
-          <div style={{flex:1}}/>
-          <div style={{fontSize:11,fontWeight:700,color:"#64748b",minWidth:70,textAlign:"right"}}>£{(costPerScope["unassigned"]||0).toFixed(2)}</div>
-          <div style={{minWidth:45}}/>
-        </div>}
-        <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:"1px solid #1e2535",marginTop:3}}>
-          <span style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>Total Labour</span>
-          <span style={{fontSize:13,fontWeight:900,color:"#f87171"}}>£{totalConfirmedCost.toFixed(2)}</span>
-        </div>
-      </div>
-    </div>}
-
-    {/* Worker rows */}
-    <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-        <thead><tr>
-          <th style={{...DS.th,textAlign:"left"}}>Worker</th>
-          <th style={{...DS.th,textAlign:"center"}}>Status</th>
-          <th style={{...DS.th,textAlign:"center"}}>Sessions</th>
-          <th style={{...DS.th,textAlign:"right"}}>Conf. Hours</th>
-          <th style={{...DS.th,textAlign:"right"}}>Labour Cost</th>
-          <th style={{...DS.th,textAlign:"left",minWidth:160}}>Assign to Scope</th>
-        </tr></thead>
-        <tbody>
-          {confirmedWorkers.map((w,i)=>{
-            const hasGPS=w.confirmedLogs.length>0;
-            return <tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421",cursor:"pointer"}}
-              onClick={e=>{if(e.target.tagName==="SELECT")return;setDetailId(w.id);setPage("worker_detail");}}>
-              <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <div style={{width:28,height:28,borderRadius:7,background:"#3b82f622",border:"1px solid #3b82f644",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#60a5fa"}}>{(w.name||"?")[0]}</div>
-                  <div>
-                    <div style={{fontWeight:600,color:"#f1f5f9",fontSize:12}}>{w.name}</div>
-                    <div style={{fontSize:10,color:"#64748b"}}>{w.position||"—"}</div>
-                  </div>
-                </div>
-              </td>
-              <td style={{...DS.td,textAlign:"center"}}>
-                {hasGPS
-                  ?<span style={{padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700,background:"#0d221844",color:"#34d399",border:"1px solid #34d39944"}}>✅ GPS</span>
-                  :<span style={{padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700,background:"#1a150044",color:"#fbbf24",border:"1px solid #fbbf2444"}}>📋 Forecast</span>}
-              </td>
-              <td style={{...DS.td,textAlign:"center",color:"#60a5fa",fontWeight:600}}>{w.confirmedLogs.length||"—"}</td>
-              <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:700}}>{fmtH(w.confirmedHours)}</td>
-              <td style={{...DS.td,textAlign:"right",color:"#f87171",fontWeight:700}}>
-                {w.confirmedCost>0?`£${w.confirmedCost.toFixed(2)}`:"—"}
-              </td>
-              <td style={{...DS.td}} onClick={e=>e.stopPropagation()}>
-                <select
-                  value={scopeAssignment[w.id]||""}
-                  onChange={e=>setScopeAssignment(a=>({...a,[w.id]:e.target.value}))}
-                  style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"5px 8px",color:scopeAssignment[w.id]?"#e2e8f0":"#64748b",fontSize:11,outline:"none",cursor:"pointer"}}>
-                  <option value="">— Unassigned —</option>
-                  {scopes.map(sc=><option key={sc.id} value={sc.id}>{sc.description||"Scope item"}</option>)}
-                </select>
-              </td>
-            </tr>;
-          })}
-        </tbody>
-      </table>
-      {confirmedWorkers.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:12}}>
-        No workers allocated or GPS-confirmed on this site yet.
-      </div>}
-    </div>
-  </div>;
-}
-
-function hoursFromMs(ms){return Math.max(0,Math.round((ms/3600000)*100)/100);}
-
 function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoices,payApplications,setPage,setDetailId,setModal}){
   const site=allSites.find(s=>s.id===siteId);
   if(!site) return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Site not found.</div></div>;
   const client=clients.find(c=>c.id===site.clientId);
   const siteWorkers=workers.filter(w=>activeDays.some(d=>(w.days?.[d]||"").includes(site.name)));
   const sc=site.scopes||[], vr=site.variations||[];
-  const isPW=site.contractType==="pricework";
-  const pohPct=Number(site.pohPct)||0;
-  const retPct=Number(site.retentionPct)||0;
   const scopeT=sc.reduce((a,s)=>a+(Number(s.qty)||0)*(Number(s.rate)||0),0);
-  const pohTotal=isPW?scopeT*(pohPct/100):0;
-  const scopeGross=scopeT; // agreed (gross) price
-  const scopeNetToBM=scopeT-pohTotal; // after P&OH deduction
   const varT=vr.reduce((a,v)=>a+(v.type==="addition"?Number(v.value||0):-Number(v.value||0)),0);
-  const contract=scopeGross+varT;
-  const retTotal=isPW?scopeNetToBM*(retPct/100):0;
-  const netCertified=scopeNetToBM-retTotal;
+  const contract=scopeT+varT;
   const labourCost=useMemo(()=>{let t=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.includes(site.name))t+=b.gross;});});return t;},[workers,activeDays,siteHours,site.name]);
   const siteInvs=(invoices||[]).filter(i=>i.siteId===site.id);
   const totalInvoiced=siteInvs.reduce((a,i)=>{const s=(i.lines||[]).reduce((x,l)=>x+(l.qty||0)*(l.rate||0),0);return a+s;},0);
@@ -3770,62 +3272,33 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Scopes */}
       {tab==="scopes"&&<div>
-        {isPW&&(pohPct>0||retPct>0)&&<div style={{display:"flex",gap:10,marginBottom:12,padding:"8px 12px",background:"#0f1421",borderRadius:8,border:"1px solid #2d3555",fontSize:11,flexWrap:"wrap",alignItems:"center"}}>
-          <span style={{color:"#64748b",fontWeight:700}}>📐 Price Work:</span>
-          {pohPct>0&&<span style={{color:"#a78bfa",fontWeight:600}}>P&OH: {pohPct}%</span>}
-          {retPct>0&&<span style={{color:"#fbbf24",fontWeight:600}}>Retention: {retPct}%</span>}
-          <span style={{color:"#64748b",marginLeft:"auto"}}>Columns show per-scope breakdown</span>
-        </div>}
         {sc.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
           No scopes yet. Click "✏️ Edit Site" to add scope line items.
         </div>:
-        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden",overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:isPW?800:500}}>
+        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>
               <th style={DS.th}>Description</th>
-              <th style={{...DS.th,width:60,textAlign:"center"}}>Unit</th>
-              <th style={{...DS.th,width:60,textAlign:"right"}}>Qty</th>
-              <th style={{...DS.th,width:90,textAlign:"right"}}>Net Rate £</th>
-              <th style={{...DS.th,width:100,textAlign:"right",color:"#60a5fa"}}>Net Total</th>
-              {isPW&&pohPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#fbbf24"}}>P&OH ({pohPct}%)</th>}
-              {isPW&&<th style={{...DS.th,width:100,textAlign:"right",color:"#34d399"}}>Net to BM</th>}
-              {isPW&&retPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#fbbf24"}}>Retention ({retPct}%)</th>}
-              {isPW&&retPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#34d399"}}>Net Certified</th>}
-              {!isPW&&<th style={{...DS.th,width:110,textAlign:"right",color:"#34d399"}}>Total £</th>}
+              <th style={{...DS.th,width:70,textAlign:"center"}}>Unit</th>
+              <th style={{...DS.th,width:70,textAlign:"right"}}>Qty</th>
+              <th style={{...DS.th,width:100,textAlign:"right"}}>Rate £</th>
+              <th style={{...DS.th,width:110,textAlign:"right",color:"#34d399"}}>Total £</th>
             </tr></thead>
             <tbody>
-              {sc.map((s,i)=>{
-                const net=(Number(s.qty)||0)*(Number(s.rate)||0);
-                const poh=isPW?net*(pohPct/100):0;
-                const gross=net; // agreed price
-                const netToBM=net-poh;
-                const ret=isPW?netToBM*(retPct/100):0;
-                const cert=netToBM-ret;
-                return <tr key={s.id||i} style={{background:i%2===0?"#111827":"#0f1421"}}>
+              {sc.map((s,i)=>(
+                <tr key={s.id||i} style={{background:i%2===0?"#111827":"#0f1421"}}>
                   <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{s.description||"—"}</td>
                   <td style={{...DS.td,textAlign:"center"}}><span style={DS.badge("#94a3b8","#1e2535")}>{s.unit}</span></td>
                   <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:600}}>{s.qty}</td>
                   <td style={{...DS.td,textAlign:"right"}}>£{Number(s.rate).toLocaleString()}</td>
-                  <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:600}}>£{net.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                  {isPW&&pohPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:600}}>-£{poh.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                  {isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{netToBM.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                  {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:600}}>-£{ret.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                  {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{cert.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                  {!isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{net.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                </tr>;
-              })}
+                  <td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{((s.qty||0)*(s.rate||0)).toLocaleString()}</td>
+                </tr>
+              ))}
             </tbody>
-            <tfoot>
-              <tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
-                <td colSpan={4} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTAL SCOPE</td>
-                <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:800}}>£{scopeT.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                {isPW&&pohPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:800}}>-£{pohTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                {isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{scopeNetToBM.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:800}}>-£{retTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{netCertified.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                {!isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{scopeT.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-              </tr>
-            </tfoot>
+            <tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
+              <td colSpan={4} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTAL SCOPE</td>
+              <td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{Math.round(scopeT).toLocaleString()}</td>
+            </tr></tfoot>
           </table>
         </div>}
       </div>}
@@ -3898,7 +3371,19 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
       </div>}
 
       {/* Workers */}
-      {tab==="workers"&&<WorkersOnSite site={site} siteWorkers={siteWorkers} workers={workers} activeDays={activeDays} siteHours={siteHours} scopes={sc} setPage={setPage} setDetailId={setDetailId}/>}
+      {tab==="workers"&&<DTable cols={[
+        {key:"name",label:"Worker",r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:28,height:28,borderRadius:7,background:(r.color||"#3b82f6")+"22",border:"1px solid "+(r.color||"#3b82f6")+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:r.color||"#3b82f6"}}>{(v||"?")[0]}</div>
+          <div><div style={{fontWeight:600,color:"#f1f5f9"}}>{v}</div><div style={{fontSize:10,color:"#64748b"}}>{r.position}</div></div>
+        </div>},
+        {key:"company",label:"Company",r:v=><span style={{color:"#94a3b8",fontSize:11}}>{v||"—"}</span>},
+        {key:"agreedRate",label:"Rate",r:v=>v?<span style={{color:"#34d399",fontWeight:600}}>£{v}/hr</span>:<span style={{color:"#374151"}}>—</span>},
+        {key:"taxRate",label:"Tax",r:v=><span style={{color:v===0.30?"#f87171":v===0.20?"#fbbf24":"#34d399",fontWeight:600}}>{Math.round((v||0)*100)}%</span>},
+        {key:"certs",label:"Certs",r:(v,r)=>{
+          const held=Object.values(r.certs||{}).filter(c=>c.held).length;
+          return <span style={{color:"#a78bfa",fontWeight:600}}>{held} held</span>;
+        }},
+      ]} rows={siteWorkers} onRow={r=>{setDetailId(r.id);setPage("worker_detail");}}/>}
 
       {/* Full Costs */}
       {tab==="costs"&&<div>
@@ -5513,7 +4998,7 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
   const TD2={padding:"5px 8px",borderBottom:"1px solid #1a2030",verticalAlign:"middle"};
 
   return <div>
-    <DPageHdr title="📋 Route / Forecast" sub={`WC: ${weekLabel} · ${displayed.length} operatives · Forecast only — confirmed by GPS sign in`}
+    <DPageHdr title="📋 Labour Schedule" sub={`WC: ${weekLabel} · ${displayed.length} operatives · grouped by site`}
       actions={<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
         <input value={nm} onChange={e=>setFilter&&setFilter(f=>({...f,name:e.target.value}))} placeholder="🔍 Name…"
           style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:6,padding:"5px 9px",color:"#e2e8f0",fontSize:11,outline:"none",width:100}}/>
@@ -5529,10 +5014,8 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
           style={{padding:"5px 10px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",fontSize:10,fontWeight:700}}>+ Worker</button>
       </div>}/>
 
-    <div style={{padding:"4px 20px",background:"#0f1421",borderBottom:"1px solid #1e2535",fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:12}}>
-      <span>🗺 <strong style={{color:"#fbbf24"}}>This is a Route / Forecast</strong> — entries here do NOT create timesheets.</span>
-      <span style={{color:"#374151"}}>|</span>
-      <span>✅ <span style={{color:"#34d399"}}>Green cell</span> = GPS confirmed · 📋 <span style={{color:"#60a5fa"}}>Click</span> to edit inline</span>
+    <div style={{padding:"4px 20px",background:"#0f1421",borderBottom:"1px solid #1e2535",fontSize:11,color:"#64748b"}}>
+      💡 <strong style={{color:"#60a5fa"}}>Click any site cell</strong> to edit inline · <strong style={{color:"#a78bfa"}}>📋</strong> profile PDF · <strong style={{color:"#34d399"}}>💷</strong> payslip PDF · <strong style={{color:"#60a5fa"}}>🔗</strong> open in new window
     </div>
 
     <div style={{overflowX:"auto"}}>
@@ -5570,12 +5053,7 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
                   <td style={{...TD2,color:"#94a3b8",fontSize:10}}>{w.position||"—"}</td>
                   {(activeDays||BASE_DAYS).map(d=>(
                     <td key={d} style={{...TD2,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"3px 6px"}}>
-                  {(activeDays||BASE_DAYS).map(d=>{
-                    const confirmedLog=w.attendanceLogs?.find(l=>l.day===d&&l.weekLabel===weekLabel&&l.signIn&&l.signOut);
-                    return <td key={d} style={{...TD2,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"3px 6px"}}>
-                      <InlineCell value={w.days?.[d]||""} workerId={w.id} day={d} allSiteNames={siteNames} allSites={allSites} onUpdate={updateCell||((id,day,val)=>{})} confirmed={!!confirmedLog}/>
-                    </td>;
-                  })}
+                      <InlineCell value={w.days?.[d]||""} workerId={w.id} day={d} allSiteNames={siteNames} allSites={allSites} onUpdate={updateCell||((id,day,val)=>{})}/>
                     </td>
                   ))}
                   <td style={{...TD2,color:"#34d399",fontWeight:600,fontSize:11}}>{w.agreedRate?`£${w.agreedRate}/hr`:"—"}</td>
@@ -5683,7 +5161,9 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "stats":         return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
       case "bank":          return <DBankFull {...SP}/>;
       case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
-      case "pending_reg":   return <PendingWorkersView workers={workers} onApprove={()=>window.location.reload()}/>;
+      case "app_sitemanager": return <SiteManagerView/>;
+      case "app_sitedocs":    return <SiteDocGeneratorView/>;
+      case "app_assets":      return <AssetRegisterView/>;
       default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
     }
   };
@@ -5694,99 +5174,2472 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
 }
 
 
-// ─── Pending Registrations View ───────────────────────────────────────────────
-function PendingWorkersView({workers,onApprove}){
-  const [pending,setPending]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [actioning,setActioning]=useState({});
-  const [expanded,setExpanded]=useState(null);
-  const [rejectNote,setRejectNote]=useState({});
-  const CERT_LABELS=Object.fromEntries(CERTS.map(c=>[c.key,c.label]));
-
-  const load=async()=>{setLoading(true);try{const rows=await sbGet("pending_workers","select=id,created_at,status,data&order=created_at.desc");setPending(rows);}catch(e){console.error(e);}setLoading(false);};
-  useEffect(()=>{load();},[]);
-
-  const approve=async(row)=>{
-    if(!window.confirm(`Approve ${row.data.name} and add them as an active worker?`))return;
-    setActioning(a=>({...a,[row.id]:"approving"}));
-    try{
-      await sbUpsert("workers",[{id:row.data.id,data:{...row.data,approvedAt:new Date().toISOString()}}]);
-      await fetch(`${SB_URL}/rest/v1/pending_workers?id=eq.${row.id}`,{method:"PATCH",headers:{...SB_H,"Prefer":"return=minimal"},body:JSON.stringify({status:"approved"})});
-      setPending(p=>p.map(x=>x.id===row.id?{...x,status:"approved"}:x));
-      if(onApprove)onApprove();
-    }catch(e){alert("Approval failed: "+e.message);}
-    setActioning(a=>({...a,[row.id]:null}));
+// ─── Asset Register View (SiteKit) ───────────────────────────────────────────
+// Converted from site-assets.html to React — preserves identical UI/UX
+function AssetRegisterView(){
+  const CATS_A=["All","Power Tools","Hand Tools","Lifting","Access","Electrical","Vehicles","Other"];
+  const SITES_A=["All Sites","Paddington","Canary Wharf","Old Street"];
+  const uid=()=>Math.random().toString(36).slice(2,9);
+  const today=()=>new Date().toISOString().slice(0,10);
+  const addMonths=(d,n)=>{const x=new Date(d);x.setMonth(x.getMonth()+n);return x;};
+  const fmtD=(s)=>{if(!s)return "—";const d=new Date(s);return d.getDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" "+d.getFullYear();};
+  const patStatus=(a)=>{
+    const t=a.patTests&&[...a.patTests].sort((x,y)=>(y.date||"").localeCompare(x.date||""))[0];
+    if(!t)return "none";
+    const exp=addMonths(new Date(t.date),t.interval||3);
+    const diff=(exp-new Date())/86400000;
+    if(diff<0)return "over"; if(diff<30)return "due"; return "ok";
   };
-  const reject=async(row)=>{
-    if(!window.confirm(`Reject ${row.data.name}?`))return;
-    setActioning(a=>({...a,[row.id]:"rejecting"}));
-    try{
-      await fetch(`${SB_URL}/rest/v1/pending_workers?id=eq.${row.id}`,{method:"PATCH",headers:{...SB_H,"Prefer":"return=minimal"},body:JSON.stringify({status:"rejected",data:{...row.data,rejectedAt:new Date().toISOString(),rejectionNote:rejectNote[row.id]||""}})});
-      setPending(p=>p.map(x=>x.id===row.id?{...x,status:"rejected"}:x));
-    }catch(e){alert("Rejection failed: "+e.message);}
-    setActioning(a=>({...a,[row.id]:null}));
+  const [assets,setAssets]=useState([
+    {id:"a1",name:"Hilti TE 60-ATC/AVR Combihammer",cat:"Power Tools",site:"Paddington",serialNo:"HLT-2024-001",condition:"Good",oos:false,photo:"",patTests:[{id:"p1",date:"2024-09-01",interval:3,result:"pass",tester:"J.Smith"}],activity:[]},
+    {id:"a2",name:"Spider Crane SC-2A",cat:"Lifting",site:"Canary Wharf",serialNo:"SC-2023-007",condition:"Fair",oos:false,photo:"",patTests:[],activity:[]},
+    {id:"a3",name:"3.5t Transit Custom",cat:"Vehicles",site:"Old Street",serialNo:"VH-2022-003",condition:"Good",oos:false,photo:"",patTests:[{id:"p2",date:"2023-06-01",interval:3,result:"pass",tester:"M.Jones"}],activity:[]},
+    {id:"a4",name:"Full-Body Harness — Petzl Vertex",cat:"Access",site:"Paddington",serialNo:"HRN-2024-012",condition:"Good",oos:false,photo:"",patTests:[],activity:[]},
+    {id:"a5",name:"Extension Reel 25m 16A",cat:"Electrical",site:"Canary Wharf",serialNo:"ER-2023-045",condition:"Poor",oos:true,photo:"",patTests:[{id:"p3",date:"2024-01-15",interval:3,result:"fail",tester:"J.Smith"}],activity:[]},
+  ]);
+  const [catF,setCatF]=useState("All");
+  const [siteF,setSiteF]=useState("All Sites");
+  const [search,setSearch]=useState("");
+  const [view,setView]=useState("list"); // list | detail | add
+  const [sel,setSel]=useState(null);
+  const [sheet,setSheet]=useState(null); // null | "move" | "pat" | "condition" | "decommission"
+  const [form,setForm]=useState({});
+  const [navTab,setNavTab]=useState("assets"); // overview | assets | sites | alerts
+
+  const filtered=assets.filter(a=>{
+    if(catF!=="All"&&a.cat!==catF)return false;
+    if(siteF!=="All Sites"&&a.site!==siteF)return false;
+    if(search&&!a.name.toLowerCase().includes(search.toLowerCase())&&!a.serialNo?.toLowerCase().includes(search.toLowerCase()))return false;
+    return true;
+  });
+
+  const alerts=assets.filter(a=>{const s=patStatus(a);return s==="over"||s==="due"||a.oos;});
+  const bySite={};assets.forEach(a=>{if(!bySite[a.site])bySite[a.site]={total:0,oos:0,due:0,over:0};bySite[a.site].total++;if(a.oos)bySite[a.site].oos++;const s=patStatus(a);if(s==="due")bySite[a.site].due++;if(s==="over")bySite[a.site].over++;});
+
+  const S={
+    app:{display:"flex",flexDirection:"column",minHeight:"100vh",background:"#f3f2ee",fontFamily:"'Barlow',system-ui,sans-serif",color:"#1f2933",maxWidth:520,margin:"0 auto"},
+    topbar:{background:"#1f2933",color:"#fff",padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"},
+    brand:{display:"flex",alignItems:"center",gap:10},
+    mark:{width:30,height:30,borderRadius:7,background:"#ffb000",color:"#3a2a00",display:"grid",placeItems:"center",fontWeight:700,fontSize:13},
+    h1:{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:21,letterSpacing:"0.06em",textTransform:"uppercase",margin:0},
+    small:{display:"block",fontSize:"9.5px",letterSpacing:"0.14em",textTransform:"uppercase",color:"#9aa5b1",marginTop:2},
+    scroll:{padding:"16px 14px 100px"},
+    card:{display:"flex",gap:12,background:"#fff",border:"1px solid #e2e0da",borderRadius:14,padding:12,marginBottom:10,boxShadow:"0 1px 2px rgba(31,41,51,.06)",cursor:"pointer",position:"relative"},
+    tag:(s)=>({display:"inline-flex",alignItems:"center",gap:6,padding:"3px 8px",borderRadius:5,fontSize:11,fontWeight:600,fontFamily:"monospace",
+      background:s==="ok"?"#e7f4ec":s==="due"?"#fdeede":s==="over"?"#fbe6e6":"#eceef0",
+      color:s==="ok"?"#1c6b3c":s==="due"?"#9a4e08":s==="over"?"#a32525":"#52606d",
+      border:`1px solid ${s==="ok"?"#bfe3cd":s==="due"?"#f6cda3":s==="over"?"#f0bcbc":"#d5dadf"}`}),
+    nav:{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:520,background:"#1f2933",padding:"8px 10px 16px",display:"grid",gridTemplateColumns:"1fr 1fr 1.4fr 1fr 1fr",alignItems:"center",boxShadow:"0 -2px 20px rgba(31,41,51,.18)",zIndex:30},
+    navBtn:(on)=>({display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 0",color:on?"#fff":"#8895a2",fontSize:11,fontWeight:600,fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.07em",textTransform:"uppercase",background:"none",border:"none",cursor:"pointer"}),
+    fab:{gridColumn:"3",width:56,height:56,borderRadius:"50%",background:"#ffb000",color:"#3a2a00",display:"grid",placeItems:"center",boxShadow:"0 4px 14px rgba(255,176,0,.4)",margin:"0 auto",border:"none",cursor:"pointer",fontSize:22},
+    sheet:{position:"fixed",left:"50%",transform:"translateX(-50%)",bottom:0,width:"100%",maxWidth:520,background:"#f3f2ee",borderRadius:"20px 20px 0 0",boxShadow:"0 -8px 40px rgba(31,41,51,.22)",zIndex:50,padding:"0 0 16px"},
+    scrim:{position:"fixed",inset:0,background:"rgba(31,41,51,.5)",zIndex:40},
+    inp:{width:"100%",padding:"11px 12px",borderRadius:10,border:"1px solid #e2e0da",background:"#fff",fontSize:15,outline:"none",boxSizing:"border-box",marginBottom:2},
+    btn:(pri)=>({display:"flex",alignItems:"center",justifyContent:"center",gap:7,padding:"12px 20px",borderRadius:10,border:"none",background:pri?"#ffb000":"#fff",color:pri?"#3a2a00":"#1f2933",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.05em",textTransform:"uppercase",cursor:"pointer",flex:1,border:pri?"none":"1px solid #e2e0da"}),
   };
 
-  const pendingRows=pending.filter(r=>r.status==="pending");
-  const doneRows=pending.filter(r=>r.status!=="pending");
+  const saveAsset=(a)=>setAssets(prev=>prev.map(x=>x.id===a.id?a:x));
+  const addActivity=(a,entry)=>{const updated={...a,activity:[{...entry,id:uid(),ts:Date.now()},...(a.activity||[])]};saveAsset(updated);setSel(updated);};
 
-  const Card=({row})=>{
-    const d=row.data||{};const isOpen=expanded===row.id;const act=actioning[row.id];const isPend=row.status==="pending";const isApp=row.status==="approved";
-    const heldCerts=Object.entries(d.certs||{}).filter(([,v])=>v?.held);
-    return <div style={{background:"#111827",border:`1px solid ${isPend?"#f59e0b44":isApp?"#34d39944":"#ef444444"}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 15px",cursor:"pointer"}} onClick={()=>setExpanded(isOpen?null:row.id)}>
-        <div style={{width:38,height:38,borderRadius:"50%",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:"#fff",flexShrink:0}}>{d.name?.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()||"?"}</div>
-        <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:"#f1f5f9"}}>{d.name||"Unknown"}</div><div style={{fontSize:11,color:"#64748b",marginTop:1}}>{d.position||"—"} · {d.company||"—"} · {d.email||"—"}</div></div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:11,color:"#64748b"}}>{new Date(row.created_at).toLocaleDateString("en-GB")}</span>
-          <span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:isPend?"#f59e0b22":isApp?"#34d39922":"#ef444422",color:isPend?"#fbbf24":isApp?"#34d399":"#f87171",border:`1px solid ${isPend?"#f59e0b44":isApp?"#34d39944":"#ef444444"}`}}>{isPend?"⏳ Pending":isApp?"✓ Approved":"✕ Rejected"}</span>
-          <span style={{color:"#64748b",fontSize:13}}>{isOpen?"▲":"▼"}</span>
-        </div>
+  const openSheet=(type,initForm={})=>{setForm(initForm);setSheet(type);};
+  const closeSheet=()=>setSheet(null);
+
+  const doMove=()=>{
+    if(!form.site)return;
+    const updated={...sel,site:form.site};
+    addActivity(updated,{type:"move",from:sel.site,to:form.site,note:form.note||""});
+    closeSheet();
+  };
+  const doPAT=()=>{
+    if(!form.date||!form.result)return;
+    const test={id:uid(),date:form.date,interval:Number(form.interval)||3,result:form.result,tester:form.tester||""};
+    const updated={...sel,patTests:[test,...(sel.patTests||[])],oos:form.result==="fail"?true:sel.oos};
+    addActivity(updated,{type:"pat",result:form.result,date:form.date});
+    saveAsset(updated);setSel(updated);closeSheet();
+  };
+  const doCondition=()=>{
+    if(!form.condition)return;
+    const updated={...sel,condition:form.condition,oos:form.condition==="Decommissioned"};
+    addActivity(updated,{type:"condition",value:form.condition,note:form.note||""});
+    saveAsset(updated);setSel(updated);closeSheet();
+  };
+  const doAdd=()=>{
+    if(!form.name)return;
+    const a={id:uid(),name:form.name,cat:form.cat||"Other",site:form.site||SITES_A[1],serialNo:form.serialNo||"",condition:"Good",oos:false,photo:"",patTests:[],activity:[{id:uid(),type:"added",ts:Date.now()}]};
+    setAssets(prev=>[a,...prev]);
+    setView("list");setForm({});
+  };
+
+  if(view==="detail"&&sel){
+    const ps=patStatus(sel);
+    const lastPAT=sel.patTests&&[...sel.patTests].sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0];
+    return <div style={S.app}>
+      <div style={S.topbar}>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",color:"#9aa5b1",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",gap:5}}>← Back</button>
+        <div style={{fontSize:13,fontWeight:600}}>{sel.cat}</div>
+        <div style={{width:40}}/>
       </div>
-      {isOpen&&<div style={{borderTop:"1px solid #1e2535",padding:"14px 15px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 20px",marginBottom:14}}>
-          {[["Full Name",d.name],["Position",d.position],["Company",d.company],["Date of Birth",d.dob?new Date(d.dob).toLocaleDateString("en-GB"):"—"],["Phone",d.phone],["NI Number",d.niNumber],["Email",d.email],["Address",d.address],["Emergency Contact",d.emergencyName],["Emergency Phone",d.emergencyPhone],["Bank Name",d.bankName],["Sort Code",d.sortCode],["Account No",d.accountNo?"••••"+d.accountNo.slice(-4):"—"],["T&Cs Signed",d.termsSignedAt?new Date(d.termsSignedAt).toLocaleString("en-GB"):"—"]].map(([l,v])=>
-            <div key={l} style={{padding:"4px 0",borderBottom:"1px solid #1e2535"}}><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div><div style={{fontSize:12,color:v?"#f1f5f9":"#374151",marginTop:1}}>{v||"—"}</div></div>
+      <div style={{...S.scroll,paddingBottom:30}}>
+        {/* Photo / placeholder */}
+        <div style={{width:"100%",aspectRatio:"16/9",borderRadius:14,background:sel.photo?`url(${sel.photo}) center/cover`:"#fff",border:"1px solid #e2e0da",display:"flex",alignItems:"center",justifyContent:"center",color:"#9aa5b1",fontSize:40,marginBottom:14,position:"relative",overflow:"hidden"}}>
+          {!sel.photo&&"🔧"}
+          {sel.oos&&<div style={{position:"absolute",bottom:0,left:0,right:0,background:"rgba(214,69,69,.92)",color:"#fff",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,letterSpacing:"0.12em",textTransform:"uppercase",textAlign:"center",padding:"6px 0"}}>OUT OF SERVICE</div>}
+        </div>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:10}}>
+          <div><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:24,lineHeight:1.05}}>{sel.name}</div>
+            <div style={{fontFamily:"monospace",fontSize:11,letterSpacing:"0.06em",color:"#9aa5b1",marginTop:4,textTransform:"uppercase"}}>{sel.cat}</div></div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
+            <span style={S.tag(ps)}>{ps==="ok"?"● PAT OK":ps==="due"?"⚠ PAT DUE":ps==="over"?"✗ PAT OVERDUE":"○ No PAT"}</span>
+            <span style={{...S.tag("none"),fontSize:10}}>{sel.condition}</span>
+          </div>
+        </div>
+        {/* Meta */}
+        <div style={{background:"#fff",borderRadius:12,border:"1px solid #e2e0da",padding:"12px 14px",marginBottom:12}}>
+          {[["Serial No",sel.serialNo||"—"],["Current Site",sel.site],["Last PAT",lastPAT?fmtD(lastPAT.date)+" · "+lastPAT.result.toUpperCase():"—"],["Interval",lastPAT?(lastPAT.interval||3)+"mo":"—"],["Condition",sel.condition]].map(([l,v])=>
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f0ede8",fontSize:13}}>
+              <span style={{color:"#64748b"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>
+            </div>)}
+        </div>
+        {/* Quick actions */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:16}}>
+          {[["📋 Log PAT",()=>openSheet("pat",{date:today(),interval:3,result:"pass",tester:""}),"#fffbeb","#3a2a00"],
+            ["🚛 Move Site",()=>openSheet("move",{site:sel.site,note:""}),"#eff6ff","#1e3a5f"],
+            ["🔧 Condition",()=>openSheet("condition",{condition:sel.condition,note:""}),"#f0fdf4","#14532d"],
+            [sel.oos?"✅ Return to Service":"⛔ Out of Service",()=>{const u={...sel,oos:!sel.oos};addActivity(u,{type:sel.oos?"returned":"oos"});saveAsset(u);setSel(u);},"#fef2f2","#991b1b"]
+          ].map(([l,fn,bg,col])=>
+            <button key={l} onClick={fn} style={{padding:"11px",borderRadius:11,background:bg,border:"1px solid #e2e0da",color:col,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,letterSpacing:"0.04em",cursor:"pointer"}}>{l}</button>
           )}
         </div>
-        {d.termsAccepted&&<div style={{background:"#0d2218",border:"1px solid #34d39944",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#34d399"}}>✅ T&Cs accepted and signed on {d.termsSignedAt?new Date(d.termsSignedAt).toLocaleString("en-GB"):"—"}</div>}
-        {heldCerts.length>0&&<div style={{marginBottom:12}}>
-          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:7}}>Certifications ({heldCerts.length})</div>
-          {heldCerts.map(([key,val])=><div key={key} style={{background:"#0f1421",borderRadius:7,padding:"8px 12px",marginBottom:6,border:"1px solid #1e2535"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:val.photoUrl?6:0}}>
-              <span style={{fontSize:12,fontWeight:600,color:"#e2e8f0"}}>{CERT_LABELS[key]||key}</span>
-              <div style={{display:"flex",gap:8}}>{val.expiry&&<span style={{fontSize:11,color:"#64748b"}}>Exp: {new Date(val.expiry).toLocaleDateString("en-GB")}</span>}<span style={{fontSize:11,fontWeight:700,color:"#34d399"}}>✓</span></div>
-            </div>
-            {val.photoUrl&&<img src={val.photoUrl} alt={key} style={{width:"100%",maxHeight:120,objectFit:"cover",borderRadius:6,border:"1px solid #2d3555",cursor:"pointer"}} onClick={()=>window.open(val.photoUrl,"_blank")}/>}
+        {/* Activity */}
+        {(sel.activity||[]).length>0&&<div>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:12,letterSpacing:"0.16em",textTransform:"uppercase",color:"#9aa5b1",marginBottom:8}}>Activity</div>
+          {sel.activity.map(a=><div key={a.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ede8",fontSize:12,color:"#52606d"}}>
+            <span style={{color:"#9aa5b1",fontFamily:"monospace",flexShrink:0}}>{a.ts?new Date(a.ts).toLocaleDateString("en-GB"):"—"}</span>
+            <span>{a.type==="move"?`Moved from ${a.from} → ${a.to}`:a.type==="pat"?`PAT ${a.result?.toUpperCase()} — ${fmtD(a.date)}`:a.type==="condition"?`Condition: ${a.value}`:a.type==="oos"?"Marked out of service":a.type==="returned"?"Returned to service":"Added to register"}</span>
           </div>)}
         </div>}
-        {isPend&&<div style={{borderTop:"1px solid #1e2535",paddingTop:12,marginTop:4}}>
-          <div style={{marginBottom:9}}><div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Rejection Note (optional)</div>
-            <input value={rejectNote[row.id]||""} onChange={e=>setRejectNote(n=>({...n,[row.id]:e.target.value}))} placeholder="Reason for rejection…" style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:7,padding:"8px 11px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+      </div>
+      {/* Sheets */}
+      {sheet&&<div style={S.scrim} onClick={closeSheet}/>}
+      {sheet==="pat"&&<div style={S.sheet}>
+        <div style={{width:36,height:4,borderRadius:99,background:"#cfd4d9",margin:"9px auto 14px"}}/>
+        <div style={{padding:"0 16px 16px",borderBottom:"1px solid #e2e0da",marginBottom:14,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:22,letterSpacing:"0.03em",textTransform:"uppercase"}}>Log PAT Test</div>
+        <div style={{padding:"0 16px"}}>
+          {[["Date","date","date"],["Tester Name","text","tester"],["Interval (months)","number","interval"]].map(([l,t,k])=>
+            <div key={k} style={{marginBottom:12}}><label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:4}}>{l}</label>
+              <input type={t} value={form[k]||""} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={S.inp}/></div>
+          )}
+          <div style={{marginBottom:14}}><label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:6}}>Result</label>
+            <div style={{display:"flex",gap:9}}>
+              {["pass","fail"].map(r=><button key={r} onClick={()=>setForm(f=>({...f,result:r}))} style={{flex:1,padding:11,borderRadius:10,border:"1px solid #e2e0da",background:form.result===r?(r==="pass"?"#2e9e5b":"#d64545"):"#fff",color:form.result===r?"#fff":"#52606d",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,cursor:"pointer",textTransform:"uppercase"}}>{r}</button>)}
+            </div></div>
+        </div>
+        <div style={{display:"flex",gap:9,padding:"0 16px"}}><button style={S.btn(false)} onClick={closeSheet}>Cancel</button><button style={S.btn(true)} onClick={doPAT}>Save PAT</button></div>
+      </div>}
+      {sheet==="move"&&<div style={S.sheet}>
+        <div style={{width:36,height:4,borderRadius:99,background:"#cfd4d9",margin:"9px auto 14px"}}/>
+        <div style={{padding:"0 16px 16px",borderBottom:"1px solid #e2e0da",marginBottom:14,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:22,letterSpacing:"0.03em",textTransform:"uppercase"}}>Move to Site</div>
+        <div style={{padding:"0 16px"}}>
+          <div style={{marginBottom:12}}><label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:4}}>New Site</label>
+            <select value={form.site||""} onChange={e=>setForm(f=>({...f,site:e.target.value}))} style={S.inp}>
+              {SITES_A.slice(1).map(s=><option key={s} value={s}>{s}</option>)}
+            </select></div>
+          <div style={{marginBottom:14}}><label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:4}}>Note (optional)</label>
+            <input value={form.note||""} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="Reason for move…" style={S.inp}/></div>
+        </div>
+        <div style={{display:"flex",gap:9,padding:"0 16px"}}><button style={S.btn(false)} onClick={closeSheet}>Cancel</button><button style={S.btn(true)} onClick={doMove}>Confirm Move</button></div>
+      </div>}
+      {sheet==="condition"&&<div style={S.sheet}>
+        <div style={{width:36,height:4,borderRadius:99,background:"#cfd4d9",margin:"9px auto 14px"}}/>
+        <div style={{padding:"0 16px 16px",borderBottom:"1px solid #e2e0da",marginBottom:14,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:22,letterSpacing:"0.03em",textTransform:"uppercase"}}>Update Condition</div>
+        <div style={{padding:"0 16px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:12}}>
+            {["Excellent","Good","Fair","Poor","Decommissioned"].map(c=><button key={c} onClick={()=>setForm(f=>({...f,condition:c}))} style={{padding:10,borderRadius:10,border:"1px solid #e2e0da",background:form.condition===c?"#1f2933":"#fff",color:form.condition===c?"#fff":"#1f2933",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,cursor:"pointer"}}>{c}</button>)}
           </div>
-          <div style={{display:"flex",gap:9}}>
-            <button onClick={()=>reject(row)} disabled={!!act} style={{flex:1,padding:"9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:8,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,opacity:act?0.6:1}}>{act==="rejecting"?"Rejecting…":"✕ Reject"}</button>
-            <button onClick={()=>approve(row)} disabled={!!act} style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"1px solid #34d399",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:800,opacity:act?0.6:1}}>{act==="approving"?"Approving…":"✓ Approve & Add to Workers"}</button>
-          </div>
-        </div>}
+          <input value={form.note||""} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="Notes…" style={S.inp}/>
+        </div>
+        <div style={{display:"flex",gap:9,padding:"14px 16px 0"}}><button style={S.btn(false)} onClick={closeSheet}>Cancel</button><button style={S.btn(true)} onClick={doCondition}>Save</button></div>
       </div>}
     </div>;
-  };
+  }
 
-  return <div style={{padding:"16px 20px"}}>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18}}>
-      {[["Pending",pendingRows.length,"#f59e0b"],["Approved",pending.filter(r=>r.status==="approved").length,"#34d399"],["Rejected",pending.filter(r=>r.status==="rejected").length,"#f87171"]].map(([l,v,c])=>
-        <div key={l} style={{background:"#1a1f2e",border:`1px solid ${c}44`,borderRadius:10,padding:"10px 14px"}}><div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div><div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div></div>
+  if(view==="add") return <div style={S.app}>
+    <div style={S.topbar}>
+      <button onClick={()=>{setView("list");setForm({});}} style={{background:"none",border:"none",color:"#9aa5b1",cursor:"pointer",fontSize:13}}>← Cancel</button>
+      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,letterSpacing:"0.05em",textTransform:"uppercase"}}>Add Asset</div>
+      <div style={{width:60}}/>
+    </div>
+    <div style={S.scroll}>
+      {[["Asset Name *","text","name","e.g. Hilti TE 60 Combihammer"],["Serial / Asset No","text","serialNo",""],["Category","select","cat",""],["Site","select","site",""]].map(([l,t,k,ph])=>
+        <div key={k} style={{marginBottom:14}}>
+          <label style={{display:"block",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13,letterSpacing:"0.08em",textTransform:"uppercase",color:"#64748b",marginBottom:5}}>{l}</label>
+          {t==="select"?<select value={form[k]||""} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={S.inp}>
+            <option value="">— Select —</option>
+            {(k==="cat"?CATS_A.slice(1):SITES_A.slice(1)).map(o=><option key={o} value={o}>{o}</option>)}
+          </select>:<input type={t} value={form[k]||""} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} placeholder={ph} style={S.inp}/>}
+        </div>
+      )}
+      <button onClick={doAdd} style={{...S.btn(true),width:"100%",marginTop:8}}>+ Add to Register</button>
+    </div>
+  </div>;
+
+  // ── LIST VIEW ────────────────────────────────────────────────────────────────
+  return <div style={S.app}>
+    <div style={S.topbar}>
+      <div style={S.brand}>
+        <div style={S.mark}>⚙</div>
+        <div><h1 style={S.h1}>SiteKit</h1><small style={S.small}>Asset Register</small></div>
+      </div>
+      <span style={{fontFamily:"monospace",fontSize:11,color:"#9aa5b1"}}>{assets.length} assets</span>
+    </div>
+
+    <div style={{...S.scroll,paddingTop:8}}>
+      {/* Summary tiles */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+        {[
+          {n:assets.length,l:"Total Assets",cls:""},
+          {n:assets.filter(a=>a.oos).length,l:"Out of Service",cls:"over"},
+          {n:alerts.length,l:"Need Attention",cls:"due"},
+          {n:assets.filter(a=>patStatus(a)==="ok").length,l:"PAT Current",cls:"acc"},
+        ].map((t,i)=><div key={i} style={{background:"#fff",borderRadius:14,padding:"14px 14px 12px",boxShadow:"0 1px 2px rgba(31,41,51,.06)",border:"1px solid #e2e0da",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:t.cls==="over"?"#d64545":t.cls==="due"?"#ef7d18":t.cls==="acc"?"#ffb000":"#3e4c59"}}/>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:36,color:t.cls==="over"?"#d64545":t.cls==="due"?"#ef7d18":"#1f2933",lineHeight:0.95}}>{t.n}</div>
+          <div style={{fontSize:12.5,color:"#52606d",marginTop:5,fontWeight:500}}>{t.l}</div>
+        </div>)}
+      </div>
+
+      {/* Nav tabs */}
+      <div style={{display:"flex",gap:7,overflowX:"auto",marginBottom:12,paddingBottom:4}}>
+        {[["assets","All Assets"],["sites","By Site"],["alerts","⚠ Alerts"]].map(([k,l])=>
+          <button key={k} onClick={()=>setNavTab(k)} style={{flexShrink:0,padding:"7px 14px",borderRadius:999,background:navTab===k?"#1f2933":"#fff",border:`1px solid ${navTab===k?"#1f2933":"#e2e0da"}`,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:13.5,letterSpacing:"0.04em",textTransform:"uppercase",color:navTab===k?"#fff":"#52606d",cursor:"pointer"}}>{l}</button>
+        )}
+      </div>
+
+      {navTab==="assets"&&<>
+        {/* Search + filter */}
+        <div style={{display:"flex",alignItems:"center",gap:9,background:"#fff",border:"1px solid #e2e0da",borderRadius:11,padding:"10px 13px",marginBottom:11,boxShadow:"0 1px 2px rgba(31,41,51,.06)"}}>
+          <span style={{fontSize:16,color:"#9aa5b1"}}>🔍</span>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or serial…" style={{border:"none",outline:"none",background:"none",width:"100%",fontSize:14,color:"#1f2933"}}/>
+        </div>
+        <div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:10,marginBottom:4}}>
+          {CATS_A.map(c=><button key={c} onClick={()=>setCatF(c)} style={{flexShrink:0,padding:"6px 12px",borderRadius:999,background:catF===c?"#1f2933":"#fff",border:`1px solid ${catF===c?"#1f2933":"#e2e0da"}`,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:12.5,letterSpacing:"0.04em",textTransform:"uppercase",color:catF===c?"#fff":"#52606d",cursor:"pointer"}}>{c}</button>)}
+        </div>
+        {filtered.map(a=>{
+          const ps=patStatus(a);
+          return <div key={a.id} onClick={()=>{setSel(a);setView("detail");}} style={{...S.card,borderColor:a.oos?"#f0bcbc":"#e2e0da",borderLeft:a.oos?"4px solid #d64545":"1px solid #e2e0da"}}>
+            <div style={{width:72,height:72,borderRadius:11,background:"#f3f2ee",border:"1px solid #e2e0da",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0}}>🔧</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:15,lineHeight:1.2,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
+              <div style={{fontFamily:"monospace",fontSize:10.5,letterSpacing:"0.06em",textTransform:"uppercase",color:"#9aa5b1",marginBottom:8}}>{a.cat}</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <span style={S.tag(ps)}>{ps==="ok"?"✓ PAT":ps==="due"?"⚠ DUE":ps==="over"?"✗ OVERDUE":"○ No PAT"}</span>
+                {a.oos&&<span style={S.tag("over")}>OOS</span>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:5,marginTop:8,fontSize:11,color:"#52606d"}}>
+                <span>📍</span><span>{a.site}</span>
+                <span style={{margin:"0 4px",color:"#d5dadf"}}>·</span>
+                <span style={{fontFamily:"monospace",fontSize:10}}>{a.serialNo||"—"}</span>
+              </div>
+            </div>
+          </div>;
+        })}
+        {filtered.length===0&&<div style={{textAlign:"center",padding:"46px 20px",color:"#52606d"}}>
+          <div style={{fontSize:40,marginBottom:12}}>📦</div>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:21,textTransform:"uppercase",color:"#1f2933",marginBottom:6}}>No Assets Found</div>
+          <div style={{fontSize:14.5,lineHeight:1.5}}>Try adjusting your filters or add a new asset.</div>
+        </div>}
+      </>}
+
+      {navTab==="sites"&&Object.entries(bySite).map(([site,s])=><div key={site} style={{background:"#fff",border:"1px solid #e2e0da",borderRadius:14,padding:"13px 14px",marginBottom:10,boxShadow:"0 1px 2px rgba(31,41,51,.06)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:9}}>
+            <div style={{width:32,height:32,borderRadius:8,background:"#f3f2ee",border:"1px solid #e2e0da",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>📍</div>
+            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,letterSpacing:"0.02em",textTransform:"uppercase"}}>{site}</span>
+          </div>
+          <span style={{fontFamily:"monospace",fontSize:12,color:"#52606d"}}>{s.total} assets</span>
+        </div>
+        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+          {[["✓ Active",s.total-s.oos,"#1c6b3c","#e7f4ec"],["⛔ OOS",s.oos,"#a32525","#fbe6e6"],["⚠ PAT Due",s.due,"#9a4e08","#fdeede"]].filter(([,n])=>n>0).map(([l,n,c,bg])=>
+            <div key={l} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,padding:"4px 8px",borderRadius:6,background:bg,color:c,fontFamily:"monospace",fontWeight:500}}><span style={{width:7,height:7,borderRadius:"50%",background:c,display:"inline-block"}}/>{n} {l}</div>
+          )}
+        </div>
+      </div>)}
+
+      {navTab==="alerts"&&(alerts.length===0?<div style={{textAlign:"center",padding:"46px 20px",color:"#52606d"}}><div style={{fontSize:40,marginBottom:12}}>✅</div><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:21,textTransform:"uppercase",color:"#1f2933",marginBottom:6}}>All Clear</div><div style={{fontSize:14.5}}>No assets need attention right now.</div></div>
+        :alerts.map(a=>{const ps=patStatus(a);return <div key={a.id} onClick={()=>{setSel(a);setView("detail");}} style={{display:"flex",alignItems:"center",gap:12,background:"#fff",border:"1px solid #e2e0da",borderRadius:12,padding:"11px 13px",marginBottom:9,boxShadow:"0 1px 2px rgba(31,41,51,.06)",cursor:"pointer"}}>
+          <div style={{width:42,height:42,borderRadius:9,background:"#f3f2ee",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🔧</div>
+          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div><div style={{fontSize:12,color:"#52606d",marginTop:2}}>{a.site} · {a.serialNo||"—"}</div></div>
+          <span style={S.tag(a.oos?"over":ps)}>{a.oos?"OOS":ps==="over"?"PAT OVERDUE":"PAT DUE"}</span>
+        </div>;})
       )}
     </div>
-    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><button onClick={load} style={{padding:"5px 13px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:600}}>↻ Refresh</button></div>
-    {loading&&<div style={{textAlign:"center",padding:40,color:"#64748b"}}>Loading registrations…</div>}
-    {!loading&&pendingRows.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}><div style={{fontSize:32,marginBottom:10}}>✅</div>No pending registrations. New self-registered workers will appear here.</div>}
-    {pendingRows.map(row=><Card key={row.id} row={row}/>)}
-    {doneRows.length>0&&<div style={{marginTop:20}}><div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Previously Processed ({doneRows.length})</div>{doneRows.map(row=><Card key={row.id} row={row}/>)}</div>}
+
+    {/* FAB */}
+    <div style={{position:"fixed",bottom:74,right:"calc(50% - 246px)",zIndex:25}}>
+      <button onClick={()=>setView("add")} style={{width:54,height:54,borderRadius:"50%",background:"#ffb000",color:"#3a2a00",border:"none",cursor:"pointer",fontSize:24,boxShadow:"0 4px 14px rgba(255,176,0,.4)",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+    </div>
   </div>;
 }
 
+// ─────────────────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────────────────
+const fmt      = (n)  => `\u00a3${Math.round(n).toLocaleString("en-GB")}`;
+const allocVal = (s)  => Math.round(s.total * (1 - (s.profitPct + s.overheadPct) / 100));
+const earnedVal= (s)  => Math.round(allocVal(s) * s.completed / 100);
+const pctTag   = (p)  => p < 70 ? "green" : p < 90 ? "amber" : "red";
+const ragDot   = (p)  => p < 70 ? "🟢" : p < 90 ? "🟡" : "🔴";
+const fileIcon = (name) => {
+  const ext = (name||"").split(".").pop().toLowerCase();
+  if(["jpg","jpeg","png","webp"].includes(ext)) return "🖼️";
+  if(["mp4","mov","avi"].includes(ext))         return "🎬";
+  if(["pdf"].includes(ext))                     return "📄";
+  if(["eml","msg"].includes(ext))               return "📧";
+  return "📎";
+};
+
+// Week helpers (demo base = Mon 9 Jun 2026)
+const BASE_MON = new Date(2026,5,9);
+const DAY_SHORT = ["Mon","Tue","Wed","Thu","Fri","Sat"];
+const MONTHS    = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function weekMonday(off=0){ const d=new Date(BASE_MON); d.setDate(d.getDate()+off*7); return d; }
+function weekDates(off=0){ const m=weekMonday(off); return Array.from({length:6},(_,i)=>{ const d=new Date(m); d.setDate(d.getDate()+i); return d; }); }
+function weekKey(off=0){ const d=weekMonday(off); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+function fmtDate(d){ return `${d.getDate()} ${MONTHS[d.getMonth()]}`; }
+function dateToWK(ds){ const d=new Date(ds); const di=(d.getDay()+6)%7; const m=new Date(d); m.setDate(d.getDate()-di); return `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,"0")}-${String(m.getDate()).padStart(2,"0")}`; }
+function dateToDI(ds){ return (new Date(ds).getDay()+6)%7; }  // 0=Mon…5=Sat
+
+// ─────────────────────────────────────────────────────────
+//  COLOURS
+// ─────────────────────────────────────────────────────────
+const N="#0F1F35",NM="#1A3A5C",OR="#E07B35",BG="#EEF2F7";
+const TX="#1E293B",MU="#64748B",BD="#E2E8F0";
+const GN="#10B981",AM="#F59E0B",RD="#EF4444";
+const RAG_BG  ={green:"#ECFDF5",amber:"#FFFBEB",red:"#FEF2F2"};
+const RAG_BD  ={green:"#A7F3D0",amber:"#FDE68A",red:"#FCA5A5"};
+const RAG_COL ={green:GN,       amber:AM,        red:RD};
+const TRADE_COL={"Management":NM,"Structural":OR,"General":GN,"Plant":AM,"Mechanical":"#3B82F6","Electrical":"#8B5CF6","Masonry":"#78716C","Carpentry":"#14B8A6"};
+
+// ─────────────────────────────────────────────────────────
+//  MOCK DATA
+// ─────────────────────────────────────────────────────────
+const MANAGER={name:"James Mitchell",initials:"JM"};
+const CATS=["Materials","Labour","Plant & Equipment","Subcontract","Preliminaries","Other"];
+const TODAY="2026-06-13";
+
+const SITES=[
+  {id:1,name:"Highfield Business Park",    client:"Nexus Developments Ltd", address:"Highfield Rd, Aldershot GU11",status:"active",  appStatus:"draft",    start:"Jan 2025",end:"Aug 2025"},
+  {id:2,name:"Riverside Apartments \u2014 Block C",client:"Riverside Living PLC",address:"Riverside Dr, Farnham GU9",  status:"active",  appStatus:"submitted",start:"Mar 2025",end:"Nov 2025"},
+  {id:3,name:"Sainsbury\u2019s Refurb \u2014 Fleet",client:"Sainsbury\u2019s Supermarkets",address:"Fleet Rd, Fleet GU51",       status:"complete",appStatus:"finalised",start:"Nov 2024",end:"Apr 2025"},
+];
+
+const INIT_SCOPES={
+  1:[
+    {id:1,name:"Groundworks & Drainage",  total:95000, profitPct:12,overheadPct:8, completed:100},
+    {id:2,name:"Structural Steel Frame",  total:142000,profitPct:15,overheadPct:7, completed:85},
+    {id:3,name:"Cladding & Curtain Wall", total:118000,profitPct:10,overheadPct:9, completed:40},
+    {id:4,name:"Electrical First Fix",    total:67000, profitPct:12,overheadPct:8, completed:60},
+    {id:5,name:"Mechanical Services",     total:63000, profitPct:11,overheadPct:9, completed:20},
+  ],
+  2:[
+    {id:6,name:"Demolition & Strip Out",  total:45000, profitPct:10,overheadPct:8, completed:100},
+    {id:7,name:"RC Frame Works",          total:120000,profitPct:14,overheadPct:8, completed:55},
+    {id:8,name:"Brickwork & Masonry",     total:88000, profitPct:12,overheadPct:7, completed:20},
+    {id:9,name:"Roof & Waterproofing",    total:67000, profitPct:11,overheadPct:9, completed:0},
+  ],
+  3:[
+    {id:10,name:"Strip Out & Demolition", total:32000, profitPct:8, overheadPct:7, completed:100},
+    {id:11,name:"M&E Services",           total:78000, profitPct:10,overheadPct:8, completed:100},
+    {id:12,name:"Finishes & Fittings",    total:68000, profitPct:9, overheadPct:8, completed:100},
+  ],
+};
+
+const INIT_EXP=[
+  {id:1,siteId:1,scopeId:2,desc:"Steel delivery \u2014 Phase 1",   amount:14800,date:"12 May 2025",category:"Materials",        files:["invoice_steel.pdf"], status:"approved"},
+  {id:2,siteId:1,scopeId:4,desc:"Cable drum & conduit supply",      amount:3400, date:"20 May 2025",category:"Materials",        files:["receipt_elec.jpg"],  status:"pending"},
+  {id:3,siteId:2,scopeId:7,desc:"Pump hire \u2014 concrete pour",   amount:1650, date:"30 Apr 2025",category:"Plant & Equipment",files:["hire_invoice.pdf"],  status:"approved"},
+];
+
+const INIT_VAR=[
+  {id:1,siteId:1,ref:"VAR-001",title:"Additional waterproof membrane to basement",desc:"Client requested upgraded spec following high water table survey.",amount:8500,status:"pending", files:["survey_report.pdf","site_photo_001.jpg"]},
+  {id:2,siteId:1,ref:"VAR-002",title:"Revised escape route \u2014 Level 2",     desc:"Building control requirement following L2 design change.",        amount:3200,status:"approved",files:["bcf_email.eml","revised_plan.pdf"]},
+];
+
+// Labour – workers now carry dailyRate (£/day)
+const LABOUR_DATA={
+  1:{
+    workers:[
+      {id:"w1",name:"Dave Hartley",role:"Site Foreman",  trade:"Management",initials:"DH",dailyRate:380},
+      {id:"w2",name:"Mike Patel",  role:"Steel Fixer",   trade:"Structural",initials:"MP",dailyRate:280},
+      {id:"w3",name:"John Walsh",  role:"Steel Fixer",   trade:"Structural",initials:"JW",dailyRate:270},
+      {id:"w4",name:"Steve Clarke",role:"Labourer",      trade:"General",   initials:"SC",dailyRate:200},
+      {id:"w5",name:"Ryan Brooks", role:"Plant Operator",trade:"Plant",     initials:"RB",dailyRate:320},
+      {id:"w6",name:"Lucy Chen",   role:"M&E Engineer",  trade:"Mechanical",initials:"LC",dailyRate:350},
+    ],
+    schedule:{
+      "2026-05-19":{w1:[0,1,2,3,4],w2:[0,1,2,3,4],w3:[0,1,2,3,4],w4:[0,1,2,3,4],w5:[0,1,2],w6:[]},
+      "2026-05-26":{w1:[0,1,2,3,4],w2:[0,1,2,3,4],w3:[0,1,2,3],  w4:[0,1,2,3,4],w5:[0,2,4],w6:[]},
+      "2026-06-02":{w1:[0,1,2,3,4],w2:[0,1,2,3,4],w3:[0,1,3,4],  w4:[0,2,3,4],  w5:[1,3],  w6:[2,3]},
+      "2026-06-09":{w1:[0,1,2,3,4],w2:[0,1,2,3,4],w3:[0,1,2,3],  w4:[0,1,2,3,4,5],w5:[0,2,4],w6:[2,3,4]},
+      "2026-06-16":{w1:[0,1,2,3,4],w2:[0,1,3,4],  w3:[0,1,2,3,4],w4:[1,2,3,4],  w5:[0,1,2],w6:[0,1,2,3,4]},
+    },
+  },
+  2:{
+    workers:[
+      {id:"w7", name:"Tom Bradley",role:"Site Foreman",trade:"Management",initials:"TB",dailyRate:360},
+      {id:"w8", name:"Sean Murphy",role:"Bricklayer",  trade:"Masonry",   initials:"SM",dailyRate:260},
+      {id:"w9", name:"Ali Hassan", role:"Carpenter",   trade:"Carpentry", initials:"AH",dailyRate:250},
+      {id:"w10",name:"Chris Ford", role:"Labourer",    trade:"General",   initials:"CF",dailyRate:190},
+    ],
+    schedule:{
+      "2026-06-02":{w7:[0,1,2,3,4],w8:[0,1,2,3],  w9:[0,2,4],   w10:[0,1,2,3,4]},
+      "2026-06-09":{w7:[0,1,2,3,4],w8:[0,1,2,3,4],w9:[1,2,3],   w10:[0,1,3,4]},
+      "2026-06-16":{w7:[0,1,2,3,4],w8:[0,2,3,4],  w9:[0,1,2,3,4],w10:[0,1,2]},
+    },
+  },
+  3:{
+    workers:[
+      {id:"w11",name:"Paul Green", role:"Site Foreman",trade:"Management",initials:"PG",dailyRate:360},
+      {id:"w12",name:"Neil Carter",role:"M&E Engineer",trade:"Mechanical",initials:"NC",dailyRate:340},
+      {id:"w13",name:"Sam Osei",   role:"Electrician", trade:"Electrical",initials:"SO",dailyRate:290},
+    ],
+    schedule:{"2026-04-07":{w11:[0,1,2,3,4],w12:[0,1,2,3,4],w13:[0,1,2,3,4]}},
+  },
+};
+
+// Sign-ins: signIns[siteId][dateStr][workerId] = scopeId | null (null = absent)
+const INIT_SIGN_INS={
+  1:{
+    "2026-05-19":{w1:1,w2:1,w3:1,w4:1,w5:1,  w6:null},
+    "2026-05-20":{w1:1,w2:1,w3:1,w4:1,w5:1,  w6:null},
+    "2026-05-21":{w1:1,w2:1,w3:1,w4:1,w5:null,w6:null},
+    "2026-05-22":{w1:2,w2:1,w3:1,w4:1,w5:1,  w6:null},
+    "2026-05-23":{w1:2,w2:2,w3:1,w4:1,w5:null,w6:null},
+    "2026-05-26":{w1:2,w2:2,w3:2,w4:3,w5:3,  w6:null},
+    "2026-05-27":{w1:2,w2:2,w3:2,w4:3,w5:null,w6:null},
+    "2026-05-28":{w1:2,w2:2,w3:2,w4:3,w5:3,  w6:null},
+    "2026-05-29":{w1:2,w2:2,w3:2,w4:3,w5:null,w6:null},
+    "2026-05-30":{w1:2,w2:2,w3:null,w4:3,w5:3,w6:null},
+    "2026-06-02":{w1:2,w2:2,w3:2,w4:3,w5:null,w6:null},
+    "2026-06-03":{w1:2,w2:2,w3:2,w4:3,w5:3,  w6:null},
+    "2026-06-04":{w1:4,w2:2,w3:2,w4:3,w5:null,w6:5},
+    "2026-06-05":{w1:4,w2:2,w3:2,w4:3,w5:3,  w6:5},
+    "2026-06-09":{w1:2,w2:2,w3:2,w4:3,w5:3,  w6:null},
+    "2026-06-10":{w1:2,w2:2,w3:2,w4:3,w5:null,w6:5},
+    "2026-06-11":{w1:2,w2:2,w3:2,w4:3,w5:3,  w6:5},
+    "2026-06-12":{w1:2,w2:2,w3:2,w4:3,w5:null,w6:5},
+    "2026-06-13":{w1:null,w2:null,w3:null,w4:3,w5:3,w6:null},
+  },
+  2:{
+    "2026-06-09":{w7:7,w8:8,w9:null,w10:7},
+    "2026-06-10":{w7:7,w8:8,w9:7,  w10:7},
+    "2026-06-11":{w7:7,w8:8,w9:7,  w10:7},
+    "2026-06-12":{w7:7,w8:8,w9:null,w10:7},
+  },
+  3:{},
+};
+
+// ─────────────────────────────────────────────────────────
+//  MICRO COMPONENTS
+// ─────────────────────────────────────────────────────────
+function Badge({s}){
+  const M={approved:["#ECFDF5","#065F46","Approved"],pending:["#FFFBEB","#92400E","Pending"],rejected:["#FEF2F2","#991B1B","Rejected"],draft:["#F1F5F9","#475569","Draft"],submitted:["#EFF6FF","#1D4ED8","Submitted"],finalised:["#D1FAE5","#065F46","Finalised"],active:["#EFF6FF","#1D4ED8","Active"],complete:["#D1FAE5","#065F46","Complete"]};
+  const [bg,col,lbl]=M[s]||["#F1F5F9","#475569",s];
+  return <span style={{background:bg,color:col,padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700}}>{lbl}</span>;
+}
+
+function Bar({pct,thin,color}){
+  return(<div style={{background:BD,borderRadius:999,height:thin?4:8,overflow:"hidden"}}>
+    <div style={{width:`${Math.min(pct,100)}%`,background:color||(pct===100?GN:OR),borderRadius:999,height:"100%",transition:"width .4s ease"}}/>
+  </div>);
+}
+
+function Crumb({crumbs}){
+  return(<div style={{display:"flex",alignItems:"center",gap:5,marginBottom:14,flexWrap:"wrap"}}>
+    {crumbs.map((c,i)=>(
+      <span key={i} style={{display:"flex",alignItems:"center",gap:5}}>
+        {i>0&&<span style={{color:"#CBD5E1",fontSize:13}}>›</span>}
+        <span onClick={c.fn} style={{fontSize:12,color:c.fn?OR:MU,cursor:c.fn?"pointer":"default",fontWeight:c.fn?500:700}}>{c.label}</span>
+      </span>
+    ))}
+  </div>);
+}
+
+function Pill({name,onX}){
+  return(<span style={{background:"#F1F5F9",borderRadius:6,padding:"4px 10px",fontSize:11,color:"#475569",display:"inline-flex",alignItems:"center",gap:4}}>
+    {fileIcon(name)}{name}
+    {onX&&<span style={{cursor:"pointer",color:"#9CA3AF",marginLeft:2}} onClick={onX}>✕</span>}
+  </span>);
+}
+
+function Drop({fRef,onFiles,hint}){
+  return(<>
+    <div onClick={()=>fRef.current?.click()} style={{border:"2px dashed #D1D5DB",borderRadius:10,padding:"22px 16px",textAlign:"center",cursor:"pointer",background:"#FAFAFA"}}>
+      <div style={{fontSize:28,marginBottom:5}}>📎</div>
+      <div style={{color:MU,fontSize:13,fontWeight:500}}>Click to attach files</div>
+      <div style={{color:"#9CA3AF",fontSize:11,marginTop:2}}>{hint}</div>
+    </div>
+    <input ref={fRef} type="file" multiple style={{display:"none"}} onChange={e=>{onFiles(Array.from(e.target.files).map(f=>f.name));e.target.value="";}}/>
+  </>);
+}
+
+// ─────────────────────────────────────────────────────────
+//  FINANCIAL WIDGET
+// ─────────────────────────────────────────────────────────
+function FinancialWidget({fin,scopes,open,onToggle}){
+  const tag=pctTag(fin.pctUsed);
+  const barCol=RAG_COL[tag];
+  return(
+    <div style={{background:RAG_BG[tag],border:`1px solid ${RAG_BD[tag]}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+      {/* Top row */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
+          {[["Allocated Budget",fmt(fin.allocated),N],["Total Spent",fmt(fin.totalSpent),TX],["Remaining",fin.remaining>=0?fmt(fin.remaining):`${fmt(Math.abs(fin.remaining))} OVER`,fin.remaining>=0?GN:RD]].map(([l,v,c])=>(
+            <div key={l}>
+              <div style={{fontSize:10,color:MU,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:2}}>{l}</div>
+              <div style={{fontSize:18,fontWeight:800,color:c}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:22}}>{ragDot(fin.pctUsed)}</span>
+          <button onClick={onToggle} style={{background:"none",border:`1px solid ${RAG_BD[tag]}`,borderRadius:7,padding:"5px 11px",cursor:"pointer",fontSize:11,color:MU,fontWeight:700,whiteSpace:"nowrap"}}>
+            {open?"▲ Hide":"▼ Scopes"}
+          </button>
+        </div>
+      </div>
+      {/* Overall bar */}
+      <Bar pct={fin.pctUsed} thin color={barCol}/>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:MU,marginTop:4}}>
+        <span>Labour {fmt(fin.labour)} · Expenses {fmt(fin.expenses)}</span>
+        <span style={{fontWeight:700}}>{fin.pctUsed.toFixed(1)}% of budget used</span>
+      </div>
+      {/* Expanded per-scope breakdown */}
+      {open&&(
+        <div style={{marginTop:14,borderTop:`1px solid ${RAG_BD[tag]}`,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
+          {scopes.map(s=>{
+            const av=allocVal(s);
+            const lc=fin.labourByScope[s.id]||0;
+            const ec=fin.expByScope[s.id]||0;
+            const sp=lc+ec;
+            const rem=av-sp;
+            const p=av>0?sp/av*100:0;
+            const st=pctTag(p);
+            return(
+              <div key={s.id}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}>
+                  <span style={{fontSize:12,fontWeight:700,color:TX}}>{s.name}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:10,color:MU}}>{fmt(sp)} of {fmt(av)}</span>
+                    <span style={{fontSize:13}}>{ragDot(p)}</span>
+                  </div>
+                </div>
+                <Bar pct={p} thin color={RAG_COL[st]}/>
+                <div style={{fontSize:10,color:MU,marginTop:2,display:"flex",gap:10}}>
+                  <span>Labour {fmt(lc)}</span>
+                  <span>Expenses {fmt(ec)}</span>
+                  <span style={{color:rem>=0?GN:RD,fontWeight:700}}>{rem>=0?`${fmt(rem)} left`:`${fmt(Math.abs(rem))} OVER`}</span>
+                  <span style={{marginLeft:"auto",color:"#94A3B8"}}>{s.completed}% work done</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+//  SHELL
+// ─────────────────────────────────────────────────────────
+function Shell({view,siteId,go,toast,fin,scopes,widgetOpen,onWidgetToggle,children}){
+  const hasSite=siteId!==null;
+  const navItems=[
+    {id:"dashboard",icon:"🏗️",label:"My Sites"},
+    ...(hasSite?[
+      {id:"site",       icon:"📍",label:"Site"},
+      {id:"scopes",     icon:"📁",label:"Scopes"},
+      {id:"labour",     icon:"👷",label:"Labour"},
+      {id:"signin",     icon:"✅",label:"Sign-In"},
+      {id:"expenses",   icon:"🧾",label:"Expenses"},
+      {id:"variations", icon:"📐",label:"Variations"},
+      {id:"application",icon:"📊",label:"Application"},
+    ]:[]),
+  ];
+  const isActive=(id)=>{
+    if(id==="expenses")  return view==="expenses"||view==="expense-new";
+    if(id==="variations")return view==="variations"||view==="variation-new";
+    return view===id;
+  };
+  return(
+    <div style={{minHeight:"100vh",background:BG,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
+      <header style={{background:N,height:56,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 10px rgba(0,0,0,.35)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:34,height:34,background:OR,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🏗️</div>
+          <div>
+            <div style={{color:"#FFF",fontSize:14,fontWeight:800,letterSpacing:"-0.01em"}}>SiteManager</div>
+            <div style={{color:"#475569",fontSize:10}}>↔ Labour Schedule</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{textAlign:"right"}}><div style={{color:"#FFF",fontSize:12,fontWeight:600}}>{MANAGER.name}</div><div style={{color:"#475569",fontSize:10}}>Site Manager</div></div>
+          <div style={{width:34,height:34,background:NM,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:OR,fontWeight:800,fontSize:12}}>{MANAGER.initials}</div>
+        </div>
+      </header>
+
+      <nav style={{background:"#FFF",borderBottom:`1px solid ${BD}`,display:"flex",overflowX:"auto",paddingLeft:6}}>
+        {navItems.map(n=>(
+          <button key={n.id} onClick={()=>go(n.id)}
+            style={{padding:"11px 11px",background:"none",border:"none",borderBottom:`2px solid ${isActive(n.id)?OR:"transparent"}`,cursor:"pointer",fontSize:11,fontWeight:700,color:isActive(n.id)?OR:MU,whiteSpace:"nowrap",transition:"color .15s"}}>
+            <span style={{marginRight:3}}>{n.icon}</span>{n.label}
+          </button>
+        ))}
+      </nav>
+
+      <main style={{flex:1,maxWidth:820,width:"100%",margin:"0 auto",padding:"16px 16px 48px",boxSizing:"border-box"}}>
+        {/* Financial widget – shown whenever inside a site */}
+        {hasSite&&fin&&(
+          <FinancialWidget fin={fin} scopes={scopes} open={widgetOpen} onToggle={onWidgetToggle}/>
+        )}
+        {children}
+      </main>
+
+      {toast&&(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:GN,color:"#FFF",padding:"11px 24px",borderRadius:10,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,.22)",zIndex:9999,whiteSpace:"nowrap"}}>{toast}</div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+//  MAIN APP
+// ─────────────────────────────────────────────────────────
+function SiteManagerView() {
+  // Navigation
+  const [view,setView]      =useState("dashboard");
+  const [siteId,setSiteId]  =useState(null);
+  const [scopeId,setScopeId]=useState(null);
+  // Data
+  const [scopes,setScopes]  =useState(INIT_SCOPES);
+  const [expenses,setExp]   =useState(INIT_EXP);
+  const [variations,setVar] =useState(INIT_VAR);
+  const [signIns,setSignIns]=useState(INIT_SIGN_INS);
+  // UI state
+  const [scopePct,setScopePct]      =useState(null);
+  const [weekOffset,setWeekOff]     =useState(0);
+  const [widgetOpen,setWidgetOpen]  =useState(false);
+  const [signInDate,setSignInDate]  =useState(TODAY);
+  const [draftSI,setDraftSI]        =useState(null); // { [workerId]: scopeId|null }
+  // Forms
+  const [expForm,setEF]=useState({desc:"",amount:"",category:"Materials",scopeId:"",date:"",files:[]});
+  const [varForm,setVF]=useState({title:"",desc:"",amount:"",files:[]});
+  const [toast,setToast]=useState(null);
+  const expRef=useRef(); const varRef=useRef();
+
+  // Derived
+  const site       =SITES.find(s=>s.id===siteId);
+  const siteScopes =siteId?(scopes[siteId]||[]):[];
+  const scope      =siteScopes.find(s=>s.id===scopeId);
+  const siteExp    =expenses.filter(e=>e.siteId===siteId);
+  const siteVar    =variations.filter(v=>v.siteId===siteId);
+  const ld         =siteId?LABOUR_DATA[siteId]:null;
+  const workers    =ld?.workers||[];
+
+  // ── Financial computation ──
+  const computeFin=(sid)=>{
+    const ss=scopes[sid]||[];
+    const sExp=expenses.filter(e=>e.siteId===sid&&e.status!=="rejected");
+    const wrkrs=LABOUR_DATA[sid]?.workers||[];
+    const wMap=Object.fromEntries(wrkrs.map(w=>[w.id,w]));
+    const siteDays=signIns[sid]||{};
+    const labourByScope={}, expByScope={};
+    let totalLabour=0, totalExp=0;
+    for(const daySigns of Object.values(siteDays)){
+      for(const [wId,scId] of Object.entries(daySigns)){
+        if(!scId) continue;
+        const w=wMap[wId]; if(!w) continue;
+        labourByScope[scId]=(labourByScope[scId]||0)+w.dailyRate;
+        totalLabour+=w.dailyRate;
+      }
+    }
+    for(const e of sExp){
+      if(e.scopeId) expByScope[e.scopeId]=(expByScope[e.scopeId]||0)+e.amount;
+      totalExp+=e.amount;
+    }
+    const allocated=ss.reduce((a,s)=>a+allocVal(s),0);
+    const totalSpent=totalLabour+totalExp;
+    return {allocated,labour:totalLabour,expenses:totalExp,totalSpent,remaining:allocated-totalSpent,pctUsed:allocated>0?totalSpent/allocated*100:0,labourByScope,expByScope};
+  };
+  const fin=siteId?computeFin(siteId):null;
+
+  // Style helpers
+  const card={background:"#FFF",borderRadius:12,border:`1px solid ${BD}`,padding:20,marginBottom:14};
+  const inp={padding:"10px 14px",borderRadius:8,border:`1px solid ${BD}`,fontSize:14,width:"100%",boxSizing:"border-box",color:TX,outline:"none",background:"#FFF"};
+  const lbl={fontSize:12,fontWeight:700,color:MU,display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.04em"};
+  const btn=(v="primary")=>({padding:"10px 18px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer",border:"none",
+    ...(v==="primary"?{background:OR,color:"#FFF"}:v==="navy"?{background:NM,color:"#FFF"}:v==="green"?{background:GN,color:"#FFF"}:{background:"transparent",color:MU,border:`1px solid ${BD}`})});
+
+  const go=(v,sid,scid)=>{setView(v);if(sid!==undefined)setSiteId(sid);if(scid!==undefined){setScopeId(scid);setScopePct(null);}};
+  const pop=(msg)=>{setToast(msg);setTimeout(()=>setToast(null),2700);};
+
+  // Shell props bundle
+  const shellProps={view,siteId,go,toast,fin,scopes:siteScopes,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)};
+
+  // ── DASHBOARD ─────────────────────────────────────────
+  if(view==="dashboard") return(
+    <Shell {...shellProps}>
+      <div style={{background:`${NM}18`,border:`1px solid ${NM}30`,borderRadius:10,padding:"10px 14px",marginBottom:18,fontSize:12,color:NM}}>
+        🔗 <strong>Labour Schedule sync active.</strong> Site access and labour allocations are managed by your admin in Labour Schedule.
+      </div>
+      <h2 style={{color:N,fontSize:21,fontWeight:800,margin:"0 0 3px"}}>My Sites</h2>
+      <p style={{color:MU,fontSize:13,margin:"0 0 18px"}}>{SITES.length} sites assigned to you</p>
+      {SITES.map(s=>{
+        const ss=scopes[s.id]||[];
+        const f=computeFin(s.id);
+        const pct=f.allocated>0?Math.round(f.totalSpent/f.allocated*100):0;
+        const tag=pctTag(pct);
+        return(
+          <div key={s.id} style={{...card,cursor:"pointer",transition:"box-shadow .15s"}}
+            onClick={()=>go("site",s.id)}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 20px rgba(0,0,0,.09)"}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:N,marginBottom:2}}>{s.name}</div>
+                <div style={{color:MU,fontSize:12}}>{s.client} · {s.address}</div>
+              </div>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <span style={{fontSize:18}}>{ragDot(pct)}</span>
+                <Badge s={s.appStatus}/>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
+              {[["Allocated",fmt(f.allocated),N],["Spent",fmt(f.totalSpent),TX],["Remaining",fmt(f.remaining),f.remaining>=0?GN:RD],["Budget Used",pct+"%",RAG_COL[tag]]].map(([l,v,c])=>(
+                <div key={l}><div style={{fontSize:10,color:MU,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:2}}>{l}</div><div style={{fontSize:14,fontWeight:800,color:c}}>{v}</div></div>
+              ))}
+            </div>
+            <Bar pct={pct} thin color={RAG_COL[tag]}/>
+            <div style={{marginTop:6,fontSize:11,color:"#94A3B8"}}>{s.start} → {s.end}</div>
+          </div>
+        );
+      })}
+    </Shell>
+  );
+
+  // ── SITE OVERVIEW ─────────────────────────────────────
+  if(view==="site"&&site){
+    const earned=siteScopes.reduce((a,s)=>a+earnedVal(s),0);
+    const curSched=ld?.schedule[weekKey(0)]||{};
+    const activeW=workers.filter(w=>(curSched[w.id]||[]).length>0).length;
+    return(
+      <Shell {...shellProps}>
+        <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name}]}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+          <div><h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>{site.name}</h2><div style={{color:MU,fontSize:12}}>{site.client} · {site.address}</div></div>
+          <Badge s={site.appStatus}/>
+        </div>
+        {/* Earned value summary */}
+        <div style={{background:N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+          {[["Earned to Date",fmt(earned),OR],["Workers (this wk)",activeW+"/"+workers.length,"#FFF"],["Scopes",siteScopes.length+" active","#FFF"]].map(([l,v,c])=>(
+            <div key={l}><div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>{l}</div><div style={{color:c,fontSize:18,fontWeight:800}}>{v}</div></div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+          <button style={btn("primary")} onClick={()=>go("scopes")}>📁 Scopes & Budget</button>
+          <button style={btn("ghost")}   onClick={()=>go("signin")}>✅ Sign Workers In</button>
+          <button style={btn("ghost")}   onClick={()=>go("expenses")}>🧾 Expenses <span style={{background:BD,borderRadius:999,padding:"1px 7px",marginLeft:4,fontSize:10}}>{siteExp.length}</span></button>
+          <button style={btn("ghost")}   onClick={()=>go("application")}>📊 Application</button>
+        </div>
+        {/* Quick scope list */}
+        <div style={{...card,padding:0,overflow:"hidden"}}>
+          <div style={{padding:"12px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontWeight:800,fontSize:13,color:N}}>Scopes — tap to assess</span>
+            <span style={{fontSize:11,color:MU}}>Allocated budget shown</span>
+          </div>
+          {siteScopes.map(s=>{
+            const av=allocVal(s);
+            const lc=(fin?.labourByScope[s.id]||0);
+            const ec=(fin?.expByScope[s.id]||0);
+            const sp=lc+ec;
+            const rem=av-sp;
+            const p=av>0?sp/av*100:0;
+            return(
+              <div key={s.id} style={{padding:"12px 18px",borderBottom:`1px solid #F8FAFC`,cursor:"pointer",transition:"background .12s"}}
+                onClick={()=>{setScopePct(s.completed);go("scope",siteId,s.id);}}
+                onMouseEnter={e=>e.currentTarget.style.background="#FAFCFF"}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                  <div style={{fontWeight:600,fontSize:13,color:TX}}>{s.name}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:12,color:N}}>{fmt(av)}</div><div style={{fontSize:10,color:MU}}>your budget</div></div>
+                    <span style={{fontSize:14}}>{ragDot(p)}</span>
+                  </div>
+                </div>
+                <Bar pct={s.completed} thin/>
+                <div style={{fontSize:10,color:MU,marginTop:3,display:"flex",justifyContent:"space-between"}}>
+                  <span>{s.completed}% work complete · spent {fmt(sp)}</span>
+                  <span style={{color:rem>=0?GN:RD,fontWeight:700}}>{fmt(rem)} left</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── SCOPES DETAIL VIEW ────────────────────────────────
+  if(view==="scopes"&&site){
+    return(
+      <Shell {...shellProps}>
+        <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Scopes & Budget"}]}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Scopes & Budget</h2>
+          <div style={{fontSize:11,color:MU,background:"#F1F5F9",borderRadius:7,padding:"4px 10px",fontWeight:600}}>Profit & overhead excluded from values shown</div>
+        </div>
+        {siteScopes.map(s=>{
+          const av=allocVal(s);
+          const lc=fin?.labourByScope[s.id]||0;
+          const ec=fin?.expByScope[s.id]||0;
+          const sp=lc+ec;
+          const rem=av-sp;
+          const p=av>0?sp/av*100:0;
+          const tag=pctTag(p);
+          return(
+            <div key={s.id} style={{...card,borderLeft:`4px solid ${RAG_COL[tag]}`}}>
+              {/* Scope header */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:15,color:N,marginBottom:2}}>{s.name}</div>
+                  <div style={{fontSize:11,color:MU}}>Allocated budget (your portion) · {s.completed}% work complete</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:20,fontWeight:900,color:N}}>{fmt(av)}</div>
+                  <div style={{fontSize:10,color:MU}}>allocated</div>
+                </div>
+              </div>
+              {/* Budget bar */}
+              <Bar pct={p} color={RAG_COL[tag]}/>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:MU,marginTop:4,marginBottom:14}}>
+                <span>{p.toFixed(1)}% of budget spent</span>
+                <span style={{fontSize:14}}>{ragDot(p)}</span>
+              </div>
+              {/* Cost breakdown grid */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,padding:"12px 14px",background:"#F8FAFC",borderRadius:8}}>
+                {[["Labour Cost",fmt(lc),TX],["Expenses",fmt(ec),TX],["Total Spent",fmt(sp),sp>0?TX:MU],["Remaining",rem>=0?fmt(rem):`${fmt(Math.abs(rem))} OVER`,rem>=0?GN:RD]].map(([l,v,c])=>(
+                  <div key={l}><div style={{fontSize:10,color:MU,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>{l}</div><div style={{fontSize:14,fontWeight:800,color:c}}>{v}</div></div>
+                ))}
+              </div>
+              {/* Work completion vs budget status */}
+              <div style={{marginTop:10,display:"flex",gap:10,flexWrap:"wrap"}}>
+                <div style={{flex:1,background:"#EFF6FF",borderRadius:7,padding:"8px 12px"}}>
+                  <div style={{fontSize:10,color:"#1D4ED8",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Work Completion</div>
+                  <div style={{fontSize:16,fontWeight:800,color:"#1D4ED8"}}>{s.completed}%</div>
+                </div>
+                <div style={{flex:1,background:RAG_BG[tag],borderRadius:7,padding:"8px 12px"}}>
+                  <div style={{fontSize:10,color:RAG_COL[tag],fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Budget Health</div>
+                  <div style={{fontSize:16,fontWeight:800,color:RAG_COL[tag]}}>{ragDot(p)} {p<70?"On track":p<90?"Watch spend":"Over risk"}</div>
+                </div>
+              </div>
+              {/* Scope action */}
+              <div style={{marginTop:10}}>
+                <button style={{...btn("ghost"),fontSize:12,padding:"7px 14px"}} onClick={()=>{setScopePct(s.completed);go("scope",siteId,s.id);}}>
+                  ✏️ Update completion %
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </Shell>
+    );
+  }
+
+  // ── SCOPE ASSESSMENT ──────────────────────────────────
+  if(view==="scope"&&scope){
+    const pct=scopePct!==null?scopePct:scope.completed;
+    const av=allocVal(scope),ev=Math.round(av*pct/100);
+    const lc=fin?.labourByScope[scope.id]||0;
+    const ec=fin?.expByScope[scope.id]||0;
+    const sp=lc+ec; const rem=av-sp;
+    return(
+      <Shell {...shellProps}>
+        <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Scopes",fn:()=>go("scopes")},{label:"Assess"}]}/>
+        <div style={{background:N,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+          <div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Scope Assessment</div>
+          <div style={{color:"#FFF",fontSize:16,fontWeight:700,marginBottom:14}}>{scope.name}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+            {[["Allocated",fmt(av),"#FFF"],["Earned Value",fmt(ev),OR],["Remaining Budget",rem>=0?fmt(rem):`${fmt(Math.abs(rem))} OVER`,rem>=0?GN:RD]].map(([l,v,c])=>(
+              <div key={l}><div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:18,fontWeight:800}}>{v}</div></div>
+            ))}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={{fontWeight:800,fontSize:14,color:N,marginBottom:14}}>Volume of Work Completed</div>
+          <div style={{fontSize:52,fontWeight:900,color:OR,textAlign:"center",lineHeight:1,marginBottom:10}}>{pct}%</div>
+          <Bar pct={pct}/>
+          <input type="range" min={0} max={100} step={5} value={pct} onChange={e=>setScopePct(Number(e.target.value))} style={{width:"100%",marginTop:12,accentColor:OR,cursor:"pointer"}}/>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#94A3B8",marginTop:3}}>
+            {[0,25,50,75,100].map(n=><span key={n}>{n}%</span>)}
+          </div>
+          <div style={{marginTop:14,padding:"12px 14px",background:"#F8FAFC",borderRadius:8,fontSize:13,color:MU,borderLeft:`3px solid ${OR}`}}>
+            At <strong style={{color:N}}>{pct}%</strong> — earned value <strong style={{color:N}}>{fmt(ev)}</strong> · budget spent {fmt(sp)} of {fmt(av)} <span style={{color:rem>=0?GN:RD,fontWeight:700}}>({rem>=0?fmt(rem)+" left":fmt(Math.abs(rem))+" OVER"})</span>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:14}}>
+            <button style={btn("primary")} onClick={()=>{setScopes(p=>({...p,[siteId]:p[siteId].map(s=>s.id===scopeId?{...s,completed:pct}:s)}));go("scopes");pop("Completion saved ✓");}}>Save Assessment</button>
+            <button style={btn("ghost")} onClick={()=>go("scopes")}>Cancel</button>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── SIGN-IN VIEW ──────────────────────────────────────
+  if(view==="signin"&&site){
+    // Workers scheduled for signInDate
+    const wk=dateToWK(signInDate);
+    const di=dateToDI(signInDate);
+    const dayOfWeek=DAY_SHORT[di]||"";
+    const weekSched=ld?.schedule[wk]||{};
+    const scheduledW=workers.filter(w=>(weekSched[w.id]||[]).includes(di));
+    // Initialise draft from saved sign-ins (or empty) when entering this view
+    const savedDay=(signIns[siteId]||{})[signInDate]||{};
+    const initDraft=(w)=>draftSI??(Object.fromEntries(scheduledW.map(w=>([w.id,savedDay[w.id]??w.id]))));
+    const draft=draftSI??Object.fromEntries(scheduledW.map(w=>[w.id,savedDay[w.id]??null]));
+
+    // Cost per scope from draft
+    const draftCostByScope={};
+    let draftTotal=0;
+    for(const [wId,scId] of Object.entries(draft)){
+      if(!scId) continue;
+      const w=workers.find(x=>x.id===wId); if(!w) continue;
+      draftCostByScope[scId]=(draftCostByScope[scId]||0)+w.dailyRate;
+      draftTotal+=w.dailyRate;
+    }
+
+    const saveSignIn=()=>{
+      setSignIns(p=>({...p,[siteId]:{...(p[siteId]||{}),[signInDate]:draft}}));
+      setDraftSI(null);
+      pop("Sign-in saved ✓");
+    };
+
+    return(
+      <Shell {...shellProps}>
+        <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Daily Sign-In"}]}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Daily Sign-In</h2>
+          <div style={{display:"flex",alignItems:"center",gap:6,background:"#F1F5F9",borderRadius:8,padding:"5px 11px",fontSize:11,color:MU,fontWeight:600}}>
+            <span style={{width:7,height:7,background:GN,borderRadius:"50%",display:"inline-block"}}/>
+            Costs logged against scope budgets
+          </div>
+        </div>
+
+        {/* Date selector */}
+        <div style={{...card,padding:"14px 16px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div>
+              <label style={lbl}>Date</label>
+              <input type="date" style={{...inp,maxWidth:200}} value={signInDate}
+                onChange={e=>{setSignInDate(e.target.value);setDraftSI(null);}}/>
+            </div>
+            <div style={{paddingTop:22,color:MU,fontSize:13}}>
+              {scheduledW.length>0?<span><strong style={{color:N}}>{scheduledW.length} workers</strong> scheduled · {dayOfWeek}</span>:<span style={{color:"#94A3B8"}}>No workers scheduled for this day</span>}
+            </div>
+          </div>
+        </div>
+
+        {scheduledW.length===0?(
+          <div style={{textAlign:"center",padding:"40px 20px",color:"#9CA3AF"}}><div style={{fontSize:40,marginBottom:10}}>📅</div><div style={{fontSize:13}}>No workers are scheduled for this site on the selected date.</div></div>
+        ):(
+          <>
+            {/* Worker sign-in table */}
+            <div style={{...card,padding:0,overflow:"hidden",marginBottom:14}}>
+              <div style={{padding:"12px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,display:"grid",gridTemplateColumns:"1fr 80px 1fr 80px",gap:8}}>
+                {["Worker","Rate","Assign to Scope","Present"].map(h=>(
+                  <div key={h} style={{fontSize:10,color:MU,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</div>
+                ))}
+              </div>
+              {scheduledW.map((w,wi)=>{
+                const currentScId=draft[w.id]??null;
+                const present=currentScId!==null;
+                const tc=TRADE_COL[w.trade]||NM;
+                return(
+                  <div key={w.id} style={{padding:"12px 18px",borderBottom:`1px solid #F8FAFC`,display:"grid",gridTemplateColumns:"1fr 80px 1fr 80px",gap:8,alignItems:"center",background:wi%2===0?"#FFF":"#FCFDFF"}}>
+                    {/* Worker */}
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:30,height:30,borderRadius:"50%",background:`${tc}18`,border:`1.5px solid ${tc}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:tc,flexShrink:0}}>{w.initials}</div>
+                      <div><div style={{fontSize:12,fontWeight:700,color:TX}}>{w.name}</div><div style={{fontSize:10,color:tc,fontWeight:600}}>{w.role}</div></div>
+                    </div>
+                    {/* Rate */}
+                    <div style={{fontSize:12,fontWeight:700,color:N}}>{fmt(w.dailyRate)}</div>
+                    {/* Scope selector */}
+                    <select value={currentScId||""} disabled={!present}
+                      onChange={e=>setDraftSI(p=>({...(p||draft),[w.id]:e.target.value?Number(e.target.value):null}))}
+                      style={{...inp,padding:"6px 10px",fontSize:12,opacity:present?1:0.4}}>
+                      <option value="">— Absent / Not on site —</option>
+                      {siteScopes.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    {/* Present toggle */}
+                    <div style={{display:"flex",justifyContent:"center"}}>
+                      <button onClick={()=>{
+                        const newPresent=!present;
+                        setDraftSI(p=>({...(p||draft),[w.id]:newPresent?(siteScopes[0]?.id||null):null}));
+                      }}
+                        style={{width:34,height:34,borderRadius:8,border:`2px solid ${present?GN:BD}`,background:present?"#ECFDF5":"#F8FAFC",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        {present?"✓":"—"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Cost summary by scope */}
+            {Object.keys(draftCostByScope).length>0&&(
+              <div style={{...card,background:"#FFFBEB",borderColor:"#FDE68A",marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:13,color:"#92400E",marginBottom:10}}>💰 Labour Cost Today — by Scope</div>
+                {siteScopes.filter(s=>draftCostByScope[s.id]).map(s=>(
+                  <div key={s.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #FDE68A",fontSize:13}}>
+                    <span style={{color:TX,fontWeight:600}}>{s.name}</span>
+                    <span style={{fontWeight:800,color:"#92400E"}}>{fmt(draftCostByScope[s.id])}</span>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:10,paddingTop:8,borderTop:"2px solid #FDE68A"}}>
+                  <span style={{fontWeight:700,color:TX}}>Total Labour Cost Today</span>
+                  <span style={{fontWeight:900,fontSize:16,color:"#92400E"}}>{fmt(draftTotal)}</span>
+                </div>
+              </div>
+            )}
+
+            <div style={{display:"flex",gap:10}}>
+              <button style={btn("green")} onClick={saveSignIn}>✓ Save Sign-In</button>
+              <button style={btn("ghost")} onClick={()=>{setDraftSI(null);go("site");}}>Cancel</button>
+            </div>
+          </>
+        )}
+      </Shell>
+    );
+  }
+
+  // ── LABOUR SCHEDULE ───────────────────────────────────
+  if(view==="labour"&&site){
+    const wk=weekKey(weekOffset);
+    const sched=ld?.schedule[wk]||{};
+    const dates=weekDates(weekOffset);
+    const monDate=weekMonday(weekOffset);
+    const dayTotals=Array.from({length:6},(_,di)=>workers.filter(w=>(sched[w.id]||[]).includes(di)).length);
+    const totalPD=workers.reduce((a,w)=>a+(sched[w.id]||[]).length,0);
+    const totalW=workers.filter(w=>(sched[w.id]||[]).length>0).length;
+    const uniqueT=[...new Set(workers.filter(w=>(sched[w.id]||[]).length>0).map(w=>w.trade))];
+    return(
+      <Shell {...shellProps}>
+        <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site")},{label:"Labour Schedule"}]}/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Labour Schedule</h2>
+          <div style={{display:"flex",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:5,background:"#F1F5F9",borderRadius:8,padding:"5px 11px",fontSize:11,color:MU,fontWeight:600}}>
+              <span style={{width:7,height:7,background:GN,borderRadius:"50%",display:"inline-block"}}/>Read only · Labour Schedule
+            </div>
+            <button style={btn("primary")} onClick={()=>go("signin")}>✅ Sign In Today</button>
+          </div>
+        </div>
+        <div style={{background:N,borderRadius:12,padding:"14px 18px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+          {[["Workers This Week",`${totalW}/${workers.length}`,"#FFF"],["Person-Days",totalPD,OR],["Trades",uniqueT.length,"#FFF"]].map(([l,v,c])=>(
+            <div key={l}><div style={{color:"#94A3B8",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:19,fontWeight:800}}>{v}</div></div>
+          ))}
+        </div>
+        {uniqueT.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{uniqueT.map(t=><span key={t} style={{background:`${TRADE_COL[t]||NM}18`,color:TRADE_COL[t]||NM,border:`1px solid ${TRADE_COL[t]||NM}40`,borderRadius:999,padding:"3px 10px",fontSize:11,fontWeight:700}}>{t}</span>)}</div>}
+        {/* Week nav */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <button onClick={()=>setWeekOff(o=>o-1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>‹ {fmtDate(weekMonday(weekOffset-1))}</button>
+          <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:13,color:N}}>Week of {fmtDate(monDate)}</div>{weekOffset===0&&<div style={{fontSize:10,color:OR,fontWeight:700}}>CURRENT WEEK</div>}</div>
+          <button onClick={()=>setWeekOff(o=>o+1)} style={{...btn("ghost"),padding:"6px 12px",fontSize:12}}>{fmtDate(weekMonday(weekOffset+1))} ›</button>
+        </div>
+        {/* Grid */}
+        <div style={{...card,padding:0,overflow:"hidden"}}>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",minWidth:520}}>
+              <thead>
+                <tr style={{background:"#F8FAFC"}}>
+                  <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:MU,textTransform:"uppercase",minWidth:170,borderBottom:`1px solid ${BD}`}}>Worker</th>
+                  {dates.map((d,i)=><th key={i} style={{padding:"8px",textAlign:"center",fontSize:10,fontWeight:700,color:i<5?MU:"#94A3B8",minWidth:60,borderBottom:`1px solid ${BD}`,borderLeft:`1px solid ${BD}`}}><div>{DAY_SHORT[i]}</div><div style={{fontWeight:500,color:"#94A3B8"}}>{fmtDate(d)}</div></th>)}
+                  <th style={{padding:"8px",textAlign:"center",fontSize:10,fontWeight:700,color:MU,minWidth:44,borderBottom:`1px solid ${BD}`,borderLeft:`1px solid ${BD}`}}>Days</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workers.length===0?<tr><td colSpan={9} style={{padding:"32px",textAlign:"center",color:"#9CA3AF"}}>No workers allocated</td></tr>
+                :workers.map((w,wi)=>{
+                  const days=sched[w.id]||[];
+                  const tc=TRADE_COL[w.trade]||NM;
+                  return(
+                    <tr key={w.id} style={{borderBottom:"1px solid #F8FAFC",background:wi%2===0?"#FFF":"#FCFDFF"}}>
+                      <td style={{padding:"9px 14px",borderRight:`1px solid ${BD}`}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <div style={{width:28,height:28,borderRadius:"50%",background:`${tc}18`,border:`1.5px solid ${tc}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,color:tc,flexShrink:0}}>{w.initials}</div>
+                          <div><div style={{fontSize:12,fontWeight:700,color:TX}}>{w.name}</div><div style={{fontSize:10,color:tc,fontWeight:600}}>{w.role} · {fmt(w.dailyRate)}/d</div></div>
+                        </div>
+                      </td>
+                      {Array.from({length:6},(_,di)=>{
+                        const on=days.includes(di);
+                        return<td key={di} style={{padding:"8px",textAlign:"center",borderLeft:"1px solid #F1F5F9"}}>
+                          {on?<div style={{width:26,height:26,borderRadius:6,background:`${tc}20`,border:`1.5px solid ${tc}50`,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:9,height:9,borderRadius:"50%",background:tc}}/></div>
+                             :<div style={{width:26,height:26,borderRadius:6,background:"#F8FAFC",border:`1px solid ${BD}`,margin:"0 auto"}}/>}
+                        </td>;
+                      })}
+                      <td style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><span style={{fontWeight:800,fontSize:12,color:days.length>0?N:MU}}>{days.length}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{background:"#F0F4F8",borderTop:`1px solid ${BD}`}}>
+                  <td style={{padding:"9px 14px",fontSize:11,fontWeight:800,color:N,borderRight:`1px solid ${BD}`}}>Daily Headcount</td>
+                  {dayTotals.map((t,i)=><td key={i} style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><div style={{fontWeight:800,fontSize:12,color:t>0?OR:MU}}>{t}</div><div style={{fontSize:9,color:"#94A3B8"}}>ppl</div></td>)}
+                  <td style={{padding:"8px",textAlign:"center",borderLeft:`1px solid ${BD}`}}><div style={{fontWeight:800,fontSize:12,color:N}}>{totalPD}</div><div style={{fontSize:9,color:"#94A3B8"}}>total</div></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── EXPENSES ──────────────────────────────────────────
+  if(view==="expenses"){
+    const total=siteExp.reduce((a,e)=>a+e.amount,0);
+    return(<Shell {...shellProps}>
+      <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Expenses"}]}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div><h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 2px"}}>Expenses</h2><div style={{color:MU,fontSize:12}}>Total: <strong style={{color:OR}}>{fmt(total)}</strong></div></div>
+        <button style={btn("primary")} onClick={()=>go("expense-new")}>+ New</button>
+      </div>
+      {siteExp.length===0?<div style={{textAlign:"center",padding:"60px 20px",color:"#9CA3AF"}}><div style={{fontSize:48,marginBottom:10}}>🧾</div><div>No expenses yet.</div></div>
+      :siteExp.map(e=>{
+        const sc=siteScopes.find(s=>s.id===e.scopeId);
+        return(<div key={e.id} style={card}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+            <div style={{flex:1,marginRight:12}}><div style={{fontWeight:700,fontSize:13,color:TX,marginBottom:2}}>{e.desc}</div><div style={{fontSize:11,color:MU}}>{e.category}{sc?` · ${sc.name}`:""} · {e.date}</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:N,marginBottom:4}}>{fmt(e.amount)}</div><Badge s={e.status}/></div>
+          </div>
+          {e.files.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{e.files.map((f,i)=><Pill key={i} name={f}/>)}</div>}
+        </div>);
+      })}
+    </Shell>);
+  }
+
+  if(view==="expense-new") return(<Shell {...shellProps}>
+    <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Expenses",fn:()=>go("expenses")},{label:"New Expense"}]}/>
+    <h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Expense</h2>
+    <div style={card}>
+      <div style={{marginBottom:12}}><label style={lbl}>Description *</label><input style={inp} placeholder="e.g. Concrete delivery — Pour 3" value={expForm.desc} onChange={e=>setEF(p=>({...p,desc:e.target.value}))}/></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+        <div><label style={lbl}>Amount (£) *</label><input style={inp} type="number" min="0" value={expForm.amount} onChange={e=>setEF(p=>({...p,amount:e.target.value}))}/></div>
+        <div><label style={lbl}>Date</label><input style={inp} type="date" value={expForm.date} onChange={e=>setEF(p=>({...p,date:e.target.value}))}/></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+        <div><label style={lbl}>Category</label><select style={inp} value={expForm.category} onChange={e=>setEF(p=>({...p,category:e.target.value}))}>{CATS.map(c=><option key={c}>{c}</option>)}</select></div>
+        <div><label style={lbl}>Scope</label><select style={inp} value={expForm.scopeId} onChange={e=>setEF(p=>({...p,scopeId:e.target.value}))}><option value="">— Unlinked —</option>{siteScopes.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+      </div>
+      <div style={{marginBottom:16}}><label style={lbl}>Evidence Files</label><Drop fRef={expRef} onFiles={n=>setEF(p=>({...p,files:[...p.files,...n]}))} hint="Invoices, receipts, photos, PDFs"/>
+        {expForm.files.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{expForm.files.map((f,i)=><Pill key={i} name={f} onX={()=>setEF(p=>({...p,files:p.files.filter((_,j)=>j!==i)}))}/>)}</div>}
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button style={btn("primary")} onClick={()=>{if(!expForm.desc.trim()||!expForm.amount){pop("Fill required fields");return;}setExp(p=>[...p,{id:Date.now(),siteId,scopeId:Number(expForm.scopeId)||null,...expForm,amount:Number(expForm.amount),date:expForm.date||"Today",status:"pending"}]);setEF({desc:"",amount:"",category:"Materials",scopeId:"",date:"",files:[]});go("expenses");pop("Expense saved ✓");}}>Save Expense</button>
+        <button style={btn("ghost")} onClick={()=>go("expenses")}>Cancel</button>
+      </div>
+    </div>
+  </Shell>);
+
+  // ── VARIATIONS ────────────────────────────────────────
+  if(view==="variations") return(<Shell {...shellProps}>
+    <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Variations"}]}/>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Variations</h2>
+      <button style={btn("primary")} onClick={()=>go("variation-new")}>+ New</button>
+    </div>
+    {siteVar.length===0?<div style={{textAlign:"center",padding:"60px 20px",color:"#9CA3AF"}}><div style={{fontSize:48,marginBottom:10}}>📐</div><div>No variations yet.</div></div>
+    :siteVar.map(v=>(
+      <div key={v.id} style={card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+          <div style={{flex:1,marginRight:12}}><div style={{fontSize:10,color:"#94A3B8",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{v.ref}</div><div style={{fontWeight:700,fontSize:13,color:TX,marginBottom:3}}>{v.title}</div>{v.desc&&<div style={{fontSize:12,color:MU}}>{v.desc}</div>}</div>
+          <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:15,color:N,marginBottom:4}}>{fmt(v.amount)}</div><Badge s={v.status}/></div>
+        </div>
+        {v.files.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{v.files.map((f,i)=><Pill key={i} name={f}/>)}</div>}
+      </div>
+    ))}
+  </Shell>);
+
+  if(view==="variation-new") return(<Shell {...shellProps}>
+    <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Variations",fn:()=>go("variations")},{label:"New Variation"}]}/>
+    <h2 style={{color:N,fontSize:19,fontWeight:800,margin:"0 0 16px"}}>New Variation</h2>
+    <div style={card}>
+      <div style={{marginBottom:12}}><label style={lbl}>Title *</label><input style={inp} placeholder="Brief description of scope change" value={varForm.title} onChange={e=>setVF(p=>({...p,title:e.target.value}))}/></div>
+      <div style={{marginBottom:12}}><label style={lbl}>Details / Justification</label><textarea style={{...inp,height:90,resize:"vertical"}} value={varForm.desc} onChange={e=>setVF(p=>({...p,desc:e.target.value}))}/></div>
+      <div style={{marginBottom:12}}><label style={lbl}>Value (£) *</label><input style={{...inp,maxWidth:220}} type="number" min="0" value={varForm.amount} onChange={e=>setVF(p=>({...p,amount:e.target.value}))}/></div>
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Supporting Evidence</label>
+        <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#92400E",marginBottom:8}}>📎 Attach photos, emails, instruction notices, drawings, videos</div>
+        <Drop fRef={varRef} onFiles={n=>setVF(p=>({...p,files:[...p.files,...n]}))} hint="JPG, PNG, MP4, PDF, EML, MSG"/>
+        {varForm.files.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{varForm.files.map((f,i)=><Pill key={i} name={f} onX={()=>setVF(p=>({...p,files:p.files.filter((_,j)=>j!==i)}))}/>)}</div>}
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button style={btn("primary")} onClick={()=>{if(!varForm.title.trim()||!varForm.amount){pop("Fill required fields");return;}const ref=`VAR-${String(siteVar.length+1).padStart(3,"0")}`;setVar(p=>[...p,{id:Date.now(),siteId,ref,...varForm,amount:Number(varForm.amount),status:"pending"}]);setVF({title:"",desc:"",amount:"",files:[]});go("variations");pop("Variation created ✓");}}>Create Variation</button>
+        <button style={btn("ghost")} onClick={()=>go("variations")}>Cancel</button>
+      </div>
+    </div>
+  </Shell>);
+
+  // ── APPLICATION ───────────────────────────────────────
+  if(view==="application"){
+    const scopeTotal=siteScopes.reduce((a,s)=>a+earnedVal(s),0);
+    const approvedVars=siteVar.filter(v=>v.status==="approved");
+    const varTotal=approvedVars.reduce((a,v)=>a+v.amount,0);
+    const appStat=site?.appStatus||"draft";
+    return(<Shell {...shellProps}>
+      <Crumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site?.name,fn:()=>go("site")},{label:"Application"}]}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{color:N,fontSize:19,fontWeight:800,margin:0}}>Payment Application</h2><Badge s={appStat}/></div>
+      <div style={{...card,padding:0,overflow:"hidden",marginBottom:12}}>
+        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Scope Claims (your allocated values)</div>
+        {siteScopes.map(s=>{const av=allocVal(s);const ev=earnedVal(s);return(<div key={s.id} style={{padding:"10px 18px",borderBottom:"1px solid #F8FAFC",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:13,fontWeight:600,color:TX}}>{s.name}</div><div style={{fontSize:11,color:MU}}>{s.completed}% complete · allocated {fmt(av)}</div></div><div style={{fontWeight:800,fontSize:13,color:N}}>{fmt(ev)}</div></div>);})}
+        <div style={{padding:"11px 18px",background:"#F0F4F8",display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,fontSize:12,color:N}}>Scope Subtotal</span><span style={{fontWeight:800,fontSize:14,color:OR}}>{fmt(scopeTotal)}</span></div>
+      </div>
+      {approvedVars.length>0&&<div style={{...card,padding:0,overflow:"hidden",marginBottom:12}}>
+        <div style={{padding:"11px 18px",background:"#F8FAFC",borderBottom:`1px solid ${BD}`,fontWeight:800,fontSize:12,color:N,textTransform:"uppercase",letterSpacing:"0.04em"}}>Approved Variations</div>
+        {approvedVars.map(v=><div key={v.id} style={{padding:"10px 18px",borderBottom:"1px solid #F8FAFC",display:"flex",justifyContent:"space-between"}}><div style={{fontSize:13,fontWeight:600,color:TX}}>{v.ref} — {v.title}</div><div style={{fontWeight:800,color:N}}>{fmt(v.amount)}</div></div>)}
+        <div style={{padding:"11px 18px",background:"#F0F4F8",display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,fontSize:12,color:N}}>Variations Subtotal</span><span style={{fontWeight:800,fontSize:14,color:OR}}>{fmt(varTotal)}</span></div>
+      </div>}
+      <div style={{background:N,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{color:"#94A3B8",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Manager's Total (excl. margin)</div><div style={{color:"#64748B",fontSize:11,marginTop:1}}>Director will add full margin values before issuing to client</div></div>
+        <div style={{color:OR,fontSize:28,fontWeight:900}}>{fmt(scopeTotal+varTotal)}</div>
+      </div>
+      {appStat==="draft"&&<div style={{...card,borderColor:"#FDE68A",background:"#FFFBEB"}}><div style={{fontWeight:800,color:"#92400E",fontSize:13,marginBottom:5}}>⚠️ Submit for Director Review</div><div style={{color:"#78350F",fontSize:12,marginBottom:12,lineHeight:1.5}}>Once submitted the director and finance team will review, add full margin values, and issue to the client.</div><button style={btn("primary")} onClick={()=>pop("Submitted for director review ✓")}>Submit for Review</button></div>}
+      {appStat==="submitted"&&<div style={{...card,borderColor:"#BFDBFE",background:"#EFF6FF"}}><div style={{fontWeight:800,color:"#1D4ED8",fontSize:13,marginBottom:5}}>⏳ Awaiting Finalisation</div><div style={{color:"#1E40AF",fontSize:12}}>With the director team. You'll be notified once finalised and issued to the client.</div></div>}
+      {appStat==="finalised"&&<div style={{...card,borderColor:"#A7F3D0",background:"#ECFDF5"}}><div style={{fontWeight:800,color:"#065F46",fontSize:13,marginBottom:5}}>✅ Finalised & Issued</div><div style={{color:"#047857",fontSize:12}}>Finalised by the director team and issued to the client.</div></div>}
+    </Shell>);
+  }
+
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════
+
+const DEMO_SITES = [
+  {
+    id: "s1", name: "Paddington Station", address: "Praed St, London W2 1HQ",
+    scope: "External façade works – structural repointing and brick replacement",
+    supervisor: { name: "Marcus Webb", phone: "07700 900123" },
+    workers: [
+      { id: "w1", name: "Tom Bradley", role: "Scaffolder" },
+      { id: "w2", name: "Sarah Chen", role: "Bricklayer" },
+      { id: "w3", name: "Dev Patel", role: "Labourer" },
+      { id: "w4", name: "James O'Brien", role: "Foreman" },
+    ],
+  },
+  {
+    id: "s2", name: "Canary Wharf – Tower B", address: "Bank St, London E14 5JP",
+    scope: "Internal fit-out – MEP first fix and structural steelwork",
+    supervisor: { name: "Lisa Park", phone: "07700 900456" },
+    workers: [
+      { id: "w5", name: "Ahmed Khalil", role: "Steel Erector" },
+      { id: "w6", name: "Emma Thornton", role: "Electrician" },
+      { id: "w7", name: "Carlos Mendez", role: "Pipefitter" },
+      { id: "w8", name: "Priya Singh", role: "Site Manager" },
+      { id: "w9", name: "Noel Byrne", role: "Labourer" },
+    ],
+  },
+];
+
+const CATEGORIES = [
+  { id: "safety",     label: "Safety",               color: "#F5A623" },
+  { id: "inspection", label: "Pre-Use Inspections",  color: "#3B82F6" },
+  { id: "lifting",    label: "Lifting",              color: "#7C3AED" },
+  { id: "qa",         label: "Quality Assurance",    color: "#0D9488" },
+  { id: "legal",      label: "Legal",                color: "#DC2626" },
+];
+
+const DOC_TYPES = [
+  { id: "daily_safe_start", label: "Daily Safe Start",       cat: "safety",     desc: "Pre-work briefing, hazard ID & team sign-off" },
+  { id: "toolbox_talk",     label: "Toolbox Talk",           cat: "safety",     desc: "Focused safety topic with attendance record" },
+  { id: "puwer",            label: "PUWER Assessment",       cat: "safety",     desc: "Provision & Use of Work Equipment Regulations" },
+  { id: "loler",            label: "LOLER Checklist",        cat: "safety",     desc: "Lifting Operations & Lifting Equipment Regs" },
+  { id: "coshh",            label: "COSHH Assessment",       cat: "safety",     desc: "Control of Substances Hazardous to Health" },
+  { id: "task_briefing",    label: "Task Briefing",          cat: "safety",     desc: "Method statement briefing & team sign-off" },
+  { id: "harness",          label: "Harness Inspection",     cat: "inspection", desc: "Full-body harness pre-use checklist" },
+  { id: "scissor_lift",     label: "Scissor Lift",           cat: "inspection", desc: "Aerial work platform pre-use check" },
+  { id: "cherry_picker",    label: "Cherry Picker",          cat: "inspection", desc: "MEWP / boom lift pre-use inspection" },
+  { id: "spider_crane",     label: "Spider Crane",           cat: "inspection", desc: "Mini crawler crane pre-use check" },
+  { id: "pat_testing",      label: "PAT Testing Record",     cat: "lifting",    desc: "Portable appliance test record" },
+  { id: "thorough_exam",    label: "Thorough Examination",   cat: "lifting",    desc: "LOLER thorough examination certificate" },
+  { id: "qa_handover",      label: "QA Handover Form",       cat: "qa",         desc: "Quality assurance sign-off for completed works" },
+  { id: "ncr",              label: "NCR Form",               cat: "qa",         desc: "Non-Conformance Report" },
+  { id: "early_delay",      label: "Early Delay Notice",     cat: "legal",      desc: "Early warning of potential delay event" },
+  { id: "delay_notice",     label: "Delay Notice",           cat: "legal",      desc: "Formal notice of delay and compensation claim" },
+];
+
+const CL = {
+  harness: {
+    s: null, sc: null,
+    items: [
+      "Webbing – cuts, fraying, abrasion, heat or chemical damage",
+      "Stitching – all intact, no broken threads",
+      "Back D-ring – no deformation, cracks or corrosion",
+      "Front / chest D-ring – secure, no deformation",
+      "Buckles & adjusters – undamaged, function correctly",
+      "Leg straps – no twisting, correct routing",
+      "Shoulder straps – no deformation, correct routing",
+      "Connectors / karabiners – gate closes and locks",
+      "Lanyard / energy absorber – no deployment triggered",
+      "ID label – serial number and manufacture date legible",
+    ],
+  },
+  scissor_lift: {
+    s: ["External", "Ground controls", "Platform", "Platform controls", "Safety devices"],
+    sc: [3, 3, 4, 4, 2],
+    items: [
+      "Body panels – no significant damage or missing sections",
+      "Tyres / wheels – correct pressure, no damage",
+      "Hydraulic lines – no visible leaks or damage",
+      "Emergency lowering function – operates correctly",
+      "Ground control panel – labelling legible, switches functional",
+      "Battery / fuel level – adequate for task",
+      "Platform floor – anti-slip surface intact",
+      "Guardrails – all in place, no deformation",
+      "Mid-rails and toe-boards – present and secure",
+      "Platform gate – closes and latches correctly",
+      "Control panel – all labels legible",
+      "Drive / steer controls – smooth, self-centring",
+      "Lift / lower controls – smooth, correct speed",
+      "Emergency stop – tested and functional",
+      "Pothole protection / outriggers – deploy and lock",
+      "Tilt sensor / alarm – tested and operational",
+    ],
+  },
+  cherry_picker: {
+    s: ["External", "Boom", "Outriggers", "Platform / basket", "Ground controls", "Platform controls", "Safety devices"],
+    sc: [3, 3, 3, 3, 3, 3, 2],
+    items: [
+      "Body – no significant damage, leaks or missing guards",
+      "Engine / battery – fluid levels correct, no leaks",
+      "Drive system – tyres / tracks in good condition",
+      "Boom sections – no cracks, buckles or deformation",
+      "Boom seals – no hydraulic leaks at cylinders",
+      "Rotation system – slewing smooth, locks correctly",
+      "Outrigger legs – extend and retract fully",
+      "Outrigger pads – present, in good condition",
+      "Machine levelling – achieves level within tolerance",
+      "Basket floor and sides – no cracks or missing sections",
+      "Guardrails – all present, height correct",
+      "Anchor point – rated, no deformation",
+      "Ground control panel – all functions operate correctly",
+      "Emergency descent – tested and operational",
+      "Key switch / access control – functioning",
+      "Control panel – legible, all switches functional",
+      "Joystick / controls – smooth, self-centring",
+      "Emergency stop on platform – tested",
+      "Overload indicator – present and functional",
+      "Envelope / height limiter – set and tested",
+    ],
+  },
+  spider_crane: {
+    s: ["Outrigger legs", "Boom & structure", "Wire rope & hoist", "Hook & lifting gear", "Controls & drive", "Safety & hydraulics"],
+    sc: [3, 3, 3, 4, 3, 4],
+    items: [
+      "All four legs extend fully, locking pins secure",
+      "Outrigger pads in place, adequate bearing capacity",
+      "Machine levels within tolerance before lift",
+      "Main boom sections – no cracks, welds sound",
+      "Hinge pins fully inserted with retaining clips",
+      "Hydraulic cylinders – no leaks at seals",
+      "Wire rope – no broken strands, kinks or corrosion",
+      "Rope anchoring on drum correct, min 3 turns remaining",
+      "Sheaves / rollers – no cracking, rotate freely",
+      "Hook – no deformation, latch closes and holds",
+      "Hook swivel rotates freely",
+      "Sling / chain certificate – in date",
+      "Shackles / slings in use – rated, no damage",
+      "Radio / pendant controls – all functions tested",
+      "E-stop on remote and machine – tested",
+      "Slew / boom controls – smooth, no drift",
+      "SLI (safe load indicator) – calibrated, alarm sounds",
+      "Hydraulic fluid level – within acceptable range",
+      "All hydraulic connections tight, no weeping",
+      "Anti-two-block device – present and functional",
+    ],
+  },
+};
+
+const QA_ITEMS = [
+  "Workmanship meets specification",
+  "Materials correct type and grade as specified",
+  "Dimensions within tolerance per drawings",
+  "Surface finish meets required standard",
+  "Fixings / connections correctly installed",
+  "Waterproofing / sealing correctly applied",
+  "Adequate protection applied post-installation",
+  "As-built record / marked-up drawing available",
+];
+
+// ═══════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════
+
+const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const today = () => new Date().toLocaleDateString("en-GB");
+const CAT_COLOR = { safety: "#F5A623", inspection: "#3B82F6", lifting: "#7C3AED", qa: "#0D9488", legal: "#DC2626" };
+const RESP_ROLES = ["foreman", "supervisor", "site manager", "manager"];
+
+function itemSection(docId, idx) {
+  const cl = CL[docId];
+  if (!cl?.s) return null;
+  let c = 0;
+  for (let si = 0; si < cl.s.length; si++) {
+    c += cl.sc[si];
+    if (idx < c) return cl.s[si];
+  }
+  return null;
+}
+
+function initChecks(docId) {
+  const cl = CL[docId];
+  if (!cl) return {};
+  return cl.items.reduce((a, _, i) => { a[i] = { r: "", n: "" }; return a; }, {});
+}
+
+function initFd(dt, site) {
+  return {
+    date: today(), site: site?.name || "", address: site?.address || "",
+    scope: site?.scope || "", supervisor: site?.supervisor?.name || "",
+    supPhone: site?.supervisor?.phone || "", preparedBy: site?.supervisor?.name || "",
+    topic: "", hazards: "", controls: "", ppe: "", emergencyProc: "",
+    methodRef: "", taskDesc: "", resources: "", taskRisks: "", taskControls: "",
+    equipment: "", equipmentId: "", make: "", model: "",
+    riskLevel: "", frequency: "", maintenance: "", training: "",
+    substance: "", supplier: "", hazardType: "", exposureLimits: "",
+    healthEffects: "", exposureRoutes: "", cohhControls: "", cohhPpe: "", emergencyActions: "",
+    liftingEquip: "", swl: "", liftPlan: "", examDate: "", nextExam: "", examRef: "",
+    applianceDesc: "", assetNo: "", location: "", testedBy: "",
+    visualPass: "", earthPass: "", insulationPass: "", polarityPass: "", patResult: "", nextTestDate: "",
+    examEquipment: "", examId: "", examSWL: "", examiner: "", examBody: "",
+    conditionRating: "", defectsDesc: "", safeForUse: "", nextExamDate: "",
+    contractRef: "", workPackage: "", deficiencies: "",
+    qaItems: QA_ITEMS.map(item => ({ item, result: "", notes: "" })),
+    ncrRef: "", ncrDesc: "", rootCause: "", correctiveAction: "", targetDate: "", closedBy: "",
+    contractNo: "", employer: "", contractor: "", programmeRef: "",
+    eventDate: today(), eventDesc: "", delayWeeks: "", costImpact: "", delayImpact: "", replyBy: "",
+    checks: initChecks(dt.id), result: "", notes: "",
+    attendees: (site?.workers || []).map(w => ({
+      ...w, present: true,
+      responsible: RESP_ROLES.some(r => w.role?.toLowerCase().includes(r)),
+    })),
+  };
+}
+
+async function loadDocs() {
+  try {
+    const r = await window.storage.get("site_documents");
+    if (r?.value) return JSON.parse(r.value);
+  } catch (_) {}
+  return [];
+}
+
+async function saveDoc(doc, existing) {
+  try {
+    const updated = [...(existing || []).filter(d => d.id !== doc.id), doc];
+    await window.storage.set("site_documents", JSON.stringify(updated));
+    return updated;
+  } catch (_) { return existing || []; }
+}
+
+// ═══════════════════════════════════════════════════════
+// TOKENS
+// ═══════════════════════════════════════════════════════
+
+const BG = "#F5F4F0", DARK = "#111318", HDR = "#0F1117", AMB = "#F5A623",
+  GY1 = "#F3F4F6", GY2 = "#E5E7EB", GY3 = "#D1D5DB",
+  GY5 = "#6B7280", GY6 = "#4B5563", GY7 = "#374151", GY8 = "#1F2937",
+  GRN = "#15803D", GBG = "#DCFCE7", GRL = "#86EFAC",
+  RED = "#DC2626", RBG = "#FEE2E2",
+  BLU = "#1D4ED8", BBG = "#DBEAFE";
+
+const inp = {
+  width: "100%", padding: "7px 10px", border: `1px solid ${GY3}`,
+  borderRadius: 6, fontSize: 13, color: GY8, background: "#fff",
+  boxSizing: "border-box", fontFamily: "inherit",
+};
+const ta = { ...inp, resize: "vertical", minHeight: 70, lineHeight: 1.5 };
+const lbl = {
+  fontSize: 10, fontWeight: 600, color: GY5,
+  textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3, display: "block",
+};
+
+// ═══════════════════════════════════════════════════════
+// SHARED COMPONENTS
+// ═══════════════════════════════════════════════════════
+
+function Field({ label, value, onChange, multi, span }) {
+  return (
+    <div style={{ gridColumn: span ? "1 / -1" : undefined }}>
+      {label && <label style={lbl}>{label}</label>}
+      {multi
+        ? <textarea style={ta} value={value || ""} onChange={e => onChange?.(e.target.value)} />
+        : <input style={inp} value={value || ""} onChange={e => onChange?.(e.target.value)} />}
+    </div>
+  );
+}
+
+function Sec({ title, children }) {
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${GY2}`, borderRadius: 10, padding: "14px 17px", marginBottom: 12 }}>
+      <p style={{ margin: "0 0 11px", fontSize: 10, fontWeight: 700, color: GY5, textTransform: "uppercase", letterSpacing: "0.08em" }}>{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function Grid({ cols = 2, children }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 11 }}>
+      {children}
+    </div>
+  );
+}
+
+function DocCard({ dt, onClick, count }) {
+  const cc = CAT_COLOR[dt.cat];
+  const [hov, setHov] = useState(false);
+  return (
+    <button onClick={onClick}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        background: hov ? GY1 : "#fff", border: `1px solid ${GY2}`,
+        borderLeft: `3px solid ${cc}`, borderRadius: 0,
+        padding: "12px 14px", cursor: "pointer", textAlign: "left", transition: "background 0.1s",
+      }}>
+      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: GY8 }}>{dt.label}</p>
+      <p style={{ margin: "3px 0 0", fontSize: 11, color: GY5 }}>{dt.desc}</p>
+      {count > 0 && <p style={{ margin: "5px 0 0", fontSize: 10, fontWeight: 700, color: cc }}>{count} saved</p>}
+    </button>
+  );
+}
+
+function IBlock({ label, value }) {
+  return (
+    <div style={{ flex: 1, minWidth: 140 }}>
+      <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</p>
+      <p style={{ margin: "2px 0 0", fontSize: 12, color: GY7 }}>{value || "—"}</p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// SIDEBAR
+// ═══════════════════════════════════════════════════════
+
+function Sidebar({ sites, sel, setSel, sync, syncSt, onRep, docsCount }) {
+  return (
+    <aside style={{ width: 210, background: DARK, display: "flex", flexDirection: "column", flexShrink: 0, minHeight: "100vh" }}>
+      <div style={{ padding: "16px 13px 11px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
+          <div style={{ width: 26, height: 26, background: AMB, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11, color: DARK }}>SD</div>
+          <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>Site Docs</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: syncSt === "live" ? "#22C55E" : AMB }} />
+          <span style={{ fontSize: 10, color: syncSt === "live" ? "#86EFAC" : "#FCD34D" }}>
+            {syncSt === "live" ? "Live – Labour Schedule" : "Demo mode"}
+          </span>
+        </div>
+      </div>
+      <div style={{ padding: "10px 7px", flex: 1, overflowY: "auto" }}>
+        <p style={{ margin: "0 0 5px", color: "rgba(255,255,255,0.28)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", padding: "0 6px" }}>Sites</p>
+        {sites.map(s => (
+          <button key={s.id} onClick={() => setSel(s)} style={{
+            width: "100%", textAlign: "left", padding: "7px 7px", borderRadius: 6, border: "none", cursor: "pointer",
+            background: sel?.id === s.id ? "rgba(245,166,35,0.12)" : "transparent", marginBottom: 2,
+          }}>
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: sel?.id === s.id ? AMB : "rgba(255,255,255,0.85)" }}>{s.name}</p>
+            <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.3)" }}>{s.workers?.length || 0} workers</p>
+          </button>
+        ))}
+      </div>
+      <div style={{ padding: "10px 11px 13px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+        <button onClick={onRep} style={{ width: "100%", padding: "7px 10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.11)", borderRadius: 6, color: "rgba(255,255,255,0.7)", fontSize: 12, cursor: "pointer", marginBottom: 6, textAlign: "left" }}>
+          📋 Reports ({docsCount})
+        </button>
+        <button onClick={sync} style={{ width: "100%", padding: "5px 10px", background: "none", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 6, color: "rgba(255,255,255,0.35)", fontSize: 11, cursor: "pointer" }}>↻ Sync now</button>
+      </div>
+    </aside>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════
+
+function SiteDocGeneratorView() {
+  const [sites, setSites] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [syncSt, setSyncSt] = useState("demo");
+  const [view, setView] = useState("dash");
+  const [docType, setDocType] = useState(null);
+  const [fd, setFd] = useState({});
+  const [docs, setDocs] = useState([]);
+  const [activeCat, setActiveCat] = useState("safety");
+
+  const sync = useCallback(async () => {
+    try {
+      const r = await window.storage.get("labour_schedule_data");
+      if (r?.value) {
+        const d = JSON.parse(r.value);
+        if (d.sites?.length) { setSites(d.sites); setSyncSt("live"); return; }
+      }
+    } catch (_) {}
+    setSites(DEMO_SITES); setSyncSt("demo");
+  }, []);
+
+  useEffect(() => {
+    sync();
+    loadDocs().then(setDocs);
+    const iv = setInterval(sync, 30000);
+    return () => clearInterval(iv);
+  }, [sync]);
+
+  useEffect(() => { if (sites.length && !sel) setSel(sites[0]); }, [sites, sel]);
+
+  const start = dt => { setDocType(dt); setFd(initFd(dt, sel)); setView("form"); };
+
+  const onGen = async formData => {
+    const doc = {
+      id: genId(), docType: docType.id, docLabel: docType.label, category: docType.cat,
+      site: formData.site, siteId: sel?.id, generatedBy: formData.preparedBy,
+      generatedAt: new Date().toISOString(), date: formData.date,
+      responsible: (formData.attendees || []).filter(a => a.responsible).map(a => a.name),
+      team: (formData.attendees || []).filter(a => a.present).map(a => `${a.name} (${a.role})`),
+      formData,
+    };
+    const updated = await saveDoc(doc, docs);
+    setDocs(updated); setFd(formData); setView("preview");
+  };
+
+  if (view === "form") return <DocForm dt={docType} initFd={fd} onBack={() => setView("dash")} onGen={onGen} />;
+  if (view === "preview") return <Preview dt={docType} fd={fd} onBack={() => setView("form")} onNew={() => setView("dash")} onRep={() => setView("reports")} />;
+  if (view === "reports") return (
+    <Reports docs={docs} sites={sites} onBack={() => setView("dash")}
+      onView={doc => { setDocType(DOC_TYPES.find(d => d.id === doc.docType)); setFd(doc.formData); setView("preview"); }} />
+  );
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui, -apple-system, sans-serif", background: BG }}>
+      <Sidebar sites={sites} sel={sel} setSel={setSel} sync={sync} syncSt={syncSt} onRep={() => setView("reports")} docsCount={docs.length} />
+      <main style={{ flex: 1, padding: "22px 26px", overflowY: "auto" }}>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 700, color: GY8 }}>Site Document Generator</h1>
+          {sel && <p style={{ margin: "3px 0 0", fontSize: 13, color: GY5 }}>{sel.name} · {sel.address}</p>}
+        </div>
+        {sel && (
+          <div style={{ background: "#fff", border: `1px solid ${GY2}`, borderRadius: 10, padding: "12px 15px", marginBottom: 18 }}>
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+              <IBlock label="Scope" value={sel.scope} />
+              <IBlock label="Supervisor" value={`${sel.supervisor?.name} · ${sel.supervisor?.phone}`} />
+              <IBlock label="Workers" value={`${sel.workers?.length || 0} allocated`} />
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+          {CATEGORIES.map(cat => (
+            <button key={cat.id} onClick={() => setActiveCat(cat.id)} style={{
+              padding: "6px 13px", borderRadius: 20, border: `1px solid ${activeCat === cat.id ? cat.color : GY2}`,
+              background: activeCat === cat.id ? cat.color : "#fff", fontSize: 12, cursor: "pointer",
+              color: activeCat === cat.id ? (cat.id === "safety" ? DARK : "#fff") : GY6,
+              fontWeight: activeCat === cat.id ? 700 : 400,
+            }}>{cat.label}</button>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(195px, 1fr))", gap: 10 }}>
+          {DOC_TYPES.filter(d => d.cat === activeCat).map(dt => (
+            <DocCard key={dt.id} dt={dt} onClick={() => start(dt)}
+              count={docs.filter(d => d.docType === dt.id && d.siteId === sel?.id).length} />
+          ))}
+        </div>
+        {syncSt === "demo" && (
+          <div style={{ marginTop: 22, padding: "10px 14px", background: "#FFFBEB", border: "1px solid #FCD34D", borderRadius: 8, fontSize: 12, color: "#92400E" }}>
+            <b>Demo mode.</b> Connect your Labour Schedule app — save to storage key <code style={{ background: "rgba(0,0,0,0.06)", padding: "1px 5px", borderRadius: 3 }}>labour_schedule_data</code>.
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// DOC FORM
+// ═══════════════════════════════════════════════════════
+
+function DocForm({ dt, initFd: init, onBack, onGen }) {
+  const [fd, setFd] = useState(init);
+  const set = (k, v) => setFd(f => ({ ...f, [k]: v }));
+  const chk = (i, f, v) => setFd(d => ({ ...d, checks: { ...d.checks, [i]: { ...d.checks[i], [f]: v } } }));
+  const qa = (i, f, v) => setFd(d => ({ ...d, qaItems: d.qaItems.map((it, idx) => idx === i ? { ...it, [f]: v } : it) }));
+  const tog = (id, fld) => setFd(d => ({ ...d, attendees: d.attendees.map(a => a.id === id ? { ...a, [fld]: !a[fld] } : a) }));
+
+  const isCl = dt.cat === "inspection";
+  const cl = CL[dt.id];
+  const noAtt = dt.cat === "legal";
+
+  const RadioRow = ({ label, field }) => (
+    <tr style={{ borderBottom: `1px solid ${GY2}` }}>
+      <td style={{ padding: "7px 10px", color: GY8, fontSize: 13 }}>{label}</td>
+      {["pass", "fail", "na"].map(r => (
+        <td key={r} style={{ padding: "7px 10px", textAlign: "center" }}>
+          <input type="radio" name={field} checked={fd[field] === r} onChange={() => set(field, r)}
+            style={{ accentColor: r === "pass" ? GRN : r === "fail" ? RED : "#9CA3AF" }} />
+        </td>
+      ))}
+    </tr>
+  );
+
+  return (
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
+      <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 13, position: "sticky", top: 0, zIndex: 10 }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.38)" }}>New document</p>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#fff" }}>{dt.label}</p>
+        </div>
+        <button onClick={() => onGen(fd)} style={{ padding: "7px 18px", background: AMB, border: "none", borderRadius: 6, fontWeight: 700, fontSize: 13, cursor: "pointer", color: DARK }}>Generate →</button>
+      </div>
+
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "18px 16px 40px" }}>
+        {/* Always: site details */}
+        <Sec title="Site details">
+          <Grid>
+            <Field label="Site name" value={fd.site} onChange={v => set("site", v)} />
+            <Field label="Date" value={fd.date} onChange={v => set("date", v)} />
+            <Field label="Address" value={fd.address} onChange={v => set("address", v)} span />
+            <Field label="Scope of works" value={fd.scope} onChange={v => set("scope", v)} span multi />
+            <Field label="Supervisor" value={fd.supervisor} onChange={v => set("supervisor", v)} />
+            <Field label="Contact number" value={fd.supPhone} onChange={v => set("supPhone", v)} />
+            <Field label="Prepared by" value={fd.preparedBy} onChange={v => set("preparedBy", v)} />
+          </Grid>
+        </Sec>
+
+        {/* Inspection: equipment */}
+        {isCl && (
+          <Sec title="Equipment details">
+            <Grid cols={3}>
+              <Field label="Equipment ID / serial" value={fd.equipmentId} onChange={v => set("equipmentId", v)} />
+              <Field label="Make" value={fd.make} onChange={v => set("make", v)} />
+              <Field label="Model" value={fd.model} onChange={v => set("model", v)} />
+            </Grid>
+          </Sec>
+        )}
+
+        {/* Daily Safe Start */}
+        {dt.id === "daily_safe_start" && (
+          <Sec title="Briefing content">
+            <Grid cols={1}>
+              <Field label="Hazards identified" value={fd.hazards} onChange={v => set("hazards", v)} multi />
+              <Field label="Control measures in place" value={fd.controls} onChange={v => set("controls", v)} multi />
+              <Field label="PPE required" value={fd.ppe} onChange={v => set("ppe", v)} />
+              <Field label="Emergency procedure / muster point" value={fd.emergencyProc} onChange={v => set("emergencyProc", v)} />
+            </Grid>
+          </Sec>
+        )}
+
+        {/* Toolbox Talk */}
+        {dt.id === "toolbox_talk" && (
+          <Sec title="Talk content">
+            <Grid cols={1}>
+              <Field label="Topic / title" value={fd.topic} onChange={v => set("topic", v)} />
+              <Field label="Key points covered" value={fd.hazards} onChange={v => set("hazards", v)} multi />
+              <Field label="Actions arising / follow-up" value={fd.controls} onChange={v => set("controls", v)} multi />
+            </Grid>
+          </Sec>
+        )}
+
+        {/* PUWER */}
+        {dt.id === "puwer" && (<>
+          <Sec title="Equipment">
+            <Grid>
+              <Field label="Equipment / machine" value={fd.equipment} onChange={v => set("equipment", v)} />
+              <Field label="Equipment ID / ref" value={fd.equipmentId} onChange={v => set("equipmentId", v)} />
+              <Field label="Make" value={fd.make} onChange={v => set("make", v)} />
+              <Field label="Model" value={fd.model} onChange={v => set("model", v)} />
+            </Grid>
+          </Sec>
+          <Sec title="Risk assessment & controls">
+            <Grid cols={1}>
+              <Field label="Hazards associated with equipment" value={fd.hazards} onChange={v => set("hazards", v)} multi />
+              <Field label="Risk level (High / Medium / Low)" value={fd.riskLevel} onChange={v => set("riskLevel", v)} />
+              <Field label="Control measures" value={fd.controls} onChange={v => set("controls", v)} multi />
+              <Field label="Training required / provided" value={fd.training} onChange={v => set("training", v)} multi />
+              <Field label="Maintenance schedule" value={fd.maintenance} onChange={v => set("maintenance", v)} />
+              <Field label="Inspection frequency" value={fd.frequency} onChange={v => set("frequency", v)} />
+            </Grid>
+          </Sec>
+        </>)}
+
+        {/* LOLER */}
+        {dt.id === "loler" && (<>
+          <Sec title="Lifting equipment">
+            <Grid>
+              <Field label="Equipment type" value={fd.liftingEquip} onChange={v => set("liftingEquip", v)} />
+              <Field label="SWL / WLL" value={fd.swl} onChange={v => set("swl", v)} />
+              <Field label="Equipment ID" value={fd.equipmentId} onChange={v => set("equipmentId", v)} />
+              <Field label="Certificate / exam ref" value={fd.examRef} onChange={v => set("examRef", v)} />
+              <Field label="Last examination date" value={fd.examDate} onChange={v => set("examDate", v)} />
+              <Field label="Next examination due" value={fd.nextExam} onChange={v => set("nextExam", v)} />
+            </Grid>
+          </Sec>
+          <Sec title="Lift plan">
+            <Grid cols={1}>
+              <Field label="Lift description / method" value={fd.liftPlan} onChange={v => set("liftPlan", v)} multi />
+              <Field label="Lifting equipment to be used" value={fd.resources} onChange={v => set("resources", v)} multi />
+              <Field label="Hazards / special precautions" value={fd.hazards} onChange={v => set("hazards", v)} multi />
+            </Grid>
+          </Sec>
+        </>)}
+
+        {/* COSHH */}
+        {dt.id === "coshh" && (<>
+          <Sec title="Substance">
+            <Grid>
+              <Field label="Substance name" value={fd.substance} onChange={v => set("substance", v)} />
+              <Field label="Supplier / manufacturer" value={fd.supplier} onChange={v => set("supplier", v)} />
+              <Field label="Hazard type (GHS classification)" value={fd.hazardType} onChange={v => set("hazardType", v)} />
+              <Field label="WEL (workplace exposure limit)" value={fd.exposureLimits} onChange={v => set("exposureLimits", v)} />
+              <Field label="Health effects of exposure" value={fd.healthEffects} onChange={v => set("healthEffects", v)} span multi />
+            </Grid>
+          </Sec>
+          <Sec title="Controls">
+            <Grid cols={1}>
+              <Field label="Exposure routes (inhalation / dermal / ingestion)" value={fd.exposureRoutes} onChange={v => set("exposureRoutes", v)} />
+              <Field label="Engineering / substitution controls" value={fd.cohhControls} onChange={v => set("cohhControls", v)} multi />
+              <Field label="PPE required" value={fd.cohhPpe} onChange={v => set("cohhPpe", v)} />
+              <Field label="Emergency actions (spillage / fire / first aid)" value={fd.emergencyActions} onChange={v => set("emergencyActions", v)} multi />
+            </Grid>
+          </Sec>
+        </>)}
+
+        {/* Task Briefing */}
+        {dt.id === "task_briefing" && (
+          <Sec title="Task details">
+            <Grid cols={1}>
+              <Field label="Task description" value={fd.taskDesc} onChange={v => set("taskDesc", v)} multi />
+              <Field label="Method statement reference" value={fd.methodRef} onChange={v => set("methodRef", v)} />
+              <Field label="Plant / equipment / materials required" value={fd.resources} onChange={v => set("resources", v)} multi />
+              <Field label="Task-specific risks" value={fd.taskRisks} onChange={v => set("taskRisks", v)} multi />
+              <Field label="Controls / safe working methods" value={fd.taskControls} onChange={v => set("taskControls", v)} multi />
+            </Grid>
+          </Sec>
+        )}
+
+        {/* PAT Testing */}
+        {dt.id === "pat_testing" && (<>
+          <Sec title="Appliance details">
+            <Grid>
+              <Field label="Appliance description" value={fd.applianceDesc} onChange={v => set("applianceDesc", v)} />
+              <Field label="Asset / inventory number" value={fd.assetNo} onChange={v => set("assetNo", v)} />
+              <Field label="Location on site" value={fd.location} onChange={v => set("location", v)} />
+              <Field label="Tested by" value={fd.testedBy} onChange={v => set("testedBy", v)} />
+            </Grid>
+          </Sec>
+          <Sec title="Test results">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr style={{ background: GY1 }}>
+                <th style={{ padding: "7px 10px", textAlign: "left", fontWeight: 600, color: GY7 }}>Test</th>
+                <th style={{ padding: "7px 10px", width: 65, textAlign: "center" }}>Pass</th>
+                <th style={{ padding: "7px 10px", width: 65, textAlign: "center" }}>Fail</th>
+                <th style={{ padding: "7px 10px", width: 65, textAlign: "center" }}>N/A</th>
+              </tr></thead>
+              <tbody>
+                <RadioRow label="Visual inspection" field="visualPass" />
+                <RadioRow label="Earth continuity" field="earthPass" />
+                <RadioRow label="Insulation resistance" field="insulationPass" />
+                <RadioRow label="Polarity check" field="polarityPass" />
+              </tbody>
+            </table>
+            <div style={{ marginTop: 12, display: "flex", gap: 9 }}>
+              {[{ v: "pass", l: "✓ Pass", bg: GBG, c: GRN }, { v: "fail", l: "✗ Fail", bg: RBG, c: RED }].map(o => (
+                <button key={o.v} onClick={() => set("patResult", o.v)} style={{ padding: "7px 16px", borderRadius: 6, border: `1.5px solid ${fd.patResult === o.v ? o.c : GY2}`, background: fd.patResult === o.v ? o.bg : "#fff", color: fd.patResult === o.v ? o.c : GY5, fontWeight: fd.patResult === o.v ? 700 : 400, cursor: "pointer", fontSize: 13 }}>{o.l}</button>
+              ))}
+            </div>
+            <div style={{ marginTop: 10 }}><Field label="Next test date" value={fd.nextTestDate} onChange={v => set("nextTestDate", v)} /></div>
+          </Sec>
+        </>)}
+
+        {/* Thorough Examination */}
+        {dt.id === "thorough_exam" && (<>
+          <Sec title="Equipment">
+            <Grid>
+              <Field label="Equipment type" value={fd.examEquipment} onChange={v => set("examEquipment", v)} />
+              <Field label="Equipment ID / serial" value={fd.examId} onChange={v => set("examId", v)} />
+              <Field label="SWL / WLL" value={fd.examSWL} onChange={v => set("examSWL", v)} />
+              <Field label="Examination reference" value={fd.examRef} onChange={v => set("examRef", v)} />
+            </Grid>
+          </Sec>
+          <Sec title="Examination details">
+            <Grid>
+              <Field label="Examiner name" value={fd.examiner} onChange={v => set("examiner", v)} />
+              <Field label="Examination body / company" value={fd.examBody} onChange={v => set("examBody", v)} />
+              <Field label="Date of examination" value={fd.examDate} onChange={v => set("examDate", v)} />
+              <Field label="Next examination due" value={fd.nextExamDate} onChange={v => set("nextExamDate", v)} />
+              <Field label="Condition rating (1–4)" value={fd.conditionRating} onChange={v => set("conditionRating", v)} />
+            </Grid>
+            <div style={{ marginTop: 10 }}><Field label="Defects found (or 'None')" value={fd.defectsDesc} onChange={v => set("defectsDesc", v)} multi /></div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              {[{ v: "yes", l: "✓ Safe for use" }, { v: "no", l: "✗ Not safe – remove" }, { v: "conditions", l: "⚠ Conditional" }].map(o => (
+                <button key={o.v} onClick={() => set("safeForUse", o.v)} style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${fd.safeForUse === o.v ? BLU : GY2}`, background: fd.safeForUse === o.v ? BBG : "#fff", color: fd.safeForUse === o.v ? BLU : GY5, fontWeight: fd.safeForUse === o.v ? 600 : 400, cursor: "pointer", fontSize: 12 }}>{o.l}</button>
+              ))}
+            </div>
+          </Sec>
+        </>)}
+
+        {/* QA Handover */}
+        {dt.id === "qa_handover" && (<>
+          <Sec title="Contract details">
+            <Grid>
+              <Field label="Contract reference" value={fd.contractRef} onChange={v => set("contractRef", v)} />
+              <Field label="Work package" value={fd.workPackage} onChange={v => set("workPackage", v)} />
+            </Grid>
+          </Sec>
+          <Sec title="Quality checklist">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr style={{ background: GY1 }}>
+                <th style={{ padding: "7px 10px", textAlign: "left", fontWeight: 600, color: GY7 }}>Item</th>
+                <th style={{ padding: "7px 10px", width: 55, textAlign: "center" }}>Pass</th>
+                <th style={{ padding: "7px 10px", width: 55, textAlign: "center" }}>Fail</th>
+                <th style={{ padding: "7px 10px", width: 55, textAlign: "center" }}>N/A</th>
+                <th style={{ padding: "7px 10px", width: 140, textAlign: "left" }}>Notes</th>
+              </tr></thead>
+              <tbody>
+                {fd.qaItems?.map((it, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${GY2}` }}>
+                    <td style={{ padding: "7px 10px", color: GY8 }}>{it.item}</td>
+                    {["pass", "fail", "na"].map(r => (
+                      <td key={r} style={{ padding: "7px 10px", textAlign: "center" }}>
+                        <input type="radio" name={`qa${i}`} checked={it.result === r} onChange={() => qa(i, "result", r)} />
+                      </td>
+                    ))}
+                    <td style={{ padding: "7px 6px" }}>
+                      <input type="text" value={it.notes || ""} onChange={e => qa(i, "notes", e.target.value)} placeholder="Notes…" style={{ ...inp, fontSize: 11, padding: "3px 6px" }} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 10 }}><Field label="Deficiencies / outstanding items" value={fd.deficiencies} onChange={v => set("deficiencies", v)} multi /></div>
+          </Sec>
+        </>)}
+
+        {/* NCR */}
+        {dt.id === "ncr" && (
+          <Sec title="Non-conformance details">
+            <Grid>
+              <Field label="NCR reference number" value={fd.ncrRef} onChange={v => set("ncrRef", v)} />
+              <Field label="Target closure date" value={fd.targetDate} onChange={v => set("targetDate", v)} />
+              <Field label="Description of non-conformance" value={fd.ncrDesc} onChange={v => set("ncrDesc", v)} span multi />
+              <Field label="Root cause analysis" value={fd.rootCause} onChange={v => set("rootCause", v)} span multi />
+              <Field label="Corrective action required" value={fd.correctiveAction} onChange={v => set("correctiveAction", v)} span multi />
+              <Field label="Closed by" value={fd.closedBy} onChange={v => set("closedBy", v)} />
+            </Grid>
+          </Sec>
+        )}
+
+        {/* Early Delay / Delay Notice */}
+        {(dt.id === "early_delay" || dt.id === "delay_notice") && (<>
+          <Sec title="Contract details">
+            <Grid>
+              <Field label="Contract number" value={fd.contractNo} onChange={v => set("contractNo", v)} />
+              <Field label="Programme reference" value={fd.programmeRef} onChange={v => set("programmeRef", v)} />
+              <Field label="Employer" value={fd.employer} onChange={v => set("employer", v)} />
+              <Field label="Contractor" value={fd.contractor} onChange={v => set("contractor", v)} />
+            </Grid>
+          </Sec>
+          <Sec title="Event details">
+            <Grid>
+              <Field label="Date of event" value={fd.eventDate} onChange={v => set("eventDate", v)} />
+              <Field label="Reply required by" value={fd.replyBy} onChange={v => set("replyBy", v)} />
+              <Field label="Description of delay event" value={fd.eventDesc} onChange={v => set("eventDesc", v)} span multi />
+              <Field label="Delay (weeks)" value={fd.delayWeeks} onChange={v => set("delayWeeks", v)} />
+              {dt.id === "delay_notice" && <Field label="Cost impact (£)" value={fd.costImpact} onChange={v => set("costImpact", v)} />}
+              <Field label="Programme impact / consequences" value={fd.delayImpact} onChange={v => set("delayImpact", v)} span multi />
+            </Grid>
+          </Sec>
+        </>)}
+
+        {/* Inspection checklist */}
+        {isCl && cl && (<>
+          <Sec title="Inspection checklist">
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead><tr style={{ background: GY1 }}>
+                  {cl.s && <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 600, color: GY7, width: 100 }}>Section</th>}
+                  <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 600, color: GY7 }}>Item</th>
+                  <th style={{ padding: "6px 8px", width: 44, textAlign: "center" }}>Pass</th>
+                  <th style={{ padding: "6px 8px", width: 44, textAlign: "center" }}>Fail</th>
+                  <th style={{ padding: "6px 8px", width: 44, textAlign: "center" }}>N/A</th>
+                  <th style={{ padding: "6px 8px", width: 130, textAlign: "left" }}>Notes</th>
+                </tr></thead>
+                <tbody>
+                  {cl.items.map((item, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${GY2}` }}>
+                      {cl.s && <td style={{ padding: "6px 8px", fontSize: 10, color: GY5, fontWeight: 500, verticalAlign: "top" }}>{itemSection(dt.id, i)}</td>}
+                      <td style={{ padding: "6px 8px", color: GY8, verticalAlign: "top" }}>{item}</td>
+                      {["pass", "fail", "na"].map(r => (
+                        <td key={r} style={{ padding: "6px 8px", textAlign: "center", verticalAlign: "top" }}>
+                          <input type="radio" name={`c${i}`} checked={fd.checks?.[i]?.r === r} onChange={() => chk(i, "r", r)}
+                            style={{ accentColor: r === "pass" ? GRN : r === "fail" ? RED : "#9CA3AF" }} />
+                        </td>
+                      ))}
+                      <td style={{ padding: "6px 5px" }}>
+                        <input type="text" value={fd.checks?.[i]?.n || ""} onChange={e => chk(i, "n", e.target.value)}
+                          placeholder="Notes…" style={{ width: "100%", fontSize: 11, border: `1px solid ${GY2}`, borderRadius: 4, padding: "3px 5px", background: "#fff" }} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Sec>
+          <Sec title="Overall result">
+            <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+              {[
+                { v: "safe",   l: "✓ Safe to use",         bg: GBG,      c: GRN },
+                { v: "remove", l: "✗ Remove from service", bg: RBG,      c: RED },
+                { v: "monitor",l: "⚠ Monitor",             bg: "#FFF7ED", c: "#C2410C" },
+              ].map(o => (
+                <button key={o.v} onClick={() => set("result", o.v)} style={{ padding: "7px 13px", borderRadius: 6, border: `1.5px solid ${fd.result === o.v ? o.c : GY2}`, background: fd.result === o.v ? o.bg : "#fff", color: fd.result === o.v ? o.c : GY6, fontWeight: fd.result === o.v ? 700 : 400, cursor: "pointer", fontSize: 12 }}>{o.l}</button>
+              ))}
+            </div>
+            <div style={{ marginTop: 10 }}><Field label="Additional notes" value={fd.notes} onChange={v => set("notes", v)} multi /></div>
+          </Sec>
+        </>)}
+
+        {/* Attendees & responsible signatories */}
+        {!noAtt && fd.attendees?.length > 0 && (
+          <Sec title="Team & responsible signatories">
+            <p style={{ margin: "0 0 9px", fontSize: 11, color: GY5 }}>Tick who is present. Mark as responsible the person(s) who sign off this document.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))", gap: 8 }}>
+              {fd.attendees.map(a => (
+                <div key={a.id} style={{ padding: "9px 11px", background: a.present ? GBG : GY1, border: `1px solid ${a.present ? GRL : GY2}`, borderRadius: 7 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6 }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: a.present ? GRN : GY6 }}>{a.name}</p>
+                      <p style={{ margin: 0, fontSize: 10, color: a.present ? "#16A34A" : GY5 }}>{a.role}</p>
+                    </div>
+                    <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1, cursor: "pointer" }}>
+                      <input type="checkbox" checked={a.present} onChange={() => tog(a.id, "present")} style={{ accentColor: GRN }} />
+                      <span style={{ fontSize: 9, color: "#9CA3AF" }}>Present</span>
+                    </label>
+                  </div>
+                  {a.present && (
+                    <label style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, cursor: "pointer" }}>
+                      <input type="checkbox" checked={a.responsible || false} onChange={() => tog(a.id, "responsible")} style={{ accentColor: AMB }} />
+                      <span style={{ fontSize: 10, color: GY6 }}>Responsible signatory</span>
+                    </label>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Sec>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, paddingTop: 4 }}>
+          <button onClick={onBack} style={{ padding: "8px 18px", border: `1px solid ${GY3}`, background: "#fff", borderRadius: 6, cursor: "pointer", fontSize: 13, color: GY7 }}>Cancel</button>
+          <button onClick={() => onGen(fd)} style={{ padding: "8px 22px", background: AMB, border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 700, color: DARK }}>Generate document →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// PREVIEW
+// ═══════════════════════════════════════════════════════
+
+function Preview({ dt, fd, onBack, onNew, onRep }) {
+  const isCl = dt.cat === "inspection";
+  const cl = CL[dt.id];
+  const resp = (fd.attendees || []).filter(a => a.responsible);
+  const team = (fd.attendees || []).filter(a => a.present);
+  const noAtt = dt.cat === "legal";
+  const cc = CAT_COLOR[dt.cat];
+
+  useEffect(() => {
+    const el = document.createElement("style");
+    el.id = "piso";
+    el.textContent = `@media print{body *{visibility:hidden}#pdoc,#pdoc *{visibility:visible}#pdoc{position:fixed;top:0;left:0;width:100%;padding:16px}@page{margin:12mm}}`;
+    document.head.appendChild(el);
+    return () => document.getElementById("piso")?.remove();
+  }, []);
+
+  const tb = { width: "100%", borderCollapse: "collapse", border: `1px solid ${GY2}` };
+
+  function PR({ l, v }) {
+    return (
+      <tr>
+        <td style={{ padding: "5px 10px", fontWeight: 600, color: GY7, fontSize: 12, width: "32%", verticalAlign: "top" }}>{l}</td>
+        <td style={{ padding: "5px 10px", color: GY8, fontSize: 12, whiteSpace: "pre-wrap" }}>{v || "—"}</td>
+      </tr>
+    );
+  }
+
+  function PS({ title, children }) {
+    return (
+      <div style={{ marginBottom: 18 }}>
+        <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: GY5, textTransform: "uppercase", letterSpacing: "0.07em" }}>{title}</p>
+        {children}
+      </div>
+    );
+  }
+
+  function Badge({ val, pass = "pass", fail = "fail" }) {
+    const isP = val === pass, isF = val === fail;
+    return <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: isP ? GBG : isF ? RBG : GY1, color: isP ? GRN : isF ? RED : GY5 }}>{val?.toUpperCase() || "—"}</span>;
+  }
+
+  return (
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
+      <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 10 }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
+        <span style={{ color: "#fff", fontSize: 14, fontWeight: 700, flex: 1 }}>{dt.label}</span>
+        <div style={{ display: "flex", gap: 7 }}>
+          <button onClick={onRep} style={{ padding: "6px 12px", background: "none", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 6, color: "rgba(255,255,255,0.75)", cursor: "pointer", fontSize: 11 }}>Reports</button>
+          <button onClick={onNew} style={{ padding: "6px 12px", background: "none", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 6, color: "rgba(255,255,255,0.75)", cursor: "pointer", fontSize: 11 }}>New doc</button>
+          <button onClick={() => window.print()} style={{ padding: "6px 14px", background: AMB, border: "none", borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: "pointer", color: DARK }}>🖨 Print / PDF</button>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 820, margin: "18px auto 40px", padding: "0 14px" }}>
+        <div id="pdoc" style={{ background: "#fff", border: `1px solid ${GY2}`, borderRadius: 10, overflow: "hidden" }}>
+          {/* Document header */}
+          <div style={{ borderTop: `4px solid ${cc}`, padding: "18px 22px 13px", borderBottom: `1px solid ${GY2}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 10, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.09em" }}>Construction site document</p>
+                <h1 style={{ margin: "3px 0 0", fontSize: 21, fontWeight: 800, color: GY8 }}>{dt.label}</h1>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <p style={{ margin: 0, fontSize: 10, color: "#9CA3AF" }}>Date issued</p>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: GY8 }}>{fd.date}</p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: "18px 22px" }}>
+            {/* Site details — always */}
+            <PS title="Site details">
+              <table style={tb}><tbody>
+                <PR l="Site" v={fd.site} />
+                <PR l="Address" v={fd.address} />
+                <PR l="Scope of works" v={fd.scope} />
+                <PR l="Supervisor" v={`${fd.supervisor}${fd.supPhone ? ` · ${fd.supPhone}` : ""}`} />
+                <PR l="Prepared by" v={fd.preparedBy} />
+              </tbody></table>
+            </PS>
+
+            {/* Doc-specific content */}
+            {(dt.id === "daily_safe_start" || dt.id === "toolbox_talk") && (
+              <PS title={dt.id === "toolbox_talk" ? "Talk content" : "Briefing content"}>
+                <table style={tb}><tbody>
+                  {dt.id === "toolbox_talk" && <PR l="Topic" v={fd.topic} />}
+                  <PR l={dt.id === "toolbox_talk" ? "Key points" : "Hazards identified"} v={fd.hazards} />
+                  <PR l={dt.id === "toolbox_talk" ? "Actions arising" : "Control measures"} v={fd.controls} />
+                  {dt.id === "daily_safe_start" && <><PR l="PPE required" v={fd.ppe} /><PR l="Emergency procedure" v={fd.emergencyProc} /></>}
+                </tbody></table>
+              </PS>
+            )}
+            {dt.id === "puwer" && (
+              <PS title="PUWER assessment">
+                <table style={tb}><tbody>
+                  <PR l="Equipment" v={fd.equipment} /><PR l="ID / ref" v={fd.equipmentId} />
+                  <PR l="Make / model" v={`${fd.make} ${fd.model}`.trim()} /><PR l="Hazards" v={fd.hazards} />
+                  <PR l="Risk level" v={fd.riskLevel} /><PR l="Controls" v={fd.controls} />
+                  <PR l="Training" v={fd.training} /><PR l="Maintenance" v={fd.maintenance} />
+                  <PR l="Inspection frequency" v={fd.frequency} />
+                </tbody></table>
+              </PS>
+            )}
+            {dt.id === "loler" && (
+              <PS title="LOLER details">
+                <table style={tb}><tbody>
+                  <PR l="Lifting equipment" v={fd.liftingEquip} /><PR l="SWL / WLL" v={fd.swl} />
+                  <PR l="Equipment ID" v={fd.equipmentId} /><PR l="Certificate ref" v={fd.examRef} />
+                  <PR l="Last examination" v={fd.examDate} /><PR l="Next examination" v={fd.nextExam} />
+                  <PR l="Lift plan" v={fd.liftPlan} /><PR l="Equipment to be used" v={fd.resources} />
+                  <PR l="Hazards / precautions" v={fd.hazards} />
+                </tbody></table>
+              </PS>
+            )}
+            {dt.id === "coshh" && (
+              <PS title="COSHH assessment">
+                <table style={tb}><tbody>
+                  <PR l="Substance" v={fd.substance} /><PR l="Supplier" v={fd.supplier} />
+                  <PR l="Hazard type" v={fd.hazardType} /><PR l="WEL" v={fd.exposureLimits} />
+                  <PR l="Health effects" v={fd.healthEffects} /><PR l="Exposure routes" v={fd.exposureRoutes} />
+                  <PR l="Controls" v={fd.cohhControls} /><PR l="PPE required" v={fd.cohhPpe} />
+                  <PR l="Emergency actions" v={fd.emergencyActions} />
+                </tbody></table>
+              </PS>
+            )}
+            {dt.id === "task_briefing" && (
+              <PS title="Task briefing">
+                <table style={tb}><tbody>
+                  <PR l="Task description" v={fd.taskDesc} /><PR l="Method statement ref" v={fd.methodRef} />
+                  <PR l="Resources required" v={fd.resources} /><PR l="Task risks" v={fd.taskRisks} />
+                  <PR l="Safe working methods" v={fd.taskControls} />
+                </tbody></table>
+              </PS>
+            )}
+            {dt.id === "pat_testing" && (
+              <PS title="PAT testing record">
+                <table style={tb}><tbody>
+                  <PR l="Appliance" v={fd.applianceDesc} /><PR l="Asset number" v={fd.assetNo} />
+                  <PR l="Location" v={fd.location} /><PR l="Tested by" v={fd.testedBy} />
+                  {[["Visual inspection", fd.visualPass], ["Earth continuity", fd.earthPass], ["Insulation resistance", fd.insulationPass], ["Polarity check", fd.polarityPass]].map(([l, v]) => (
+                    <tr key={l}>
+                      <td style={{ padding: "5px 10px", fontWeight: 600, color: GY7, fontSize: 12, width: "32%" }}>{l}</td>
+                      <td style={{ padding: "5px 10px" }}><Badge val={v} /></td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td style={{ padding: "5px 10px", fontWeight: 600, color: GY7, fontSize: 12 }}>Overall result</td>
+                    <td style={{ padding: "5px 10px" }}><span style={{ padding: "3px 11px", borderRadius: 4, fontSize: 12, fontWeight: 800, background: fd.patResult === "pass" ? GBG : RBG, color: fd.patResult === "pass" ? GRN : RED }}>{fd.patResult?.toUpperCase() || "—"}</span></td>
+                  </tr>
+                  <PR l="Next test date" v={fd.nextTestDate} />
+                </tbody></table>
+              </PS>
+            )}
+            {dt.id === "thorough_exam" && (
+              <PS title="Thorough examination">
+                <table style={tb}><tbody>
+                  <PR l="Equipment" v={fd.examEquipment} /><PR l="ID / serial" v={fd.examId} />
+                  <PR l="SWL" v={fd.examSWL} /><PR l="Exam reference" v={fd.examRef} />
+                  <PR l="Examiner" v={fd.examiner} /><PR l="Examination body" v={fd.examBody} />
+                  <PR l="Date of examination" v={fd.examDate} /><PR l="Condition rating" v={fd.conditionRating} />
+                  <PR l="Defects found" v={fd.defectsDesc || "None"} />
+                  <tr>
+                    <td style={{ padding: "5px 10px", fontWeight: 600, color: GY7, fontSize: 12 }}>Safe for use</td>
+                    <td style={{ padding: "5px 10px" }}>
+                      <span style={{ padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: fd.safeForUse === "yes" ? GBG : fd.safeForUse === "conditions" ? "#FFF7ED" : RBG, color: fd.safeForUse === "yes" ? GRN : fd.safeForUse === "conditions" ? "#C2410C" : RED }}>
+                        {fd.safeForUse === "yes" ? "YES – SAFE" : fd.safeForUse === "conditions" ? "CONDITIONAL" : "NO – REMOVE"}
+                      </span>
+                    </td>
+                  </tr>
+                  <PR l="Next examination" v={fd.nextExamDate} />
+                </tbody></table>
+              </PS>
+            )}
+            {dt.id === "qa_handover" && (
+              <PS title="QA handover checklist">
+                <p style={{ margin: "0 0 6px", fontSize: 12, color: GY6 }}>Contract: {fd.contractRef || "—"} · Work package: {fd.workPackage || "—"}</p>
+                <table style={{ ...tb, fontSize: 12 }}><thead><tr style={{ background: GY1 }}>
+                  <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600 }}>Item</th>
+                  <th style={{ padding: "6px 10px", width: 60, textAlign: "center", fontWeight: 600 }}>Result</th>
+                  <th style={{ padding: "6px 10px", width: 160, textAlign: "left", fontWeight: 600 }}>Notes</th>
+                </tr></thead><tbody>
+                  {(fd.qaItems || []).map((it, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${GY2}` }}>
+                      <td style={{ padding: "5px 10px" }}>{it.item}</td>
+                      <td style={{ padding: "5px 10px", textAlign: "center" }}><Badge val={it.result} /></td>
+                      <td style={{ padding: "5px 10px", color: GY5, fontSize: 11 }}>{it.notes || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody></table>
+                {fd.deficiencies && <p style={{ marginTop: 7, fontSize: 12, color: GY7 }}><b>Deficiencies:</b> {fd.deficiencies}</p>}
+              </PS>
+            )}
+            {dt.id === "ncr" && (
+              <PS title="Non-conformance report">
+                <table style={tb}><tbody>
+                  <PR l="NCR reference" v={fd.ncrRef} /><PR l="Description" v={fd.ncrDesc} />
+                  <PR l="Root cause" v={fd.rootCause} /><PR l="Corrective action" v={fd.correctiveAction} />
+                  <PR l="Target date" v={fd.targetDate} /><PR l="Closed by" v={fd.closedBy} />
+                </tbody></table>
+              </PS>
+            )}
+            {(dt.id === "early_delay" || dt.id === "delay_notice") && (
+              <PS title={dt.label}>
+                <table style={tb}><tbody>
+                  <PR l="Contract number" v={fd.contractNo} /><PR l="Programme ref" v={fd.programmeRef} />
+                  <PR l="Employer" v={fd.employer} /><PR l="Contractor" v={fd.contractor} />
+                  <PR l="Date of event" v={fd.eventDate} /><PR l="Description" v={fd.eventDesc} />
+                  <PR l="Delay (weeks)" v={fd.delayWeeks} />
+                  {dt.id === "delay_notice" && <PR l="Cost impact (£)" v={fd.costImpact} />}
+                  <PR l="Programme impact" v={fd.delayImpact} /><PR l="Reply by" v={fd.replyBy} />
+                </tbody></table>
+              </PS>
+            )}
+
+            {/* Inspection checklist */}
+            {isCl && cl && (
+              <PS title="Inspection checklist">
+                <table style={{ ...tb, fontSize: 11 }}>
+                  <thead><tr style={{ background: GY1 }}>
+                    {cl.s && <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 600, width: 95 }}>Section</th>}
+                    <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 600 }}>Item</th>
+                    <th style={{ padding: "5px 8px", width: 52, textAlign: "center" }}>Result</th>
+                    <th style={{ padding: "5px 8px", width: 140, textAlign: "left" }}>Notes</th>
+                  </tr></thead>
+                  <tbody>
+                    {cl.items.map((item, i) => {
+                      const r = fd.checks?.[i]?.r;
+                      return (
+                        <tr key={i} style={{ borderBottom: `1px solid ${GY2}` }}>
+                          {cl.s && <td style={{ padding: "4px 8px", fontSize: 10, color: GY5, fontWeight: 500 }}>{itemSection(dt.id, i)}</td>}
+                          <td style={{ padding: "4px 8px", color: GY7 }}>{item}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                            <span style={{ padding: "1px 6px", borderRadius: 3, fontSize: 10, fontWeight: 700, background: r === "pass" ? GBG : r === "fail" ? RBG : GY1, color: r === "pass" ? GRN : r === "fail" ? RED : GY5 }}>{r?.toUpperCase() || "—"}</span>
+                          </td>
+                          <td style={{ padding: "4px 8px", fontSize: 10, color: GY5 }}>{fd.checks?.[i]?.n || ""}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {fd.result && (
+                  <div style={{ marginTop: 9, padding: "7px 12px", display: "inline-block", borderRadius: 6, background: fd.result === "safe" ? GBG : fd.result === "remove" ? RBG : "#FFF7ED" }}>
+                    <span style={{ fontWeight: 800, fontSize: 12, color: fd.result === "safe" ? GRN : fd.result === "remove" ? RED : "#C2410C" }}>
+                      Overall: {fd.result === "safe" ? "SAFE TO USE" : fd.result === "remove" ? "REMOVE FROM SERVICE" : "MONITOR / CONDITIONAL"}
+                    </span>
+                  </div>
+                )}
+                {fd.notes && <p style={{ marginTop: 8, fontSize: 12, color: GY7 }}><b>Notes:</b> {fd.notes}</p>}
+              </PS>
+            )}
+
+            {/* Attendance register */}
+            {!noAtt && team.length > 0 && (
+              <PS title="Attendance register">
+                <table style={{ ...tb, fontSize: 12 }}>
+                  <thead><tr style={{ background: GY1 }}>
+                    <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600 }}>Name</th>
+                    <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600 }}>Role</th>
+                    <th style={{ padding: "6px 10px", textAlign: "center", fontWeight: 600, width: 80 }}>Responsible</th>
+                    <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600, width: 180 }}>Signature</th>
+                  </tr></thead>
+                  <tbody>
+                    {team.map((a, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${GY2}` }}>
+                        <td style={{ padding: "8px 10px", fontWeight: 500 }}>{a.name}</td>
+                        <td style={{ padding: "8px 10px", color: GY5 }}>{a.role}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "center" }}>{a.responsible ? <span style={{ color: AMB, fontWeight: 800, fontSize: 14 }}>✓</span> : ""}</td>
+                        <td style={{ padding: "8px 10px", borderLeft: `2px solid ${GY2}` }}></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </PS>
+            )}
+
+            {/* Responsible person sign-off boxes */}
+            {!noAtt && resp.length > 0 && (
+              <PS title="Responsible person sign-off">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+                  {[...resp, { name: fd.preparedBy || "—", role: "Document prepared by" }].map((a, i) => (
+                    <div key={i} style={{ border: `1px solid ${GY2}`, borderRadius: 7, padding: "12px 14px" }}>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: GY8 }}>{a.name}</p>
+                      <p style={{ margin: "2px 0 12px", fontSize: 11, color: GY5 }}>{a.role}</p>
+                      <div style={{ borderBottom: `1.5px solid ${GY7}`, height: 32, marginBottom: 4 }}></div>
+                      <p style={{ margin: 0, fontSize: 10, color: "#9CA3AF" }}>Signature · Date ___________</p>
+                    </div>
+                  ))}
+                </div>
+              </PS>
+            )}
+
+            <div style={{ borderTop: `1px solid ${GY2}`, paddingTop: 10, display: "flex", justifyContent: "space-between", fontSize: 10, color: "#9CA3AF" }}>
+              <span>Generated by {fd.preparedBy || "—"} · {fd.date}</span>
+              <span>Site Document Generator · {fd.site || "—"}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// REPORTS
+// ═══════════════════════════════════════════════════════
+
+function Reports({ docs, sites, onBack, onView }) {
+  const [fSite, setFSite] = useState("all");
+  const [fCat, setFCat] = useState("all");
+
+  const filtered = docs
+    .filter(d => (fSite === "all" || d.siteId === fSite) && (fCat === "all" || d.category === fCat))
+    .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
+
+  return (
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: BG, minHeight: "100vh" }}>
+      <div style={{ background: HDR, padding: "0 20px", height: 52, display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 10 }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
+        <span style={{ color: "#fff", fontSize: 15, fontWeight: 700, flex: 1 }}>Document reports</span>
+        <span style={{ padding: "2px 10px", background: "rgba(245,166,35,0.2)", borderRadius: 12, fontSize: 11, color: AMB, fontWeight: 700 }}>{filtered.length} total</span>
+      </div>
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "18px 16px" }}>
+        <div style={{ display: "flex", gap: 9, marginBottom: 18, flexWrap: "wrap" }}>
+          <select value={fSite} onChange={e => setFSite(e.target.value)} style={{ ...inp, width: "auto", minWidth: 160 }}>
+            <option value="all">All sites</option>
+            {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <select value={fCat} onChange={e => setFCat(e.target.value)} style={{ ...inp, width: "auto", minWidth: 160 }}>
+            <option value="all">All categories</option>
+            {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "60px 20px", color: GY5 }}>
+            <p style={{ fontSize: 36, marginBottom: 12 }}>📋</p>
+            <p style={{ fontSize: 16, fontWeight: 600, color: GY7 }}>No documents yet</p>
+            <p style={{ fontSize: 13, marginTop: 6 }}>Generate your first document from the dashboard — it will appear here, saved with the team and signatories.</p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {filtered.map(doc => {
+              const cc = CAT_COLOR[doc.category];
+              const genAt = new Date(doc.generatedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+              return (
+                <div key={doc.id} onClick={() => onView(doc)}
+                  style={{ background: "#fff", border: `1px solid ${GY2}`, borderLeft: `3px solid ${cc}`, borderRadius: 0, padding: "11px 15px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, transition: "background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background = GY1}
+                  onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: GY8 }}>{doc.docLabel}</p>
+                      <span style={{ padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 700, background: cc + "22", color: cc }}>
+                        {CATEGORIES.find(c => c.id === doc.category)?.label}
+                      </span>
+                    </div>
+                    <p style={{ margin: "3px 0 0", fontSize: 12, color: GY5 }}>{doc.site} · {genAt} · by {doc.generatedBy || "—"}</p>
+                    {doc.team?.length > 0 && (
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: GY5 }}>
+                        Team: {doc.team.slice(0, 3).join(", ")}{doc.team.length > 3 ? ` +${doc.team.length - 3} more` : ""}
+                      </p>
+                    )}
+                    {doc.responsible?.length > 0 && (
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: AMB, fontWeight: 600 }}>
+                        Responsible: {doc.responsible.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, color: GY5, flexShrink: 0 }}>View →</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 // ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App(){
   const [workers,setWorkers]=useState([]);
@@ -5881,42 +7734,9 @@ export default function App(){
     catch(e){ setSyncStatus("error"); }
   };
   const updateCell=async(wId,day,val)=>{
-    const worker=workers.find(w=>w.id===wId);
-    const prevVal=worker?.days?.[day]||"";
     const updated=workers.map(w=>w.id===wId?{...w,days:{...w.days,[day]:val}}:w);
     setWorkers(updated); setSyncStatus("saving");
-    try {
-      const w=updated.find(x=>x.id===wId);
-      // Track route change history on the worker
-      const hasRealChange=prevVal.trim()!==val.trim()&&!(isOff(prevVal)&&isOff(val));
-      if(hasRealChange){
-        const changeEntry={changedAt:new Date().toISOString(),day,weekLabel,from:prevVal||"(unset)",to:val||"(unset)"};
-        w.routeHistory=[...(w.routeHistory||[]).slice(-49),changeEntry];
-        // Flag pending notification for portal
-        w.routeNotifications=[...(w.routeNotifications||[]),{
-          id:"rn_"+Date.now(),weekLabel,day,from:prevVal||"(unset)",to:val||"(unset)",
-          changedAt:new Date().toISOString(),seen:false
-        }];
-        // Send email notification if worker has email
-        if(w.email||w.authEmail){
-          const toEmail=w.email||w.authEmail;
-          const dayFull={Mon:"Monday",Tue:"Tuesday",Wed:"Wednesday",Thu:"Thursday",Fri:"Friday",Sat:"Saturday",Sun:"Sunday"}[day]||day;
-          const emailBody=`Hi ${w.name},\n\nYour route for WC ${weekLabel} has been updated.\n\n${dayFull}: changed from "${prevVal||"(unset)"}" to "${val||"(unset)"}".\n\nPlease check your Bright Metalwork Worker Portal for your full updated week ahead.\n\nBright Metalwork Ltd\n${OUR_COMPANY.phone}\n${OUR_COMPANY.email}`;
-          // Use Supabase Edge Functions or direct SMTP — send via mailto as fallback
-          try{
-            await fetch(`${SB_URL}/functions/v1/send-email`,{
-              method:"POST",
-              headers:{...SB_H,"Content-Type":"application/json"},
-              body:JSON.stringify({to:toEmail,subject:`Route Update WC ${weekLabel} — ${dayFull} changed`,text:emailBody})
-            });
-          }catch(emailErr){
-            // Email sending optional — don't block save if it fails
-            console.warn("Email notification failed:",emailErr.message);
-          }
-        }
-      }
-      await sbUpsert("workers",[{id:w.id,data:w}]); setSyncStatus("saved");
-    }
+    try { const w=updated.find(x=>x.id===wId); await sbUpsert("workers",[{id:wId,data:w}]); setSyncStatus("saved"); }
     catch(e){ setSyncStatus("error"); }
   };
   const saveScopeForSite=(siteId,items)=>{setScopeData(d=>({...d,[siteId]:items}));setModal(null);};
@@ -6110,8 +7930,3 @@ export default function App(){
     </div>
   );
 }
-Agreed Price (Gross)    £10,520.00   ← what the client pays
-− P&OH (15%)            -£1,578.00   ← deducted — goes to overhead/profit
-= Net to BM              £8,942.00   ← what Bright Metalwork receives net
-− Retention (5%)          -£447.10   ← held until practical completion
-= Net Certified          £8,494.90   ← paid now
