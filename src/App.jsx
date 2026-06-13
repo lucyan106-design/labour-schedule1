@@ -494,7 +494,10 @@ function doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites){
 function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
   const [sites,setSites]=useState(allSites.map(s=>({...s})));
   const [nn,setNn]=useState(""),[nc,setNc]=useState(PRESET_COLORS[0]),[ncl,setNcl]=useState("");
-  const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false}]);setNn("");};
+  const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,lat:null,lng:null}]);setNn("");};
+  const [locating,setLocating]=useState({});
+  const useMyLocation=(id)=>{setLocating(l=>({...l,[id]:true}));navigator.geolocation.getCurrentPosition(pos=>{up(id,"lat",+pos.coords.latitude.toFixed(6));up(id,"lng",+pos.coords.longitude.toFixed(6));setLocating(l=>({...l,[id]:false}));},()=>{alert("Could not get location. Please type coordinates manually.");setLocating(l=>({...l,[id]:false}));},{enableHighAccuracy:true,timeout:10000});};
+  const GpsFields=({s})=><div style={{marginTop:8,background:"#0a0e1a",borderRadius:7,padding:"8px 10px",border:"1px solid #1e2535"}}><div style={{fontSize:9,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:6}}>📍 GPS — Worker Sign In/Out (100m perimeter)</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Latitude</div><input type="number" step="0.000001" value={s.lat||""} onChange={e=>up(s.id,"lat",+e.target.value||null)} placeholder="e.g. 51.509865" style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Longitude</div><input type="number" step="0.000001" value={s.lng||""} onChange={e=>up(s.id,"lng",+e.target.value||null)} placeholder="e.g. -0.118092" style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div></div><div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={()=>useMyLocation(s.id)} disabled={locating[s.id]} style={{padding:"4px 10px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700,opacity:locating[s.id]?0.6:1}}>{locating[s.id]?"Getting…":"📍 Use My Location"}</button>{s.lat&&s.lng?<span style={{fontSize:10,color:"#34d399"}}>✓ GPS set</span>:<span style={{fontSize:10,color:"#374151"}}>No GPS — unrestricted sign in</span>}</div></div>;
   const rm=id=>{if(window.confirm("Delete this site?"))setSites(s=>s.filter(x=>x.id!==id));};
   const up=(id,k,v)=>setSites(s=>s.map(x=>x.id===id?{...x,[k]:v}:x));
   const builtins=sites.filter(s=>s.builtin);
@@ -522,6 +525,7 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
           </div>
           <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
           <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <GpsFields s={s}/>
         </div>)}
       </div>
     </div>
@@ -538,6 +542,7 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
           <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
         </div>)}
       </div>
+          <GpsFields s={s}/>
     </div>}
 
     <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,borderTop:"1px solid #1e2535",paddingTop:16}}>
@@ -2489,6 +2494,8 @@ const DASH_NAV=[
   {id:"stats",          icon:"🔢", label:"Stats",             group:"analysis"},
   {id:"bank",           icon:"🏦", label:"Bank Import",       group:"analysis"},
   {id:"expenses",       icon:"💸", label:"Expenses",           group:"analysis"},
+  // ── Portal
+  {id:"pending_reg",    icon:"🆕", label:"New Registrations",  group:"portal"},
 ];
 
 function DStat({label,value,color,sub}){
@@ -5148,6 +5155,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "stats":         return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
       case "bank":          return <DBankFull {...SP}/>;
       case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+      case "pending_reg":   return <PendingWorkersView workers={workers} onApprove={()=>window.location.reload()}/>;
       default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
     }
   };
@@ -5157,6 +5165,99 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
   return <div style={{height:"100%",background:"#080d14",overflowY:"auto"}}>{renderPage()}</div>;
 }
 
+
+// ─── Pending Registrations View ───────────────────────────────────────────────
+function PendingWorkersView({workers,onApprove}){
+  const [pending,setPending]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [actioning,setActioning]=useState({});
+  const [expanded,setExpanded]=useState(null);
+  const [rejectNote,setRejectNote]=useState({});
+  const CERT_LABELS=Object.fromEntries(CERTS.map(c=>[c.key,c.label]));
+
+  const load=async()=>{setLoading(true);try{const rows=await sbGet("pending_workers","select=id,created_at,status,data&order=created_at.desc");setPending(rows);}catch(e){console.error(e);}setLoading(false);};
+  useEffect(()=>{load();},[]);
+
+  const approve=async(row)=>{
+    if(!window.confirm(`Approve ${row.data.name} and add them as an active worker?`))return;
+    setActioning(a=>({...a,[row.id]:"approving"}));
+    try{
+      await sbUpsert("workers",[{id:row.data.id,data:{...row.data,approvedAt:new Date().toISOString()}}]);
+      await fetch(`${SB_URL}/rest/v1/pending_workers?id=eq.${row.id}`,{method:"PATCH",headers:{...SB_H,"Prefer":"return=minimal"},body:JSON.stringify({status:"approved"})});
+      setPending(p=>p.map(x=>x.id===row.id?{...x,status:"approved"}:x));
+      if(onApprove)onApprove();
+    }catch(e){alert("Approval failed: "+e.message);}
+    setActioning(a=>({...a,[row.id]:null}));
+  };
+  const reject=async(row)=>{
+    if(!window.confirm(`Reject ${row.data.name}?`))return;
+    setActioning(a=>({...a,[row.id]:"rejecting"}));
+    try{
+      await fetch(`${SB_URL}/rest/v1/pending_workers?id=eq.${row.id}`,{method:"PATCH",headers:{...SB_H,"Prefer":"return=minimal"},body:JSON.stringify({status:"rejected",data:{...row.data,rejectedAt:new Date().toISOString(),rejectionNote:rejectNote[row.id]||""}})});
+      setPending(p=>p.map(x=>x.id===row.id?{...x,status:"rejected"}:x));
+    }catch(e){alert("Rejection failed: "+e.message);}
+    setActioning(a=>({...a,[row.id]:null}));
+  };
+
+  const pendingRows=pending.filter(r=>r.status==="pending");
+  const doneRows=pending.filter(r=>r.status!=="pending");
+
+  const Card=({row})=>{
+    const d=row.data||{};const isOpen=expanded===row.id;const act=actioning[row.id];const isPend=row.status==="pending";const isApp=row.status==="approved";
+    const heldCerts=Object.entries(d.certs||{}).filter(([,v])=>v?.held);
+    return <div style={{background:"#111827",border:`1px solid ${isPend?"#f59e0b44":isApp?"#34d39944":"#ef444444"}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 15px",cursor:"pointer"}} onClick={()=>setExpanded(isOpen?null:row.id)}>
+        <div style={{width:38,height:38,borderRadius:"50%",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:"#fff",flexShrink:0}}>{d.name?.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()||"?"}</div>
+        <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:"#f1f5f9"}}>{d.name||"Unknown"}</div><div style={{fontSize:11,color:"#64748b",marginTop:1}}>{d.position||"—"} · {d.company||"—"} · {d.email||"—"}</div></div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,color:"#64748b"}}>{new Date(row.created_at).toLocaleDateString("en-GB")}</span>
+          <span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:isPend?"#f59e0b22":isApp?"#34d39922":"#ef444422",color:isPend?"#fbbf24":isApp?"#34d399":"#f87171",border:`1px solid ${isPend?"#f59e0b44":isApp?"#34d39944":"#ef444444"}`}}>{isPend?"⏳ Pending":isApp?"✓ Approved":"✕ Rejected"}</span>
+          <span style={{color:"#64748b",fontSize:13}}>{isOpen?"▲":"▼"}</span>
+        </div>
+      </div>
+      {isOpen&&<div style={{borderTop:"1px solid #1e2535",padding:"14px 15px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 20px",marginBottom:14}}>
+          {[["Full Name",d.name],["Position",d.position],["Company",d.company],["Date of Birth",d.dob?new Date(d.dob).toLocaleDateString("en-GB"):"—"],["Phone",d.phone],["NI Number",d.niNumber],["Email",d.email],["Address",d.address],["Emergency Contact",d.emergencyName],["Emergency Phone",d.emergencyPhone],["Bank Name",d.bankName],["Sort Code",d.sortCode],["Account No",d.accountNo?"••••"+d.accountNo.slice(-4):"—"],["T&Cs Signed",d.termsSignedAt?new Date(d.termsSignedAt).toLocaleString("en-GB"):"—"]].map(([l,v])=>
+            <div key={l} style={{padding:"4px 0",borderBottom:"1px solid #1e2535"}}><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div><div style={{fontSize:12,color:v?"#f1f5f9":"#374151",marginTop:1}}>{v||"—"}</div></div>
+          )}
+        </div>
+        {d.termsAccepted&&<div style={{background:"#0d2218",border:"1px solid #34d39944",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#34d399"}}>✅ T&Cs accepted and signed on {d.termsSignedAt?new Date(d.termsSignedAt).toLocaleString("en-GB"):"—"}</div>}
+        {heldCerts.length>0&&<div style={{marginBottom:12}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:7}}>Certifications ({heldCerts.length})</div>
+          {heldCerts.map(([key,val])=><div key={key} style={{background:"#0f1421",borderRadius:7,padding:"8px 12px",marginBottom:6,border:"1px solid #1e2535"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:val.photoUrl?6:0}}>
+              <span style={{fontSize:12,fontWeight:600,color:"#e2e8f0"}}>{CERT_LABELS[key]||key}</span>
+              <div style={{display:"flex",gap:8}}>{val.expiry&&<span style={{fontSize:11,color:"#64748b"}}>Exp: {new Date(val.expiry).toLocaleDateString("en-GB")}</span>}<span style={{fontSize:11,fontWeight:700,color:"#34d399"}}>✓</span></div>
+            </div>
+            {val.photoUrl&&<img src={val.photoUrl} alt={key} style={{width:"100%",maxHeight:120,objectFit:"cover",borderRadius:6,border:"1px solid #2d3555",cursor:"pointer"}} onClick={()=>window.open(val.photoUrl,"_blank")}/>}
+          </div>)}
+        </div>}
+        {isPend&&<div style={{borderTop:"1px solid #1e2535",paddingTop:12,marginTop:4}}>
+          <div style={{marginBottom:9}}><div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Rejection Note (optional)</div>
+            <input value={rejectNote[row.id]||""} onChange={e=>setRejectNote(n=>({...n,[row.id]:e.target.value}))} placeholder="Reason for rejection…" style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:7,padding:"8px 11px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{display:"flex",gap:9}}>
+            <button onClick={()=>reject(row)} disabled={!!act} style={{flex:1,padding:"9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:8,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,opacity:act?0.6:1}}>{act==="rejecting"?"Rejecting…":"✕ Reject"}</button>
+            <button onClick={()=>approve(row)} disabled={!!act} style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"1px solid #34d399",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:800,opacity:act?0.6:1}}>{act==="approving"?"Approving…":"✓ Approve & Add to Workers"}</button>
+          </div>
+        </div>}
+      </div>}
+    </div>;
+  };
+
+  return <div style={{padding:"16px 20px"}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18}}>
+      {[["Pending",pendingRows.length,"#f59e0b"],["Approved",pending.filter(r=>r.status==="approved").length,"#34d399"],["Rejected",pending.filter(r=>r.status==="rejected").length,"#f87171"]].map(([l,v,c])=>
+        <div key={l} style={{background:"#1a1f2e",border:`1px solid ${c}44`,borderRadius:10,padding:"10px 14px"}}><div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div><div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div></div>
+      )}
+    </div>
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><button onClick={load} style={{padding:"5px 13px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:600}}>↻ Refresh</button></div>
+    {loading&&<div style={{textAlign:"center",padding:40,color:"#64748b"}}>Loading registrations…</div>}
+    {!loading&&pendingRows.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}><div style={{fontSize:32,marginBottom:10}}>✅</div>No pending registrations. New self-registered workers will appear here.</div>}
+    {pendingRows.map(row=><Card key={row.id} row={row}/>)}
+    {doneRows.length>0&&<div style={{marginTop:20}}><div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Previously Processed ({doneRows.length})</div>{doneRows.map(row=><Card key={row.id} row={row}/>)}</div>}
+  </div>;
+}
 
 // ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App(){
