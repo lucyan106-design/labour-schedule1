@@ -186,7 +186,7 @@ function ColorPicker({value,onChange}){
 }
 
 // ─── Inline Cell ──────────────────────────────────────────────────────────────
-function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate}){
+function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate,confirmed=false}){
   const [editing,setEditing]=useState(false);
   const [val,setVal]=useState(value||"");
   const ref=useRef(null);
@@ -201,9 +201,13 @@ function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate}){
       style={{width:"100%",background:"#0d1117",border:`2px solid ${getSiteColor(val,allSites)||"#3b82f6"}`,borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
     <datalist id={uid}>{allSiteNames.map(s=><option key={s} value={s}/>)}</datalist>
   </div>;
-  return <div onClick={()=>setEditing(true)} title="Click to edit" style={{cursor:"text",minWidth:110,padding:"3px 4px",borderRadius:5,border:"1px solid transparent",transition:"border-color 0.15s"}}
-    onMouseEnter={e=>e.currentTarget.style.borderColor="#2d3555"} onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>
-    {value?<Bdg label={value.trim()} color={getSiteColor(value,allSites)}/>:<span style={{color:"#374151",fontSize:11}}>— click —</span>}
+  return <div onClick={()=>setEditing(true)} title={confirmed?"✅ GPS confirmed":"📋 Forecast — not yet confirmed"} style={{cursor:"text",minWidth:110,padding:"3px 4px",borderRadius:5,border:`1px solid ${confirmed?"#34d39955":"transparent"}`,background:confirmed?"#0d221855":"transparent",transition:"border-color 0.15s"}}
+    onMouseEnter={e=>!confirmed&&(e.currentTarget.style.borderColor="#2d3555")} onMouseLeave={e=>!confirmed&&(e.currentTarget.style.borderColor="transparent")}>
+    {value?<div style={{display:"flex",alignItems:"center",gap:4}}>
+      <Bdg label={value.trim()} color={getSiteColor(value,allSites)}/>
+      {confirmed?<span style={{fontSize:9,color:"#34d399",fontWeight:700}}>✓</span>
+       :<span style={{fontSize:9,color:"#64748b"}}>📋</span>}
+    </div>:<span style={{color:"#374151",fontSize:11}}>— click —</span>}
   </div>;
 }
 
@@ -5111,7 +5115,7 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
   const TD2={padding:"5px 8px",borderBottom:"1px solid #1a2030",verticalAlign:"middle"};
 
   return <div>
-    <DPageHdr title="📋 Labour Schedule" sub={`WC: ${weekLabel} · ${displayed.length} operatives · grouped by site`}
+    <DPageHdr title="📋 Route / Forecast" sub={`WC: ${weekLabel} · ${displayed.length} operatives · Forecast only — confirmed by GPS sign in`}
       actions={<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
         <input value={nm} onChange={e=>setFilter&&setFilter(f=>({...f,name:e.target.value}))} placeholder="🔍 Name…"
           style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:6,padding:"5px 9px",color:"#e2e8f0",fontSize:11,outline:"none",width:100}}/>
@@ -5127,8 +5131,10 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
           style={{padding:"5px 10px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",fontSize:10,fontWeight:700}}>+ Worker</button>
       </div>}/>
 
-    <div style={{padding:"4px 20px",background:"#0f1421",borderBottom:"1px solid #1e2535",fontSize:11,color:"#64748b"}}>
-      💡 <strong style={{color:"#60a5fa"}}>Click any site cell</strong> to edit inline · <strong style={{color:"#a78bfa"}}>📋</strong> profile PDF · <strong style={{color:"#34d399"}}>💷</strong> payslip PDF · <strong style={{color:"#60a5fa"}}>🔗</strong> open in new window
+    <div style={{padding:"4px 20px",background:"#0f1421",borderBottom:"1px solid #1e2535",fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:12}}>
+      <span>🗺 <strong style={{color:"#fbbf24"}}>This is a Route / Forecast</strong> — entries here do NOT create timesheets.</span>
+      <span style={{color:"#374151"}}>|</span>
+      <span>✅ <span style={{color:"#34d399"}}>Green cell</span> = GPS confirmed · 📋 <span style={{color:"#60a5fa"}}>Click</span> to edit inline</span>
     </div>
 
     <div style={{overflowX:"auto"}}>
@@ -5166,7 +5172,12 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
                   <td style={{...TD2,color:"#94a3b8",fontSize:10}}>{w.position||"—"}</td>
                   {(activeDays||BASE_DAYS).map(d=>(
                     <td key={d} style={{...TD2,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"3px 6px"}}>
-                      <InlineCell value={w.days?.[d]||""} workerId={w.id} day={d} allSiteNames={siteNames} allSites={allSites} onUpdate={updateCell||((id,day,val)=>{})}/>
+                  {(activeDays||BASE_DAYS).map(d=>{
+                    const confirmedLog=w.attendanceLogs?.find(l=>l.day===d&&l.weekLabel===weekLabel&&l.signIn&&l.signOut);
+                    return <td key={d} style={{...TD2,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"3px 6px"}}>
+                      <InlineCell value={w.days?.[d]||""} workerId={w.id} day={d} allSiteNames={siteNames} allSites={allSites} onUpdate={updateCell||((id,day,val)=>{})} confirmed={!!confirmedLog}/>
+                    </td>;
+                  })}
                     </td>
                   ))}
                   <td style={{...TD2,color:"#34d399",fontWeight:600,fontSize:11}}>{w.agreedRate?`£${w.agreedRate}/hr`:"—"}</td>
@@ -5472,9 +5483,42 @@ export default function App(){
     catch(e){ setSyncStatus("error"); }
   };
   const updateCell=async(wId,day,val)=>{
+    const worker=workers.find(w=>w.id===wId);
+    const prevVal=worker?.days?.[day]||"";
     const updated=workers.map(w=>w.id===wId?{...w,days:{...w.days,[day]:val}}:w);
     setWorkers(updated); setSyncStatus("saving");
-    try { const w=updated.find(x=>x.id===wId); await sbUpsert("workers",[{id:wId,data:w}]); setSyncStatus("saved"); }
+    try {
+      const w=updated.find(x=>x.id===wId);
+      // Track route change history on the worker
+      const hasRealChange=prevVal.trim()!==val.trim()&&!(isOff(prevVal)&&isOff(val));
+      if(hasRealChange){
+        const changeEntry={changedAt:new Date().toISOString(),day,weekLabel,from:prevVal||"(unset)",to:val||"(unset)"};
+        w.routeHistory=[...(w.routeHistory||[]).slice(-49),changeEntry];
+        // Flag pending notification for portal
+        w.routeNotifications=[...(w.routeNotifications||[]),{
+          id:"rn_"+Date.now(),weekLabel,day,from:prevVal||"(unset)",to:val||"(unset)",
+          changedAt:new Date().toISOString(),seen:false
+        }];
+        // Send email notification if worker has email
+        if(w.email||w.authEmail){
+          const toEmail=w.email||w.authEmail;
+          const dayFull={Mon:"Monday",Tue:"Tuesday",Wed:"Wednesday",Thu:"Thursday",Fri:"Friday",Sat:"Saturday",Sun:"Sunday"}[day]||day;
+          const emailBody=`Hi ${w.name},\n\nYour route for WC ${weekLabel} has been updated.\n\n${dayFull}: changed from "${prevVal||"(unset)"}" to "${val||"(unset)"}".\n\nPlease check your Bright Metalwork Worker Portal for your full updated week ahead.\n\nBright Metalwork Ltd\n${OUR_COMPANY.phone}\n${OUR_COMPANY.email}`;
+          // Use Supabase Edge Functions or direct SMTP — send via mailto as fallback
+          try{
+            await fetch(`${SB_URL}/functions/v1/send-email`,{
+              method:"POST",
+              headers:{...SB_H,"Content-Type":"application/json"},
+              body:JSON.stringify({to:toEmail,subject:`Route Update WC ${weekLabel} — ${dayFull} changed`,text:emailBody})
+            });
+          }catch(emailErr){
+            // Email sending optional — don't block save if it fails
+            console.warn("Email notification failed:",emailErr.message);
+          }
+        }
+      }
+      await sbUpsert("workers",[{id:w.id,data:w}]); setSyncStatus("saved");
+    }
     catch(e){ setSyncStatus("error"); }
   };
   const saveScopeForSite=(siteId,items)=>{setScopeData(d=>({...d,[siteId]:items}));setModal(null);};
