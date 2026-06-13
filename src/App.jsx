@@ -509,7 +509,8 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
     const n=nn.trim();
     if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;
     const newSite={id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,
-      lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9};
+      lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9,
+      contractType:"dayrate",pohPct:0,retentionPct:0};
     setSites(s=>[...s,newSite]);
     setNn("");
     setExpanded(newSite.id); // auto-expand new site
@@ -533,8 +534,11 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
         <div style={{width:10,height:10,borderRadius:"50%",background:s.color,flexShrink:0}}/>
         <div style={{flex:1}}>
           <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>{s.name}</div>
-          <div style={{fontSize:10,color:"#64748b",marginTop:1,display:"flex",gap:8}}>
+          <div style={{fontSize:10,color:"#64748b",marginTop:1,display:"flex",gap:8,flexWrap:"wrap"}}>
             <span>{clients.find(c=>c.id===s.clientId)?.name||"No client"}</span>
+            <span style={{color:s.contractType==="pricework"?"#a78bfa":"#34d399",fontWeight:700}}>{s.contractType==="pricework"?"📐 Price Work":"🔧 Day Rate"}</span>
+            {s.contractType==="pricework"&&s.pohPct>0&&<span style={{color:"#a78bfa"}}>P&OH {s.pohPct}%</span>}
+            {s.contractType==="pricework"&&s.retentionPct>0&&<span style={{color:"#fbbf24"}}>Ret. {s.retentionPct}%</span>}
             <span style={{color:hasGps?"#34d399":"#f87171"}}>{hasGps?`📍 GPS ✓ · ${s.radius||100}m`:"🔒 No GPS"}</span>
             <span>⏱ {s.stdHours||9}h/day · starts {s.startTime||"07:30"}</span>
           </div>
@@ -1043,32 +1047,71 @@ ${(inv.lineItems||inv.items||[]).map(li=>`<tr><td>${li.description||li.desc||""}
 
 // ─── Site Detail Modal ────────────────────────────────────────────────────────
 function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClose}){
-  const [s,setS]=useState({...site,scopes:[...(site.scopes||[])],variations:[...(site.variations||[])]});
-  const [tab,setTab]=useState("scopes");
+  const [s,setS]=useState({
+    ...site,
+    scopes:[...(site.scopes||[])],
+    variations:[...(site.variations||[])],
+    contractType:site.contractType||"dayrate", // "dayrate" | "pricework"
+    pohPct:site.pohPct||0,       // P&OH % for price work
+    retentionPct:site.retentionPct||0, // Retention %
+  });
+  const [tab,setTab]=useState("contract");
   const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
+  const upS=(k,v)=>setS(x=>({...x,[k]:v}));
 
   const addScope=()=>setS(x=>({...x,scopes:[...x.scopes,{id:uid(),description:"",unit:"",qty:0,rate:0}]}));
   const updScope=(id,k,v)=>setS(x=>({...x,scopes:x.scopes.map(sc=>sc.id===id?{...sc,[k]:v}:sc)}));
   const delScope=id=>setS(x=>({...x,scopes:x.scopes.filter(sc=>sc.id!==id)}));
-
   const addVar=()=>setS(x=>({...x,variations:[...x.variations,{id:uid(),description:"",value:0,type:"addition",approved:false}]}));
   const updVar=(id,k,v)=>setS(x=>({...x,variations:x.variations.map(vr=>vr.id===id?{...vr,[k]:v}:vr)}));
   const delVar=id=>setS(x=>({...x,variations:x.variations.filter(vr=>vr.id!==id)}));
 
   const labourCost=useMemo(()=>{let t=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.toUpperCase().includes(site.name.toUpperCase()))t+=b.gross;});});return t;},[workers,activeDays,siteHours,site.name]);
-  const scopeTotal=s.scopes.reduce((a,sc)=>a+(Number(sc.qty||0)*Number(sc.rate||0)),0);
+
+  // ── Financial calculations differ by contract type ────────────────────────
+  const isPriceWork=s.contractType==="pricework";
+  const pohPct=Number(s.pohPct)||0;
+  const retPct=Number(s.retentionPct)||0;
+
+  const scopeNet=s.scopes.reduce((a,sc)=>a+(Number(sc.qty||0)*Number(sc.rate||0)),0);
   const varTotal=s.variations.reduce((a,vr)=>a+(vr.type==="addition"?Number(vr.value||0):-Number(vr.value||0)),0);
-  const contractValue=scopeTotal+varTotal;
+
+  // Price work: gross = net + P&OH
+  const pohAmount=isPriceWork ? scopeNet*(pohPct/100) : 0;
+  const scopeGross=isPriceWork ? scopeNet+pohAmount : scopeNet;
+  const contractValue=scopeGross+varTotal;
+
+  // Retention
+  const retentionHeld=isPriceWork ? contractValue*(retPct/100) : 0;
+  const netCertified=contractValue-retentionHeld;
   const profit=contractValue-labourCost;
+  const margin=contractValue>0?(profit/contractValue*100):0;
+
+  const C2={net:"#60a5fa",gross:"#34d399",poh:"#a78bfa",ret:"#fbbf24",labour:"#f87171",profit:"#34d399"};
 
   return <Overlay onClose={onClose} wide>
     <MH title={<span style={{display:"flex",alignItems:"center",gap:10}}>
-      <span style={{width:14,height:14,borderRadius:"50%",background:s.color,display:"inline-block"}}/>{s.name} — Site Detail
+      <span style={{width:14,height:14,borderRadius:"50%",background:s.color,display:"inline-block"}}/>
+      {s.name} — Site Detail
+      <span style={{padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:isPriceWork?"#1a0d2e":"#0d2218",color:isPriceWork?"#a78bfa":"#34d399",border:`1px solid ${isPriceWork?"#a78bfa44":"#34d39944"}`}}>
+        {isPriceWork?"📐 Price Work":"🔧 Day Rate"}
+      </span>
     </span>} onClose={onClose}/>
 
-    {/* Summary cards */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
-      {[["Contract Value",`£${contractValue.toFixed(2)}`,"#60a5fa"],["Labour Cost",`£${labourCost.toFixed(2)}`,"#f87171"],["Variations",`${varTotal>=0?"+":""}£${varTotal.toFixed(2)}`,"#fbbf24"],["Profit / Loss",`£${profit.toFixed(2)}`,profit>=0?"#34d399":"#f87171"]].map(([l,v,c])=>(
+    {/* Summary cards — adapt to contract type */}
+    <div style={{display:"grid",gridTemplateColumns:isPriceWork?"repeat(5,1fr)":"repeat(4,1fr)",gap:10,marginBottom:18}}>
+      {isPriceWork?[
+        ["Net Value",`£${scopeNet.toFixed(2)}`,C2.net],
+        [`P&OH (${pohPct}%)`,`+£${pohAmount.toFixed(2)}`,C2.poh],
+        ["Gross Value",`£${scopeGross.toFixed(2)}`,C2.gross],
+        [`Retention (${retPct}%)`,`-£${retentionHeld.toFixed(2)}`,C2.ret],
+        ["Net Certified",`£${netCertified.toFixed(2)}`,"#34d399"],
+      ]:[
+        ["Contract Value",`£${contractValue.toFixed(2)}`,C2.gross],
+        ["Labour Cost",`£${labourCost.toFixed(2)}`,C2.labour],
+        ["Variations",`${varTotal>=0?"+":""}£${varTotal.toFixed(2)}`,"#fbbf24"],
+        ["Profit / Loss",`£${profit.toFixed(2)}`,profit>=0?"#34d399":"#f87171"],
+      ].map(([l,v,c])=>(
         <div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:10,padding:"11px 14px"}}>
           <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
           <div style={{fontSize:18,fontWeight:800,color:c,marginTop:3}}>{v}</div>
@@ -1076,60 +1119,194 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
       ))}
     </div>
 
-    <TabBar tabs={[["scopes","📋 Scopes of Work"],["variations","⚡ Variations"],["workers","👷 Workers"],["costs","💷 Cost Breakdown"]]} active={tab} onChange={setTab}/>
+    <TabBar tabs={[
+      ["contract","⚙ Contract"],
+      ["scopes","📋 Scopes"],
+      ["variations","⚡ Variations"],
+      ["workers","👷 Workers"],
+      ["costs","💷 Financials"],
+    ]} active={tab} onChange={setTab}/>
 
-    {tab==="scopes"&&<div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div style={{fontSize:13,color:"#94a3b8"}}>Agreed scope line items for this site</div>
-        <button onClick={addScope} style={{...BP,padding:"6px 14px",fontSize:12}}>+ Add Scope Item</button>
-      </div>
-      {s.scopes.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No scope items yet. Click "+ Add Scope Item" to start.</div>}
-      {s.scopes.map((sc,i)=>(
-        <div key={sc.id} style={{display:"grid",gridTemplateColumns:"3fr 80px 80px 90px 90px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
-          <div><label style={LBL}>Description</label><input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item description…" style={INP}/></div>
-          <div><label style={LBL}>Unit</label><input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="m², nr…" style={INP}/></div>
-          <div><label style={LBL}>Qty</label><input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
-          <div><label style={LBL}>Rate £</label><input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
-          <div><label style={LBL}>Total</label><div style={{...INP,background:"#1a1f2e",color:"#34d399",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>£{(Number(sc.qty||0)*Number(sc.rate||0)).toFixed(2)}</div></div>
-          <button onClick={()=>delScope(sc.id)} style={{padding:"6px 10px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
+    {/* ── CONTRACT TYPE TAB ── */}
+    {tab==="contract"&&<div>
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Contract Type</div>
+        <div style={{display:"flex",gap:10}}>
+          {[["dayrate","🔧 Day Rate","Labour charged per day · simple day works invoicing","#34d399"],
+            ["pricework","📐 Price Work","Fixed price per scope element · P&OH + retention applied","#a78bfa"]
+          ].map(([val,label,desc,col])=>(
+            <div key={val} onClick={()=>upS("contractType",val)}
+              style={{flex:1,padding:"14px 16px",background:s.contractType===val?"#0d1421":"#111827",border:`2px solid ${s.contractType===val?col:C2.net+"33"}`,borderRadius:10,cursor:"pointer"}}>
+              <div style={{fontSize:14,fontWeight:800,color:s.contractType===val?col:"#94a3b8",marginBottom:4}}>{label}</div>
+              <div style={{fontSize:11,color:"#64748b",lineHeight:1.5}}>{desc}</div>
+              {s.contractType===val&&<div style={{marginTop:8,fontSize:10,color:col,fontWeight:700}}>✓ Selected</div>}
+            </div>
+          ))}
         </div>
-      ))}
-      {s.scopes.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:10,padding:"10px 14px",background:"#0d2218",border:"1px solid #065f46",borderRadius:8}}>
-        <span style={{color:"#94a3b8",marginRight:14}}>Scope Total:</span>
-        <span style={{color:"#34d399",fontSize:17,fontWeight:800}}>£{scopeTotal.toFixed(2)}</span>
+      </div>
+
+      {/* Price Work fields */}
+      {isPriceWork&&<div style={{background:"#0f1421",borderRadius:10,padding:"16px 18px",border:"1px solid #a78bfa33",marginBottom:16}}>
+        <div style={{fontSize:11,color:"#a78bfa",fontWeight:700,textTransform:"uppercase",marginBottom:14}}>📐 Price Work Parameters</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 20px"}}>
+
+          {/* P&OH */}
+          <div style={{marginBottom:14}}>
+            <label style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:5}}>
+              P&OH — Profit & Overhead %
+            </label>
+            <div style={{position:"relative"}}>
+              <input type="number" min="0" max="100" step="0.5" value={s.pohPct||""} onChange={e=>upS("pohPct",+e.target.value||0)}
+                placeholder="e.g. 15"
+                style={{width:"100%",background:"#1a1f2e",border:"1px solid #a78bfa44",borderRadius:8,padding:"10px 32px 10px 12px",color:"#e2e8f0",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#a78bfa",fontWeight:700,fontSize:13}}>%</span>
+            </div>
+            {pohPct>0&&<div style={{marginTop:6,background:"#1a0d2e",borderRadius:6,padding:"6px 10px",fontSize:11,color:"#a78bfa"}}>
+              Net cost of <span style={{fontWeight:700}}>£{scopeNet.toFixed(2)}</span> + {pohPct}% P&OH = gross <span style={{fontWeight:700}}>£{scopeGross.toFixed(2)}</span>
+              <div style={{color:"#64748b",marginTop:2}}>P&OH value: £{pohAmount.toFixed(2)}</div>
+            </div>}
+          </div>
+
+          {/* Retention */}
+          <div style={{marginBottom:14}}>
+            <label style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:5}}>
+              Retention %
+            </label>
+            <div style={{position:"relative"}}>
+              <input type="number" min="0" max="20" step="0.5" value={s.retentionPct||""} onChange={e=>upS("retentionPct",+e.target.value||0)}
+                placeholder="e.g. 5"
+                style={{width:"100%",background:"#1a1f2e",border:"1px solid #fbbf2444",borderRadius:8,padding:"10px 32px 10px 12px",color:"#e2e8f0",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#fbbf24",fontWeight:700,fontSize:13}}>%</span>
+            </div>
+            {retPct>0&&<div style={{marginTop:6,background:"#1a1500",borderRadius:6,padding:"6px 10px",fontSize:11,color:"#fbbf24"}}>
+              {retPct}% retention held from each invoice until practical completion
+              <div style={{marginTop:2}}>Current retention held: <span style={{fontWeight:700}}>£{retentionHeld.toFixed(2)}</span></div>
+              <div style={{color:"#64748b"}}>Net certified after retention: <span style={{color:"#34d399",fontWeight:700}}>£{netCertified.toFixed(2)}</span></div>
+            </div>}
+          </div>
+        </div>
+
+        {/* Live calculation summary */}
+        {(pohPct>0||retPct>0)&&scopeNet>0&&<div style={{background:"#0a0e1a",borderRadius:8,padding:"12px 14px",border:"1px solid #2d3555"}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Live Calculation</div>
+          {[
+            ["Net Scope Value",`£${scopeNet.toFixed(2)}`,"#60a5fa"],
+            [`+ P&OH (${pohPct}%)`,`£${pohAmount.toFixed(2)}`,"#a78bfa"],
+            ["= Gross Contract Value",`£${scopeGross.toFixed(2)}`,"#34d399"],
+            [`− Retention (${retPct}%)`,`£${retentionHeld.toFixed(2)}`,"#fbbf24"],
+            ["= Net Certified",`£${netCertified.toFixed(2)}`,"#34d399"],
+          ].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #1e2535"}}>
+              <span style={{fontSize:12,color:"#94a3b8"}}>{l}</span>
+              <span style={{fontSize:13,fontWeight:700,color:c}}>{v}</span>
+            </div>
+          ))}
+        </div>}
+      </div>}
+
+      {/* Day Rate info */}
+      {!isPriceWork&&<div style={{background:"#0f1421",borderRadius:10,padding:"14px 18px",border:"1px solid #34d39933"}}>
+        <div style={{fontSize:11,color:"#34d399",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>🔧 Day Rate — How it works</div>
+        <div style={{fontSize:12,color:"#64748b",lineHeight:1.7}}>
+          Labour is charged per day at the agreed day rates set on each client profile.
+          Invoices are created as day works line items. No P&OH or retention calculations applied.
+          Use the <strong style={{color:"#60a5fa"}}>Scopes</strong> tab to record what work is included in the agreed rates.
+        </div>
       </div>}
     </div>}
 
+    {/* ── SCOPES TAB ── */}
+    {tab==="scopes"&&<div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div>
+          <div style={{fontSize:13,color:"#94a3b8"}}>
+            {isPriceWork?"Agreed scope items — net rates, P&OH applied automatically":"Agreed scope line items for this site"}
+          </div>
+          {isPriceWork&&pohPct>0&&<div style={{fontSize:11,color:"#a78bfa",marginTop:3}}>P&OH {pohPct}% · Gross multiplier ×{(1+pohPct/100).toFixed(3)}</div>}
+        </div>
+        <button onClick={addScope} style={{...BP,padding:"6px 14px",fontSize:12}}>+ Add Scope Item</button>
+      </div>
+      {s.scopes.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No scope items yet.</div>}
+      {/* Header */}
+      {s.scopes.length>0&&<div style={{display:"grid",gridTemplateColumns:isPriceWork?"3fr 70px 80px 90px 90px 90px 40px":"3fr 70px 80px 90px 90px 40px",gap:8,padding:"4px 12px",marginBottom:4}}>
+        {["Description","Unit","Qty","Net Rate £",isPriceWork?"Gross Rate £":"Total £",isPriceWork?"Gross Total":"",""].map((h,i)=>
+          <div key={i} style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{h}</div>
+        )}
+      </div>}
+      {s.scopes.map((sc,i)=>{
+        const netTotal=Number(sc.qty||0)*Number(sc.rate||0);
+        const grossRate=isPriceWork?Number(sc.rate||0)*(1+pohPct/100):Number(sc.rate||0);
+        const grossTotal=isPriceWork?netTotal*(1+pohPct/100):netTotal;
+        return <div key={sc.id} style={{display:"grid",gridTemplateColumns:isPriceWork?"3fr 70px 80px 90px 90px 90px 40px":"3fr 70px 80px 90px 90px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
+          <div><input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item description…" style={INP}/></div>
+          <div><input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="m², nr…" style={INP}/></div>
+          <div><input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
+          <div>
+            <input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right"}}/>
+            {isPriceWork&&<div style={{fontSize:9,color:"#64748b",marginTop:2,textAlign:"right"}}>net</div>}
+          </div>
+          {isPriceWork&&<div>
+            <div style={{...INP,background:"#1a0d2e",color:"#a78bfa",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>£{grossRate.toFixed(2)}</div>
+            <div style={{fontSize:9,color:"#a78bfa",marginTop:2,textAlign:"right"}}>+{pohPct}% P&OH</div>
+          </div>}
+          <div><div style={{...INP,background:"#1a1f2e",color:isPriceWork?"#a78bfa":"#34d399",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>£{(isPriceWork?grossTotal:netTotal).toFixed(2)}</div></div>
+          <button onClick={()=>delScope(sc.id)} style={{padding:"6px 10px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
+        </div>;
+      })}
+      {s.scopes.length>0&&<div style={{marginTop:10,padding:"12px 14px",background:"#0d1421",borderRadius:8,border:"1px solid #1e2535"}}>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1e2535"}}>
+          <span style={{color:"#94a3b8",fontSize:12}}>Net Scope Total</span>
+          <span style={{color:"#60a5fa",fontWeight:700}}>£{scopeNet.toFixed(2)}</span>
+        </div>
+        {isPriceWork&&<><div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1e2535"}}>
+          <span style={{color:"#94a3b8",fontSize:12}}>P&OH ({pohPct}%)</span>
+          <span style={{color:"#a78bfa",fontWeight:700}}>+£{pohAmount.toFixed(2)}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}>
+          <span style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>Gross Scope Total</span>
+          <span style={{color:"#34d399",fontWeight:800,fontSize:16}}>£{scopeGross.toFixed(2)}</span>
+        </div></>}
+        {!isPriceWork&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}>
+          <span style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>Scope Total</span>
+          <span style={{color:"#34d399",fontWeight:800,fontSize:16}}>£{scopeNet.toFixed(2)}</span>
+        </div>}
+      </div>}
+    </div>}
+
+    {/* ── VARIATIONS TAB ── */}
     {tab==="variations"&&<div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div style={{fontSize:13,color:"#94a3b8"}}>Variations and change orders</div>
+        <div style={{fontSize:13,color:"#94a3b8"}}>Variations and change orders{isPriceWork?" — P&OH applied to additions":""}</div>
         <button onClick={addVar} style={{...BP,padding:"6px 14px",fontSize:12}}>+ Add Variation</button>
       </div>
       {s.variations.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No variations yet.</div>}
-      {s.variations.map((vr,i)=>(
-        <div key={vr.id} style={{display:"grid",gridTemplateColumns:"3fr 110px 110px 110px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
+      {s.variations.map((vr,i)=>{
+        const grossVal=isPriceWork&&vr.type==="addition"?Number(vr.value||0)*(1+pohPct/100):Number(vr.value||0);
+        return <div key={vr.id} style={{display:"grid",gridTemplateColumns:isPriceWork?"3fr 110px 110px 110px 110px 40px":"3fr 110px 110px 110px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
           <div><label style={LBL}>Description</label><input value={vr.description} onChange={e=>updVar(vr.id,"description",e.target.value)} placeholder="Variation description…" style={INP}/></div>
           <div><label style={LBL}>Type</label>
             <select value={vr.type} onChange={e=>updVar(vr.id,"type",e.target.value)} style={{...INP,cursor:"pointer"}}>
-              <option value="addition">Addition (+)</option>
-              <option value="omission">Omission (−)</option>
-            </select>
-          </div>
-          <div><label style={LBL}>Value £</label><input type="number" value={vr.value} onChange={e=>updVar(vr.id,"value",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
+              <option value="addition">Addition (+)</option><option value="omission">Omission (−)</option>
+            </select></div>
+          <div><label style={LBL}>Net Value £</label><input type="number" value={vr.value} onChange={e=>updVar(vr.id,"value",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
+          {isPriceWork&&<div><label style={LBL}>Gross (w/ P&OH)</label>
+            <div style={{...INP,background:"#1a0d2e",color:"#a78bfa",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>
+              {vr.type==="addition"?`£${grossVal.toFixed(2)}`:`-£${Number(vr.value||0).toFixed(2)}`}
+            </div></div>}
           <div><label style={LBL}>Approved</label>
             <select value={vr.approved?"yes":"no"} onChange={e=>updVar(vr.id,"approved",e.target.value==="yes")} style={{...INP,cursor:"pointer",color:vr.approved?"#34d399":"#fbbf24"}}>
               <option value="no">⏳ Pending</option><option value="yes">✓ Approved</option>
-            </select>
-          </div>
+            </select></div>
           <button onClick={()=>delVar(vr.id)} style={{padding:"6px 10px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
-        </div>
-      ))}
+        </div>;
+      })}
       {s.variations.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:10,padding:"10px 14px",background:"#0d2218",border:"1px solid #065f46",borderRadius:8}}>
         <span style={{color:"#94a3b8",marginRight:14}}>Variations Net:</span>
         <span style={{color:varTotal>=0?"#34d399":"#f87171",fontSize:17,fontWeight:800}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span>
       </div>}
     </div>}
 
+    {/* ── WORKERS TAB ── */}
     {tab==="workers"&&<div style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
         <thead><tr><th style={TH}>Worker</th><th style={TH}>Position</th>{activeDays.map(d=><th key={d} style={TH}>{d}</th>)}<th style={TH}>Hrs</th><th style={TH}>Cost</th></tr></thead>
@@ -1152,21 +1329,28 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
       {workers.filter(w=>activeDays.some(d=>(w.days[d]||"").includes(site.name))).length===0&&<div style={{textAlign:"center",padding:28,color:"#374151"}}>No workers allocated to this site this week.</div>}
     </div>}
 
+    {/* ── FINANCIALS TAB ── */}
     {tab==="costs"&&<div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        {/* Income side */}
         <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
           <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Income</div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Agreed Scope</span><span style={{fontWeight:700,color:"#60a5fa"}}>£{scopeTotal.toFixed(2)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Variations</span><span style={{fontWeight:700,color:varTotal>=0?"#34d399":"#f87171"}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4}}><span style={{color:"#e2e8f0",fontWeight:700}}>Total Contract Value</span><span style={{fontWeight:800,color:"#34d399",fontSize:16}}>£{contractValue.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Scope Net</span><span style={{fontWeight:700,color:"#60a5fa"}}>£{scopeNet.toFixed(2)}</span></div>
+          {isPriceWork&&<div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>P&OH ({pohPct}%)</span><span style={{fontWeight:700,color:"#a78bfa"}}>+£{pohAmount.toFixed(2)}</span></div>}
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Variations</span><span style={{fontWeight:700,color:varTotal>=0?"#34d399":"#f87171"}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:isPriceWork?"1px solid #1e2535":"none"}}><span style={{color:"#e2e8f0",fontWeight:700,fontSize:12}}>Contract Value</span><span style={{fontWeight:800,color:"#34d399",fontSize:15}}>£{contractValue.toFixed(2)}</span></div>
+          {isPriceWork&&<><div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Retention ({retPct}%)</span><span style={{fontWeight:700,color:"#fbbf24"}}>-£{retentionHeld.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0"}}><span style={{color:"#e2e8f0",fontWeight:700,fontSize:12}}>Net Certified</span><span style={{fontWeight:800,color:"#34d399",fontSize:15}}>£{netCertified.toFixed(2)}</span></div></>}
         </div>
+        {/* Cost side */}
         <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
-          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Internal Costs</div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8"}}>Labour (this week)</span><span style={{fontWeight:700,color:"#f87171"}}>£{labourCost.toFixed(2)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4}}>
-            <span style={{color:"#e2e8f0",fontWeight:700}}>{profit>=0?"Profit":"Loss"}</span>
-            <span style={{fontWeight:800,color:profit>=0?"#34d399":"#f87171",fontSize:16}}>£{Math.abs(profit).toFixed(2)}</span>
-          </div>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Costs & Margin</div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Labour (this week)</span><span style={{fontWeight:700,color:"#f87171"}}>£{labourCost.toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:profit>=0?"#e2e8f0":"#e2e8f0",fontWeight:700,fontSize:12}}>{profit>=0?"Profit":"Loss"}</span><span style={{fontWeight:800,color:profit>=0?"#34d399":"#f87171",fontSize:15}}>£{Math.abs(profit).toFixed(2)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0"}}><span style={{color:"#94a3b8",fontSize:12}}>Margin %</span><span style={{fontWeight:700,color:margin>=10?"#34d399":margin>=0?"#fbbf24":"#f87171"}}>{margin.toFixed(1)}%</span></div>
+          {isPriceWork&&retentionHeld>0&&<div style={{marginTop:10,padding:"8px 10px",background:"#1a1500",borderRadius:7,border:"1px solid #fbbf2444",fontSize:11,color:"#fbbf24"}}>
+            🔒 £{retentionHeld.toFixed(2)} retention held — released at practical completion
+          </div>}
         </div>
       </div>
     </div>}
