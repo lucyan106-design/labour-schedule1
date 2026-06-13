@@ -257,31 +257,23 @@ function exportWorkerProfile(w,allSites,weekLabel){
 <div class="grid">
   <div class="card">
     <div class="card-title">Contact Details</div>
-    ${w.contact?`<div class="field"><span class="field-label">Phone</span><span class="field-value">${w.contact}</span></div>`:""}
-    ${w.email?`<div class="field"><span class="field-label">Email</span><span class="field-value">${w.email}</span></div>`:""}
-    ${w.dob?`<div class="field"><span class="field-label">Date of Birth</span><span class="field-value">${fmtDate(w.dob)}</span></div>`:""}
-    ${w.address?`<div class="field"><span class="field-label">Address</span><span class="field-value">${w.address}</span></div>`:""}
-    ${w.nextOfKin?`<div class="field"><span class="field-label">Next of Kin</span><span class="field-value">${w.nextOfKin}${w.nextOfKinPhone?` · ${w.nextOfKinPhone}`:""}</span></div>`:""}
+    ${w.contact?"<div class=\"field\"><span class=\"field-label\">Phone</span><span class=\"field-value\">"+w.contact+"</span></div>":""}
+    ${w.email?"<div class=\"field\"><span class=\"field-label\">Email</span><span class=\"field-value\">"+w.email+"</span></div>":""}
+    ${w.dob?"<div class=\"field\"><span class=\"field-label\">Date of Birth</span><span class=\"field-value\">"+fmtDate(w.dob)+"</span></div>":""}
+    ${w.nationality?"<div class=\"field\"><span class=\"field-label\">Nationality</span><span class=\"field-value\">"+w.nationality+"</span></div>":""}
+    ${w.address?"<div class=\"field\"><span class=\"field-label\">Address</span><span class=\"field-value\">"+w.address+"</span></div>":""}
+    ${w.nextOfKin?"<div class=\"field\"><span class=\"field-label\">Next of Kin</span><span class=\"field-value\">"+(w.nextOfKin+(w.nextOfKinPhone?" · "+w.nextOfKinPhone:""))+"</span></div>":""}
   </div>
   <div class="card">
-    <div class="card-title">Role & Scope</div>
+    <div class="card-title">Role & Qualifications</div>
     <div class="field"><span class="field-label">Position</span><span class="field-value">${w.position||"—"}</span></div>
     <div class="field"><span class="field-label">Company</span><span class="field-value">${w.company||"—"}</span></div>
-    ${w.scope?`<div class="field"><span class="field-label">Scope</span><span class="field-value"><span class="scope-badge">${w.scope}</span></span></div>`:""}
+    ${w.scope?"<div class=\"field\"><span class=\"field-label\">Scope</span><span class=\"field-value\"><span class=\"scope-badge\">"+w.scope+"</span></span></div>":""}
+    ${w.shareCode?"<div class=\"field\"><span class=\"field-label\">Right to Work</span><span class=\"field-value\" style=\"color:#34d399;font-weight:700\">Share code verified</span></div>":""}
   </div>
 </div>
 
-<div class="card" style="margin-bottom:20px">
-  <div class="card-title">Weekly Site Allocation — WC ${weekLabel}</div>
-  <table class="week-table">
-    <thead><tr><th>Day</th><th>Site Allocated</th></tr></thead>
-    <tbody>
-      ${ALL_DAYS.map(d=>{const site=w.days[d];const col=site?getSiteColor(site,allSites):"#374151";
-        return `<tr><td style="font-weight:700;color:#94a3b8">${d}</td><td>${site?`<span class="site-badge" style="background:${col}22;color:${col};border:1px solid ${col}44">${site}</span>`:`<span style="color:#374151;font-style:italic">—</span>`}</td></tr>`;
-      }).join("")}
-    </tbody>
-  </table>
-</div>
+<!-- site allocation removed from worker profile PDF -->
 
 ${heldCerts.length>0?`
 <div style="margin-bottom:20px">
@@ -2496,6 +2488,7 @@ const DASH_NAV=[
   {id:"finance",        icon:"📊", label:"Finance",           group:"analysis"},
   {id:"stats",          icon:"🔢", label:"Stats",             group:"analysis"},
   {id:"bank",           icon:"🏦", label:"Bank Import",       group:"analysis"},
+  {id:"expenses",       icon:"💸", label:"Expenses",           group:"analysis"},
 ];
 
 function DStat({label,value,color,sub}){
@@ -2544,9 +2537,10 @@ function DStatusBadge({status}){
 }
 
 // ── Dashboard Sidebar ─────────────────────────────────────────────────────────
-function DashSidebar({page,setPage,workers,allSites,clients,invoices,setModal,activeDays,siteHours,weekLabel}){
+function DashSidebar({page,setPage,workers,allSites,clients,invoices,bankTransactions,setModal,activeDays,siteHours,weekLabel}){
   const expiring=workers.flatMap(w=>Object.values(w.certs||{}).filter(c=>{if(!c.held||!c.expiry)return false;const d=(new Date(c.expiry)-new Date())/86400000;return d>=0&&d<30;})).length;
-  const badges={certs:expiring,invoices:invoices.filter(i=>i.status==="pending").length};
+  const expenseCount=(bankTransactions||[]).filter(t=>t.type==="expense").length;
+  const badges={certs:expiring,invoices:invoices.filter(i=>i.status==="pending").length,expenses:expenseCount};
   const isActive=(id)=>page===id||page.startsWith(id+"_");
 
   return <div style={DS.sidebar}>
@@ -3152,7 +3146,7 @@ function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetail
 }
 
 // ── Dashboard Site Detail ─────────────────────────────────────────────────────
-function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoices,setPage,setDetailId,setModal}){
+function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoices,payApplications,setPage,setDetailId,setModal}){
   const site=allSites.find(s=>s.id===siteId);
   if(!site) return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Site not found.</div></div>;
   const client=clients.find(c=>c.id===site.clientId);
@@ -3407,6 +3401,40 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Invoices */}
       {tab==="invoices"&&<div>
+        {/* Latest Payment Application banner */}
+        {(()=>{
+          const sitePAs=(payApplications||[]).filter(p=>p.siteId===site.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+          const latestPA=sitePAs[0];
+          if(!latestPA) return null;
+          const totalClaimed=latestPA.items.reduce((a,it)=>a+(it.useQty?(it.claimedQtyToDate||0)*it.contractRate:((it.claimedPctToDate||0)/100)*(it.contractQty*it.contractRate)),0);
+          const totalContract=latestPA.items.reduce((a,it)=>a+it.contractQty*it.contractRate,0);
+          const pct=totalContract>0?Math.round(totalClaimed/totalContract*100):0;
+          const statusColor={draft:"#64748b",submitted:"#60a5fa",certified:"#34d399",paid:"#a78bfa"}[latestPA.status]||"#64748b";
+          return <div style={{background:"linear-gradient(145deg,#0c1a2e,#111827)",border:"1px solid #1e3a5f",borderRadius:11,padding:14,marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:9}}>
+                <span style={{fontSize:13}}>📐</span>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#f1f5f9"}}>Latest Payment Application: <span style={{color:"#a78bfa"}}>{latestPA.number}</span></div>
+                  <div style={{fontSize:10,color:"#64748b"}}>{latestPA.date} · {latestPA.items.length} items</div>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{padding:"2px 9px",borderRadius:5,fontSize:10,fontWeight:700,color:statusColor,background:statusColor+"18",border:"1px solid "+statusColor+"44",textTransform:"capitalize"}}>{latestPA.status}</span>
+                <button onClick={()=>setPage("payapps")} style={{padding:"4px 11px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:10,fontWeight:700}}>View All →</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9}}>
+              {[["Contract",totalContract,"#60a5fa"],["Claimed to Date",totalClaimed,"#34d399"],["This Period",totalClaimed-latestPA.items.reduce((a,it)=>a+(it.previousQty||0)*it.contractRate,0),"#fbbf24"],["% Complete",pct+"%","#a78bfa"]].map(([l,v,c])=>(
+                <div key={l} style={{background:"#0d1117",borderRadius:7,padding:"7px 10px",border:"1px solid "+c+"22"}}>
+                  <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",fontWeight:700}}>{l}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:c,marginTop:3}}>{typeof v==="number"?"£"+Math.round(v).toLocaleString():v}</div>
+                </div>
+              ))}
+            </div>
+            {sitePAs.length>1&&<div style={{marginTop:8,fontSize:10,color:"#64748b"}}>{sitePAs.length} total applications for this site</div>}
+          </div>;
+        })()}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
           <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{siteInvs.length} Invoice{siteInvs.length!==1?"s":""}</div>
           <button onClick={()=>{
@@ -4367,6 +4395,146 @@ function DBankFull({allSites,clients,bankTransactions,setBankTransactions,setMod
   </div>;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPENSES — categorised transactions list + site cost summary
+// ═══════════════════════════════════════════════════════════════════════════
+const EXPENSE_CATS_LIST=["Materials","Plant Hire","Subcontractor","Labour (External)","Transport","Insurance","Tools & Equipment","Professional Fees","Utilities","Office","Other Expense"];
+const INCOME_CATS_LIST=["Client Payment","Contract Payment","Variation Payment","Retention Release","Other Income"];
+
+function DExpenses({bankTransactions,allSites,clients,workers,activeDays,siteHours,setPage}){
+  const [typeF,setTypeF]=useState("all");
+  const [catF,setCatF]=useState("");
+  const [siteF,setSiteF]=useState("");
+  const [srch,setSrch]=useState("");
+  const txns=bankTransactions||[];
+  const shown=txns.filter(t=>{
+    if(typeF!=="all"&&t.type!==typeF) return false;
+    if(catF&&t.category!==catF) return false;
+    if(siteF&&t.siteId!==siteF) return false;
+    if(srch&&!(t.description||"").toLowerCase().includes(srch.toLowerCase())&&!(t.category||"").toLowerCase().includes(srch.toLowerCase())) return false;
+    return true;
+  });
+  const totInc=txns.filter(t=>t.type==="income").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const totExp=txns.filter(t=>t.type==="expense").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const totShown=shown.reduce((a,t)=>a+(t.type==="income"?1:-1)*Math.abs(t.amount),0);
+  // Category breakdown
+  const byCat={};txns.filter(t=>t.type==="expense").forEach(t=>{const c=t.category||"Uncategorised";byCat[c]=(byCat[c]||0)+Math.abs(t.amount);});
+  const catRows=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const maxC=catRows[0]?.[1]||1;
+  // Site expense totals (bank + labour)
+  const bankBySite={};txns.filter(t=>t.type==="expense"&&t.siteId).forEach(t=>{bankBySite[t.siteId]=(bankBySite[t.siteId]||0)+Math.abs(t.amount);});
+  const labourBySite={};workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{labourBySite[b.site]=(labourBySite[b.site]||0)+b.gross;});});
+  const actSites=allSites.filter(s=>!isOff(s.name));
+
+  return <div>
+    <DPageHdr title="💸 Expenses & Costs" sub={txns.length+" transactions · £"+Math.round(totExp).toLocaleString()+" expenses"}
+      actions={<button onClick={()=>setPage("bank")} style={{padding:"6px 14px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700}}>🏦 Import Bank Statement</button>}/>
+    <div style={DS.body}>
+      {txns.length===0?<div style={{textAlign:"center",padding:60,border:"1px dashed #1e2535",borderRadius:12}}>
+        <div style={{fontSize:40,marginBottom:12}}>💸</div>
+        <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",marginBottom:6}}>No transactions yet</div>
+        <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>Import your bank statement to categorise income and expenses.</div>
+        <button onClick={()=>setPage("bank")} style={{padding:"9px 22px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>🏦 Import Bank Statement</button>
+      </div>:<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:22}}>
+        <DStat label="Total Income" value={"£"+Math.round(totInc).toLocaleString()} color="#34d399" sub={txns.filter(t=>t.type==="income").length+" txns"}/>
+        <DStat label="Total Expenses" value={"£"+Math.round(totExp).toLocaleString()} color="#f87171" sub={txns.filter(t=>t.type==="expense").length+" txns"}/>
+        <DStat label="Net Position" value={"£"+Math.round(totInc-totExp).toLocaleString()} color={(totInc-totExp)>=0?"#34d399":"#f87171"} sub="Income minus expenses"/>
+        <DStat label="Filtered Total" value={"£"+Math.abs(Math.round(totShown)).toLocaleString()} color="#fbbf24" sub={shown.length+" records"}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:22}}>
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+          <div style={{fontSize:11,color:"#f87171",fontWeight:700,textTransform:"uppercase",marginBottom:14}}>Expenses by Category</div>
+          {catRows.length===0?<div style={{color:"#374151",fontSize:12}}>No categorised expenses yet.</div>:
+          catRows.map(([cat,amt])=>(
+            <div key={cat} style={{marginBottom:9}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                <span style={{fontSize:11,color:"#94a3b8"}}>{cat}</span>
+                <span style={{fontSize:11,color:"#f87171",fontWeight:700}}>£{Math.round(amt).toLocaleString()}</span>
+              </div>
+              <div style={{height:6,background:"#1e2535",borderRadius:3,overflow:"hidden"}}>
+                <div style={{height:"100%",borderRadius:3,background:"linear-gradient(90deg,#dc2626,#f87171)",width:(amt/maxC*100)+"%"}}/>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+          <div style={{fontSize:11,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:14}}>Total Cost per Site (Bank + Labour)</div>
+          {actSites.map(site=>{
+            const bk=bankBySite[site.id]||0;
+            const lb=labourBySite[site.name]||0;
+            if(bk+lb===0) return null;
+            return <div key={site.id} style={{marginBottom:10,padding:"9px 11px",background:"#0f1421",borderRadius:8,border:"1px solid "+site.color+"33"}}>
+              <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:site.color,flexShrink:0}}/>
+                <span style={{fontSize:12,fontWeight:700,color:site.color,flex:1}}>{site.name}</span>
+                <span style={{fontSize:14,fontWeight:800,color:"#f87171"}}>£{Math.round(bk+lb).toLocaleString()}</span>
+              </div>
+              <div style={{display:"flex",gap:14,fontSize:10,color:"#64748b"}}>
+                {lb>0&&<span>Labour: <span style={{color:"#f87171",fontWeight:600}}>£{Math.round(lb).toLocaleString()}</span></span>}
+                {bk>0&&<span>Other: <span style={{color:"#fbbf24",fontWeight:600}}>£{Math.round(bk).toLocaleString()}</span></span>}
+              </div>
+            </div>;
+          })}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:9,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+        {[["all","All"],["income","Income"],["expense","Expense"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setTypeF(v)} style={{padding:"5px 12px",background:typeF===v?"#1e3a5f":"#1a1f2e",border:"1px solid "+(typeF===v?"#3b82f6":"#2d3555"),borderRadius:7,color:typeF===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:typeF===v?700:400}}>{l}</button>
+        ))}
+        <select value={catF} onChange={e=>setCatF(e.target.value)} style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:catF?"#e2e8f0":"#64748b",fontSize:11,outline:"none",cursor:"pointer"}}>
+          <option value="">All Categories</option>
+          <optgroup label="Income">{INCOME_CATS_LIST.map(c=><option key={c} value={c}>{c}</option>)}</optgroup>
+          <optgroup label="Expenses">{EXPENSE_CATS_LIST.map(c=><option key={c} value={c}>{c}</option>)}</optgroup>
+        </select>
+        <select value={siteF} onChange={e=>setSiteF(e.target.value)} style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:siteF?"#e2e8f0":"#64748b",fontSize:11,outline:"none",cursor:"pointer"}}>
+          <option value="">All Sites</option>
+          {actSites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <input value={srch} onChange={e=>setSrch(e.target.value)} placeholder="🔍 Search…" style={{background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:"#e2e8f0",fontSize:11,outline:"none",width:160}}/>
+        {(typeF!=="all"||catF||siteF||srch)&&<button onClick={()=>{setTypeF("all");setCatF("");setSiteF("");setSrch("");}} style={{padding:"5px 9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:7,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>}
+      </div>
+      <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr>
+            <th style={{...DS.th,minWidth:80}}>Date</th>
+            <th style={{...DS.th,minWidth:200}}>Description</th>
+            <th style={{...DS.th,minWidth:90}}>Amount</th>
+            <th style={{...DS.th,minWidth:80}}>Type</th>
+            <th style={{...DS.th,minWidth:140}}>Category</th>
+            <th style={{...DS.th,minWidth:110}}>Site</th>
+            <th style={{...DS.th,minWidth:100}}>Client</th>
+          </tr></thead>
+          <tbody>
+            {shown.length===0&&<tr><td colSpan={7} style={{...DS.td,textAlign:"center",color:"#374151",padding:28}}>No records match filters.</td></tr>}
+            {shown.map((t,i)=>{
+              const site=allSites.find(s=>s.id===t.siteId);
+              const client=clients.find(c=>c.id===t.clientId);
+              const inc=t.type==="income";
+              return <tr key={t.id||i} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                <td style={{...DS.td,color:"#94a3b8",fontSize:11,whiteSpace:"nowrap"}}>{t.date}</td>
+                <td style={{...DS.td,maxWidth:200}}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12,color:"#e2e8f0"}} title={t.description}>{t.description||"—"}</div>{t.notes&&<div style={{fontSize:9,color:"#64748b"}}>{t.notes}</div>}</td>
+                <td style={{...DS.td,fontWeight:700,color:inc?"#34d399":"#f87171",whiteSpace:"nowrap"}}>{inc?"+":"-"}£{Math.abs(t.amount).toFixed(2)}</td>
+                <td style={DS.td}><span style={{padding:"2px 8px",borderRadius:4,fontSize:10,fontWeight:700,color:inc?"#34d399":"#f87171",background:inc?"#0d2218":"#2d1515"}}>{inc?"Income":"Expense"}</span></td>
+                <td style={{...DS.td,fontSize:11,color:"#fbbf24"}}>{t.category||<span style={{color:"#374151"}}>—</span>}</td>
+                <td style={DS.td}>{site?<span style={{padding:"1px 7px",borderRadius:4,fontSize:10,fontWeight:600,color:"#fff",background:site.color}}>{site.name.split("-")[0].trim()}</span>:<span style={{color:"#374151",fontSize:11}}>—</span>}</td>
+                <td style={{...DS.td,fontSize:11,color:client?.color||"#64748b"}}>{client?.name||"—"}</td>
+              </tr>;
+            })}
+          </tbody>
+          {shown.length>0&&<tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
+            <td colSpan={2} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>{shown.length} RECORDS</td>
+            <td style={{...DS.td,fontWeight:800,color:totShown>=0?"#34d399":"#f87171"}}>{totShown>=0?"+":"-"}£{Math.abs(Math.round(totShown)).toLocaleString()}</td>
+            <td colSpan={4} style={DS.td}/>
+          </tr></tfoot>}
+        </table>
+      </div>
+    </>}
+    </div>
+  </div>;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PAYMENT APPLICATIONS — per site, scopes+variations+dayworks+prelims
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4967,7 +5135,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "weekly_record_detail": return <DWeeklyRecordDetail weeklyRecords={weeklyRecords} recordId={dashDetailId} setPage={setDashPage} allSites={allSites}/>;
       // ── Projects & Finance
       case "sites":         return <DSites {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
-      case "site_detail":   return <DSiteDetail {...SP} siteId={dashDetailId} setPage={setDashPage} setDetailId={setDashDetailId} invoices={invoices}/>;
+      case "site_detail":   return <DSiteDetail {...SP} siteId={dashDetailId} setPage={setDashPage} setDetailId={setDashDetailId} invoices={invoices} payApplications={payApplications}/>;
       case "clients":       return <DClients {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
       case "client_detail": return <DComingSoon icon="👔" title="Client Detail" sub="Select a client from the Clients list"/>;
       case "invoices":      return <DInvoices {...SP}/>;
@@ -4979,6 +5147,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "finance":       return <DFinance {...SP}/>;
       case "stats":         return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
       case "bank":          return <DBankFull {...SP}/>;
+      case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
       default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
     }
   };
@@ -5240,7 +5409,7 @@ export default function App(){
           page={dashPage}
           setPage={p=>{setDashPage(p);setDashDetailId(null);}}
           workers={workers} allSites={allSites} clients={clients}
-          invoices={invoices} setModal={setModal}
+          invoices={invoices} bankTransactions={bankTransactions} setModal={setModal}
           activeDays={activeDays} siteHours={siteHours} weekLabel={weekLabel}/>
 
         {/* Main content — DashboardView renders ONLY page content, never a sidebar */}
