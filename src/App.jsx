@@ -1220,57 +1220,101 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <div>
           <div style={{fontSize:13,color:"#94a3b8"}}>
-            {isPriceWork?"Agreed scope items — net rates, P&OH applied automatically":"Agreed scope line items for this site"}
+            {isPriceWork?"Agreed scope items — P&OH and retention calculated per line":"Agreed scope line items for this site"}
           </div>
-          {isPriceWork&&pohPct>0&&<div style={{fontSize:11,color:"#a78bfa",marginTop:3}}>P&OH {pohPct}% · Gross multiplier ×{(1+pohPct/100).toFixed(3)}</div>}
+          {isPriceWork&&(pohPct>0||retPct>0)&&<div style={{fontSize:11,color:"#64748b",marginTop:3,display:"flex",gap:10}}>
+            {pohPct>0&&<span style={{color:"#a78bfa"}}>P&OH: {pohPct}%</span>}
+            {retPct>0&&<span style={{color:"#fbbf24"}}>Retention: {retPct}%</span>}
+          </div>}
         </div>
         <button onClick={addScope} style={{...BP,padding:"6px 14px",fontSize:12}}>+ Add Scope Item</button>
       </div>
+
       {s.scopes.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No scope items yet.</div>}
-      {/* Header */}
-      {s.scopes.length>0&&<div style={{display:"grid",gridTemplateColumns:isPriceWork?"3fr 70px 80px 90px 90px 90px 40px":"3fr 70px 80px 90px 90px 40px",gap:8,padding:"4px 12px",marginBottom:4}}>
-        {["Description","Unit","Qty","Net Rate £",isPriceWork?"Gross Rate £":"Total £",isPriceWork?"Gross Total":"",""].map((h,i)=>
-          <div key={i} style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{h}</div>
-        )}
-      </div>}
-      {s.scopes.map((sc,i)=>{
-        const netTotal=Number(sc.qty||0)*Number(sc.rate||0);
-        const grossRate=isPriceWork?Number(sc.rate||0)*(1+pohPct/100):Number(sc.rate||0);
-        const grossTotal=isPriceWork?netTotal*(1+pohPct/100):netTotal;
-        return <div key={sc.id} style={{display:"grid",gridTemplateColumns:isPriceWork?"3fr 70px 80px 90px 90px 90px 40px":"3fr 70px 80px 90px 90px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
-          <div><input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item description…" style={INP}/></div>
-          <div><input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="m², nr…" style={INP}/></div>
-          <div><input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
-          <div>
-            <input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right"}}/>
-            {isPriceWork&&<div style={{fontSize:9,color:"#64748b",marginTop:2,textAlign:"right"}}>net</div>}
+
+      {s.scopes.length>0&&<>
+        {/* Column headers */}
+        {isPriceWork
+          ?<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 80px 80px 80px 36px",gap:6,padding:"4px 10px",marginBottom:4}}>
+            {["Description","Unit","Qty","Net Rate","Net Total","P&OH Amt","Gross Total","Retention",""].map((h,i)=>
+              <div key={i} style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",textAlign:i>1?"right":"left"}}>{h}</div>
+            )}
           </div>
-          {isPriceWork&&<div>
-            <div style={{...INP,background:"#1a0d2e",color:"#a78bfa",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>£{grossRate.toFixed(2)}</div>
-            <div style={{fontSize:9,color:"#a78bfa",marginTop:2,textAlign:"right"}}>+{pohPct}% P&OH</div>
+          :<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 36px",gap:6,padding:"4px 10px",marginBottom:4}}>
+            {["Description","Unit","Qty","Rate £","Total £",""].map((h,i)=>
+              <div key={i} style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",textAlign:i>1?"right":"left"}}>{h}</div>
+            )}
           </div>}
-          <div><div style={{...INP,background:"#1a1f2e",color:isPriceWork?"#a78bfa":"#34d399",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>£{(isPriceWork?grossTotal:netTotal).toFixed(2)}</div></div>
-          <button onClick={()=>delScope(sc.id)} style={{padding:"6px 10px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
-        </div>;
-      })}
-      {s.scopes.length>0&&<div style={{marginTop:10,padding:"12px 14px",background:"#0d1421",borderRadius:8,border:"1px solid #1e2535"}}>
-        <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1e2535"}}>
-          <span style={{color:"#94a3b8",fontSize:12}}>Net Scope Total</span>
-          <span style={{color:"#60a5fa",fontWeight:700}}>£{scopeNet.toFixed(2)}</span>
+
+        {/* Scope rows */}
+        {s.scopes.map((sc,i)=>{
+          const netTotal  = Number(sc.qty||0)*Number(sc.rate||0);
+          const pohAmt    = isPriceWork ? netTotal*(pohPct/100) : 0;
+          const grossTotal= netTotal+pohAmt;
+          const retAmt    = isPriceWork ? grossTotal*(retPct/100) : 0;
+          const netCert   = grossTotal-retAmt;
+          return <div key={sc.id}>
+            {/* Input row */}
+            {isPriceWork
+              ?<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 80px 80px 80px 36px",gap:6,alignItems:"center",padding:"8px 10px",background:i%2===0?"#0f1421":"#111827",borderRadius:"8px 8px 0 0",borderBottom:"1px solid #1e2535"}}>
+                <input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item…" style={{...INP,fontSize:11,padding:"5px 7px"}}/>
+                <input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="nr" style={{...INP,fontSize:11,padding:"5px 7px"}}/>
+                <input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
+                <input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#60a5fa"}}>£{netTotal.toFixed(2)}</div>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#a78bfa"}}>£{pohAmt.toFixed(2)}</div>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:800,color:"#34d399"}}>£{grossTotal.toFixed(2)}</div>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#fbbf24"}}>-£{retAmt.toFixed(2)}</div>
+                <button onClick={()=>delScope(sc.id)} style={{padding:"4px 7px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
+              </div>
+              :<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 36px",gap:6,alignItems:"center",padding:"8px 10px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:4}}>
+                <input value={sc.description} onChange={e=>updScope(sc.id,"description",e.target.value)} placeholder="Scope item…" style={{...INP,fontSize:11,padding:"5px 7px"}}/>
+                <input value={sc.unit} onChange={e=>updScope(sc.id,"unit",e.target.value)} placeholder="nr" style={{...INP,fontSize:11,padding:"5px 7px"}}/>
+                <input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
+                <input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#34d399"}}>£{netTotal.toFixed(2)}</div>
+                <button onClick={()=>delScope(sc.id)} style={{padding:"4px 7px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
+              </div>}
+
+            {/* Price Work: per-line breakdown sub-row */}
+            {isPriceWork&&<div style={{display:"grid",gridTemplateColumns:"3fr 60px 70px 80px 80px 80px 80px 80px 36px",gap:6,padding:"4px 10px 8px",background:i%2===0?"#0a0e1a":"#0d1117",borderRadius:"0 0 8px 8px",marginBottom:4}}>
+              <div style={{fontSize:9,color:"#374151",fontStyle:"italic",paddingLeft:2}}>per {sc.unit||"unit"}: net £{Number(sc.rate||0).toFixed(2)}</div>
+              <div/>
+              <div/>
+              <div style={{textAlign:"right",fontSize:9,color:"#374151"}}>net/unit</div>
+              <div style={{textAlign:"right",fontSize:9,color:"#60a5fa"}}>net total</div>
+              <div style={{textAlign:"right",fontSize:9,color:"#a78bfa"}}>+{pohPct}% P&OH</div>
+              <div style={{textAlign:"right",fontSize:9,color:"#34d399"}}>gross total</div>
+              <div style={{textAlign:"right",fontSize:9,color:"#fbbf24"}}>{retPct}% ret.</div>
+              <div style={{textAlign:"right",fontSize:9,color:"#34d399"}}>{retPct>0?"net cert.":""}</div>
+            </div>}
+          </div>;
+        })}
+
+        {/* Totals footer */}
+        <div style={{marginTop:8,background:"#0d1421",borderRadius:8,border:"1px solid #1e2535",overflow:"hidden"}}>
+          {isPriceWork
+            ?<>
+              {[
+                ["Net Scope Total",`£${scopeNet.toFixed(2)}`,"#60a5fa","net value before P&OH"],
+                [`P&OH (${pohPct}%)`,`+£${pohAmount.toFixed(2)}`,"#a78bfa",`${pohPct}% on net = £${pohAmount.toFixed(2)}`],
+                ["Gross Scope Total",`£${scopeGross.toFixed(2)}`,"#34d399","net + P&OH"],
+                [`Retention (${retPct}%)`,`-£${retentionHeld.toFixed(2)}`,"#fbbf24",`${retPct}% of gross held back`],
+                ["Net Certified",`£${netCertified.toFixed(2)}`,"#34d399","gross − retention"],
+              ].map(([l,v,c,hint],idx,arr)=>(
+                <div key={l} style={{display:"flex",alignItems:"center",padding:"8px 14px",borderBottom:idx<arr.length-1?"1px solid #1e2535":"none",background:idx===arr.length-1?"#0d2218":"transparent"}}>
+                  <span style={{fontSize:12,color:"#94a3b8",flex:1}}>{l}</span>
+                  <span style={{fontSize:11,color:"#374151",marginRight:14,fontStyle:"italic"}}>{hint}</span>
+                  <span style={{fontSize:idx===arr.length-1?16:13,fontWeight:idx===arr.length-1?900:700,color:c,minWidth:80,textAlign:"right"}}>{v}</span>
+                </div>
+              ))}
+            </>
+            :<div style={{display:"flex",justifyContent:"space-between",padding:"10px 14px"}}>
+              <span style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>Scope Total</span>
+              <span style={{color:"#34d399",fontWeight:800,fontSize:16}}>£{scopeNet.toFixed(2)}</span>
+            </div>}
         </div>
-        {isPriceWork&&<><div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1e2535"}}>
-          <span style={{color:"#94a3b8",fontSize:12}}>P&OH ({pohPct}%)</span>
-          <span style={{color:"#a78bfa",fontWeight:700}}>+£{pohAmount.toFixed(2)}</span>
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}>
-          <span style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>Gross Scope Total</span>
-          <span style={{color:"#34d399",fontWeight:800,fontSize:16}}>£{scopeGross.toFixed(2)}</span>
-        </div></>}
-        {!isPriceWork&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}>
-          <span style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>Scope Total</span>
-          <span style={{color:"#34d399",fontWeight:800,fontSize:16}}>£{scopeNet.toFixed(2)}</span>
-        </div>}
-      </div>}
+      </>}
     </div>}
 
     {/* ── VARIATIONS TAB ── */}
