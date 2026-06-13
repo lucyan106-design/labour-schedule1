@@ -6110,3 +6110,8 @@ export default function App(){
     </div>
   );
 }
+Agreed Price (Gross)    £10,520.00   ← what the client pays
+− P&OH (15%)            -£1,578.00   ← deducted — goes to overhead/profit
+= Net to BM              £8,942.00   ← what Bright Metalwork receives net
+− Retention (5%)          -£447.10   ← held until practical completion
+= Net Certified          £8,494.90   ← paid now
