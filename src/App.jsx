@@ -13,7 +13,14 @@ async function sbDelete(t,f){const r=await fetch(`${SB_URL}/rest/v1/${t}?${f}`,{
 const BASE_DAYS=["Mon","Tue","Wed","Thu","Fri"];
 const WEEKEND_DAYS=["Sat","Sun"];
 const ALL_DAYS=[...BASE_DAYS,...WEEKEND_DAYS];
-const POSITIONS=["Welder","Fixer","Fitter","Semiskilled","Supervisor","Labourer","Manager","Driver"];
+const DEFAULT_POSITIONS=[
+  "Welder","Steel Erector","Fixer","Fitter","Semiskilled","Supervisor",
+  "Labourer","Manager","Driver","Slinger Signaller","Crane Driver",
+  "Crane Supervisor","Magic Man","Fire Watcher","Cladding Operative",
+  "Architectural Metalworker","Plant Operator","Site Engineer",
+];
+// POSITIONS is built from defaults + any custom ones stored in app config
+let POSITIONS=[...DEFAULT_POSITIONS];
 const COMPANIES=["Bright Matalwork","Dodi Metalwork","External"];
 const DEFAULT_HOURS=9;
 const PRESET_COLORS=[
@@ -296,7 +303,7 @@ ${heldCerts.length>0?`
   const b=new Blob([html],{type:"text/html"});
   const u=URL.createObjectURL(b);
   const win=window.open(u,"_blank","width=900,height=800");
-  if(!win){const a=document.createElement("a");a.href=u;a.download=`Worker_Profile_${w.name.replace(/\s+/g,"_")}.html`;a.click();}
+  if(!win){const a=document.createElement("a");a.href=u;a.download="Worker_Profile_"+w.name.split(" ").join("_")+".html";a.click();}
   setTimeout(()=>URL.revokeObjectURL(u),5000);
 }
 
@@ -421,7 +428,7 @@ tr:nth-child(even) td{background:#111827;}tr:nth-child(odd) td{background:#0f142
   const b=new Blob([html],{type:"text/html"});
   const u=URL.createObjectURL(b);
   const win=window.open(u,"_blank","width=900,height=800");
-  if(!win){const a=document.createElement("a");a.href=u;a.download=`Payslip_${w.name.replace(/\s+/g,"_")}_${weekLabel.replace(/\s+/g,"_")}.html`;a.click();}
+  if(!win){const a=document.createElement("a");a.href=u;a.download="Payslip_"+w.name.split(" ").join("_")+"_"+weekLabel.split(" ").join("_")+".html";a.click();}
   setTimeout(()=>URL.revokeObjectURL(u),5000);
 }
 
@@ -468,7 +475,7 @@ ${activeDays.map(d=>{const s=w.days[d];const c=getSC(s);return s&&s.trim()?`<td>
   const b=new Blob([html],{type:"text/html"});
   const u=URL.createObjectURL(b);
   const win=window.open(u,"_blank","width=1200,height=800");
-  if(!win){const a=document.createElement("a");a.href=u;a.download=`Schedule_WC_${weekLabel.replace(/\s+/g,"_")}.html`;a.click();}
+  if(!win){const a=document.createElement("a");a.href=u;a.download="Schedule_WC_"+weekLabel.split(" ").join("_")+".html";a.click();}
   setTimeout(()=>URL.revokeObjectURL(u),5000);
 }
 
@@ -484,7 +491,7 @@ function doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites){
   XLSX.utils.book_append_sheet(wb,ws3,"Training Matrix");
   const ws4=XLSX.utils.aoa_to_sheet([[`WORKER DIRECTORY — WC: ${weekLabel}`],["Name","Company","Position","DOB","Contact","Email","Address","NINO","UTR","Bank","Account","Sort","NOK","NOK Phone"],...workers.map(w=>[w.name,w.company,w.position,w.dob||"",w.contact||"",w.email||"",w.address||"",w.nino||"",w.utr||"",w.bankName||"",w.bankAccount||"",w.bankSort||"",w.nextOfKin||"",w.nextOfKinPhone||""])]);
   XLSX.utils.book_append_sheet(wb,ws4,"Worker Directory");
-  XLSX.writeFile(wb,`LabourSchedule_WC_${weekLabel.replace(/\s+/g,"_")}.xlsx`);
+  XLSX.writeFile(wb,"LabourSchedule_WC_"+weekLabel.split(" ").join("_")+".xlsx");
 }
 
 // ─── Manage Sites Modal ───────────────────────────────────────────────────────
@@ -561,7 +568,25 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
     {tab==="personal"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
         <FI label="Full Name" value={f.name} onChange={v=>set("name",v)}/><FSel label="Company" value={f.company} onChange={v=>set("company",v)} options={COMPANIES}/>
-        <FSel label="Position" value={f.position} onChange={v=>set("position",v)} options={POSITIONS}/><FI label="Scope" value={f.scope} onChange={v=>set("scope",v)}/>
+        <div style={{marginBottom:11}}>
+          <label style={LBL}>Position / Trade</label>
+          <div style={{display:"flex",gap:6}}>
+            <select value={POSITIONS.includes(f.position)?f.position:"__custom"} onChange={e=>{if(e.target.value!=="__custom")set("position",e.target.value);else set("position","");}}
+              style={{...INP,cursor:"pointer",flex:1}}>
+              <option value="">— Select —</option>
+              {POSITIONS.map(p=><option key={p} value={p}>{p}</option>)}
+              <option value="__custom">+ Add custom trade…</option>
+            </select>
+            {(!POSITIONS.includes(f.position)&&f.position)||(!POSITIONS.includes(f.position))
+              ?<input value={f.position} onChange={e=>set("position",e.target.value)} placeholder="Enter custom trade…"
+                style={{...INP,flex:1}} autoFocus/>:null}
+          </div>
+          {!POSITIONS.includes(f.position)&&f.position&&<div style={{marginTop:5,display:"flex",alignItems:"center",gap:7}}>
+            <span style={{fontSize:10,color:"#fbbf24"}}>💡 New trade: <strong>{f.position}</strong></span>
+            <button onClick={()=>{if(!POSITIONS.includes(f.position)){POSITIONS=[...POSITIONS,f.position];alert("Trade ""+f.position+"" added to all worker forms.");} }} style={{padding:"2px 8px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:4,color:"#60a5fa",cursor:"pointer",fontSize:10,fontWeight:700}}>+ Save to list</button>
+          </div>}
+        </div>
+        <FI label="Scope" value={f.scope} onChange={v=>set("scope",v)}/>
         <FI label="Date of Birth" value={f.dob} onChange={v=>set("dob",v)} type="date"/><FI label="Contact Number" value={f.contact} onChange={v=>set("contact",v)}/>
         <FI label="Email" value={f.email} onChange={v=>set("email",v)} type="email"/><FI label="Comments" value={f.comments} onChange={v=>set("comments",v)}/>
       </div>
@@ -1913,7 +1938,7 @@ tr:nth-child(even) td{background:#f9fafb;}
 <script>window.onload=function(){window.print();}</script></body></html>`;
   const b=new Blob([html],{type:"text/html"});const u=URL.createObjectURL(b);
   const win=window.open(u,"_blank","width:1400,height:900");
-  if(!win){const a=document.createElement("a");a.href=u;a.download=`TrainingMatrix_${label.replace(/\s+/g,"_")}.html`;a.click();}
+  if(!win){const a=document.createElement("a");a.href=u;a.download="TrainingMatrix_"+label.split(" ").join("_")+".html";a.click();}
   setTimeout(()=>URL.revokeObjectURL(u),5000);
 }
 
@@ -2179,7 +2204,7 @@ function DWeeklyRecordDetail({weeklyRecords,recordId,setPage,allSites}){
       ...payRows.map(r=>[r.name,r.agreedRate||"",Math.round((r.taxRate||0)*100)+"%",r.stdH,r.otH,+r.gross.toFixed(2),+r.tax.toFixed(2),+r.net.toFixed(2)]),
       ["","TOTALS","",workingW.reduce((a,r)=>a+r.stdH,0),workingW.reduce((a,r)=>a+r.otH,0),+labourTotal.toFixed(2),"",+labourNet.toFixed(2)]
     ]),"Payroll");
-    XLSX.writeFile(wb,`WeeklyRecord_WC_${rec.weekLabel.replace(/\s+/g,"_")}.xlsx`);
+    XLSX.writeFile(wb,"WeeklyRecord_WC_"+rec.weekLabel.split(" ").join("_")+".xlsx");
   }
 
   return <div>
@@ -2820,6 +2845,24 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
   const [tab,setTab]=useState("scopes");
   // Variation file attachments state — stored locally per session
   const [varFiles,setVarFiles]=useState({});
+  const [siteFiles,setSiteFiles]=useState([]);
+  const [newLinkUrl,setNewLinkUrl]=useState("");
+  const [newLinkName,setNewLinkName]=useState("");
+
+  function addSiteFile(file){
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      setSiteFiles(f=>[...f,{id:Date.now().toString(),name:file.name,size:file.size,type:file.type,url:ev.target.result,kind:"file",addedAt:new Date().toISOString()}]);
+    };
+    reader.readAsDataURL(file);
+  }
+  function addSiteLink(){
+    const url=newLinkUrl.trim();
+    if(!url) return;
+    setSiteFiles(f=>[...f,{id:Date.now().toString(),name:newLinkName.trim()||url,url,kind:"link",type:"link",addedAt:new Date().toISOString()}]);
+    setNewLinkUrl(""); setNewLinkName("");
+  }
+  function removeSiteFile(id){setSiteFiles(f=>f.filter(x=>x.id!==id));}
 
   function addVarFile(varId,file){
     const reader=new FileReader();
@@ -2888,8 +2931,8 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
       </div>}
 
       {/* Tab bar */}
-      <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:18,width:"fit-content"}}>
-        {[["scopes","📋 Scopes ("+(sc.length)+")"],["variations","⚡ Variations ("+(vr.length)+")"],["workers","👷 Workers ("+(siteWorkers.length)+")"],["costs","💷 Full Costs"],["invoices","🧾 Invoices ("+(siteInvs.length)+")"]].map(([v,l])=>(
+      <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:18,width:"fit-content",flexWrap:"wrap"}}>
+        {[["scopes","📋 Scopes ("+(sc.length)+")"],["variations","⚡ Variations ("+(vr.length)+")"],["workers","👷 Workers ("+(siteWorkers.length)+")"],["costs","💷 Full Costs"],["invoices","🧾 Invoices ("+(siteInvs.length)+")"],["docs","📁 Documents"]].map(([v,l])=>(
           <button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",background:tab===v?"#1e3a5f":"transparent",border:tab===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:tab===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:tab===v?700:400}}>{l}</button>
         ))}
       </div>
@@ -2927,10 +2970,19 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
         </div>}
       </div>}
 
-      {/* Variations — with file attachments */}
+      {/* Variations — with file attachments + inline add */}
       {tab==="variations"&&<div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+            {vr.length} Variation{vr.length!==1?"s":""} · Net: <span style={{color:varT>=0?"#34d399":"#f87171"}}>{varT>=0?"+":"-"}£{Math.abs(Math.round(varT)).toLocaleString()}</span>
+          </div>
+          <button onClick={()=>setModal({type:"siteDetail",site,defaultTab:"variations"})}
+            style={{padding:"6px 14px",background:"linear-gradient(135deg,#f59e0b,#d97706)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+            ⚡ + Add / Edit Variations
+          </button>
+        </div>
         {vr.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
-          No variations yet. Click "✏️ Edit Site" to add variation orders.
+          No variations yet. Click "⚡ + Add / Edit Variations" above.
         </div>:vr.map((v,i)=>{
           const files=varFiles[v.id]||[];
           const isAdd=v.type==="addition";
@@ -3029,16 +3081,86 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Invoices */}
       {tab==="invoices"&&<div>
-        {siteInvs.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>No invoices for this site yet.</div>:
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{siteInvs.length} Invoice{siteInvs.length!==1?"s":""}</div>
+          <button onClick={()=>{
+            const inv=emptyInvoice(clients,allSites,invoices);
+            inv.siteId=site.id;
+            inv.clientId=site.clientId||"";
+            // pre-fill site name and client
+            setModal({type:"invoice",invoice:inv});
+          }} style={{padding:"6px 16px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+            🧾 + New Invoice
+          </button>
+        </div>
+        {siteInvs.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>No invoices for this site yet. Click "+ New Invoice" above.</div>:
         <DTable cols={[
-          {key:"invoiceNumber",label:"Invoice",r:v=><span style={{color:"#60a5fa",fontWeight:700}}>{v||"Draft"}</span>},
-          {key:"date",label:"Date"},
+          {key:"invoiceNumber",label:"Invoice No.",r:v=><span style={{color:"#60a5fa",fontWeight:700}}>{v||"Draft"}</span>},
+          {key:"issueDate",label:"Date",r:v=>v?new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—"},
           {key:"lines",label:"Amount",r:v=>{const t=(v||[]).reduce((a,l)=>a+(l.qty||0)*(l.rate||0),0);return <span style={{color:"#34d399",fontWeight:700}}>£{Math.round(t).toLocaleString()}</span>;}},
           {key:"status",label:"Status",r:v=><DStatusBadge status={v||"draft"}/>},
+          {key:"id",label:"",r:(_,r)=><button onClick={e=>{e.stopPropagation();setModal({type:"invoice",invoice:r});}} style={{padding:"3px 9px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:4,color:"#60a5fa",cursor:"pointer",fontSize:10,fontWeight:700}}>✏️ Edit</button>},
         ]} rows={siteInvs}/>}
-        <div style={{textAlign:"right",padding:"10px 0",fontSize:13,fontWeight:700,color:"#fbbf24"}}>
-          Total Invoiced: £{Math.round(totalInvoiced).toLocaleString()} · Paid: £{Math.round(totalPaid).toLocaleString()} · <span style={{color:totalDue>0?"#f97316":"#34d399"}}>Due: £{Math.round(totalDue).toLocaleString()}</span>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",fontSize:13,fontWeight:700,color:"#fbbf24"}}>
+          <span>Total Invoiced: £{Math.round(totalInvoiced).toLocaleString()} · Paid: £{Math.round(totalPaid).toLocaleString()}</span>
+          <span style={{color:totalDue>0?"#f97316":"#34d399"}}>Due: £{Math.round(totalDue).toLocaleString()}</span>
         </div>
+      </div>}
+
+      {/* Documents & Links directory */}
+      {tab==="docs"&&<div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+          {/* Upload files */}
+          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:14}}>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Upload Files</div>
+            <label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"14px",background:"#1e3a5f",border:"2px dashed #3b82f6",borderRadius:8,cursor:"pointer",color:"#60a5fa",fontSize:12,fontWeight:600}}>
+              📁 Click to upload files
+              <input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.eml,.msg,.zip,.dwg,.dxf" style={{display:"none"}}
+                onChange={e=>{Array.from(e.target.files||[]).forEach(f=>addSiteFile(f));e.target.value="";}}/>
+            </label>
+            <div style={{fontSize:10,color:"#374151",marginTop:6}}>Images, PDFs, Word, Excel, emails, CAD files, videos, ZIP</div>
+          </div>
+          {/* Add shared link */}
+          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:14}}>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Add Shared Link</div>
+            <input value={newLinkName} onChange={e=>setNewLinkName(e.target.value)} placeholder="Label (e.g. JAUK Drawing Pack)" style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"6px 9px",color:"#e2e8f0",fontSize:12,outline:"none",marginBottom:7,boxSizing:"border-box"}}/>
+            <div style={{display:"flex",gap:7}}>
+              <input value={newLinkUrl} onChange={e=>setNewLinkUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSiteLink()} placeholder="https://drive.google.com/… or any URL" style={{flex:1,background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"6px 9px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+              <button onClick={addSiteLink} style={{padding:"6px 13px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>+ Add</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Files & links grid */}
+        {siteFiles.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
+          <div style={{fontSize:28,marginBottom:8}}>📁</div>
+          No files or links yet. Upload documents or add shared links above.
+        </div>:
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
+          {siteFiles.map(f=>{
+            const isImg=f.type&&f.type.startsWith("image/");
+            const isLink=f.kind==="link";
+            const icon=isLink?"🔗":f.type?.startsWith("image/")?"🖼":f.type?.startsWith("video/")?"🎬":f.type==="application/pdf"?"📄":f.type?.includes("word")?"📝":f.type?.includes("sheet")||f.type?.includes("excel")?"📊":f.type?.includes("email")||f.type?.includes("message")?"📧":"📎";
+            return <div key={f.id} style={{background:"linear-gradient(145deg,#141924,#1a2035)",border:"1px solid #2d3555",borderRadius:10,padding:12,position:"relative"}}>
+              <button onClick={()=>removeSiteFile(f.id)} style={{position:"absolute",top:7,right:8,background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:15,lineHeight:1,padding:0}}>×</button>
+              {isImg&&!isLink?
+                <a href={f.url} target="_blank" rel="noreferrer">
+                  <img src={f.url} alt={f.name} style={{width:"100%",height:90,objectFit:"cover",borderRadius:6,display:"block",marginBottom:7,border:"1px solid #2d3555"}}/>
+                </a>:
+                <div style={{height:60,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,marginBottom:7}}>{icon}</div>
+              }
+              <div style={{fontSize:11,color:"#f1f5f9",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3}} title={f.name}>{f.name}</div>
+              {!isLink&&<div style={{fontSize:9,color:"#374151",marginBottom:6}}>{f.size>1048576?(f.size/1048576).toFixed(1)+"MB":(f.size/1024).toFixed(0)+"KB"}</div>}
+              <div style={{display:"flex",gap:6}}>
+                <a href={f.url} target="_blank" rel="noreferrer" style={{flex:1,padding:"4px 0",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:10,fontWeight:700,textAlign:"center",textDecoration:"none",display:"block"}}>
+                  {isLink?"🔗 Open":"👁 View"}
+                </a>
+                {!isLink&&<a href={f.url} download={f.name} style={{padding:"4px 8px",background:"#0f1421",border:"1px solid #2d3555",borderRadius:5,color:"#94a3b8",cursor:"pointer",fontSize:10,textDecoration:"none",display:"block"}}>⬇</a>}
+              </div>
+              <div style={{fontSize:8,color:"#374151",marginTop:5}}>{new Date(f.addedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
+            </div>;
+          })}
+        </div>}
       </div>}
     </div>
   </div>;
