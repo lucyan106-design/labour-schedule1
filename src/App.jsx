@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
@@ -2567,13 +2567,13 @@ function DashSidebar({page,setPage,workers,allSites,clients,invoices,bankTransac
       <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites)} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:8}}>⬇ Export Excel</button>
       <div style={{borderTop:"1px solid #1e2535",paddingTop:8}}>
         <div style={{fontSize:9,color:"#374151",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6,paddingLeft:2}}>Integrated Apps</div>
-        <button onClick={()=>setPage("app_sitemanager")} style={{width:"100%",padding:"9px 10px",background:page==="app_sitemanager"?"#1e3a5f":"#0c1a2e",border:`1px solid ${page==="app_sitemanager"?"#3b82f6":"#1e3a5f"}`,borderRadius:8,color:page==="app_sitemanager"?"#93c5fd":"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}>
+        <button onClick={()=>setPage("app_sitemanager")} style={{width:"100%",padding:"9px 10px",background:"#0c1a2e",border:"1px solid #1e3a5f",borderRadius:8,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:17}}>📊</span><span>Site Manager</span>
         </button>
-        <button onClick={()=>setPage("app_sitedocs")} style={{width:"100%",padding:"9px 10px",background:page==="app_sitedocs"?"#1a0d2e":"#0d0a1e",border:`1px solid ${page==="app_sitedocs"?"#7c3aed":"#2d1f4e"}`,borderRadius:8,color:page==="app_sitedocs"?"#c4b5fd":"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}>
+        <button onClick={()=>setPage("app_sitedocs")} style={{width:"100%",padding:"9px 10px",background:"#0d0a1e",border:"1px solid #2d1f4e",borderRadius:8,color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:17}}>📋</span><span>Site Documents</span>
         </button>
-        <button onClick={()=>setPage("app_assets")} style={{width:"100%",padding:"9px 10px",background:page==="app_assets"?"#1a1200":"#0d0900",border:`1px solid ${page==="app_assets"?"#ffb000":"#3a2a00"}`,borderRadius:8,color:page==="app_assets"?"#ffb000":"#a87000",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:0,display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}>
+        <button onClick={()=>setPage("app_assets")} style={{width:"100%",padding:"9px 10px",background:"#0d0900",border:"1px solid #3a2a00",borderRadius:8,color:"#ffb000",cursor:"pointer",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:17}}>⚙</span><span>Asset Register</span>
         </button>
       </div>
@@ -5158,9 +5158,24 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "certs":         return <DCerts workers={workers} setPage={nav} setDetailId={setDashDetailId}/>;
       case "finance":       return <DFinance {...SP}/>;
       case "stats":         return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
-// ─── Asset Register — embedded via iframe (fully isolated, zero conflicts) ────
+      case "bank":          return <DBankFull {...SP}/>;
+      case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+      case "app_sitemanager": return <SiteManagerView/>;
+      case "app_sitedocs":    return <SiteDocGeneratorView/>;
+      case "app_assets":      return <AssetRegisterView/>;
+      default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
+    }
+  };
+
+
+  // DashboardView only renders the page content — sidebar is in App
+  return <div style={{height:"100%",background:"#080d14",overflowY:"auto"}}>{renderPage()}</div>;
+}
+
+
+// ─── Asset Register (iframe) ─────────────────────────────────────────────────
 function AssetRegisterView(){
-  const assetHtml=`<!doctype html>
+  const htmlDoc=`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -6161,13 +6176,17 @@ async function loadSamples(){
 </html>
 `;
   return(
-    <div style={{position:"absolute",top:0,left:200,right:0,bottom:0,zIndex:10}}>
-      <iframe srcDoc={assetHtml} style={{width:"100%",height:"100%",border:"none",display:"block"}} title="SiteKit Asset Register" sandbox="allow-scripts allow-same-origin allow-forms"/>
+    <div style={{position:"fixed",top:0,left:200,right:0,bottom:0,background:"#f3f2ee",zIndex:5}}>
+      <iframe
+        srcDoc={htmlDoc}
+        style={{width:"100%",height:"100%",border:"none",display:"block"}}
+        title="Asset Register"
+        sandbox="allow-scripts allow-same-origin allow-forms"
+      />
     </div>
   );
 }
-
-// ─── Site Manager App (isolated closure) ─────────────────────────────────────
+// ─── Site Manager (self-contained IIFE — zero scope leakage) ─────────────────
 const SiteManagerView = (()=>{
 
 // ─────────────────────────────────────────────────────────
@@ -7113,7 +7132,7 @@ return function SiteManagerView(){
 }
 
 })();
-// ─── Site Doc Generator (isolated closure) ───────────────────────────────────
+// ─── Site Doc Generator (self-contained IIFE — zero scope leakage) ──────────
 const SiteDocGeneratorView = (()=>{
 
 // ═══════════════════════════════════════════════════════
@@ -7333,8 +7352,8 @@ function initFd(dt, site) {
 
 async function loadDocs() {
   try {
-    const r = await window.storage.get("site_documents");
-    if (r?.value) return JSON.parse(r.value);
+    const raw = localStorage.getItem("bm_site_documents");
+    if (raw) return JSON.parse(raw);
   } catch (_) {}
   return [];
 }
@@ -7342,7 +7361,7 @@ async function loadDocs() {
 async function saveDoc(doc, existing) {
   try {
     const updated = [...(existing || []).filter(d => d.id !== doc.id), doc];
-    await window.storage.set("site_documents", JSON.stringify(updated));
+    localStorage.setItem("bm_site_documents", JSON.stringify(updated));
     return updated;
   } catch (_) { return existing || []; }
 }
@@ -7484,13 +7503,8 @@ return function SiteDocGeneratorView() {
   const [activeCat, setActiveCat] = useState("safety");
 
   const sync = useCallback(async () => {
-    try {
-      const r = await window.storage.get("labour_schedule_data");
-      if (r?.value) {
-        const d = JSON.parse(r.value);
-        if (d.sites?.length) { setSites(d.sites); setSyncSt("live"); return; }
-      }
-    } catch (_) {}
+    // Sites data comes from the parent labour schedule app via props (future)
+    // For now use built-in demo sites
     setSites(DEMO_SITES); setSyncSt("demo");
   }, []);
 
@@ -8335,21 +8349,6 @@ function Reports({ docs, sites, onBack, onView }) {
 }
 
 })();
-      case "bank":          return <DBankFull {...SP}/>;
-      case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
-      case "app_sitemanager": return <SiteManagerView/>;
-      case "app_sitedocs":    return <SiteDocGeneratorView/>;
-      case "app_assets":      return <AssetRegisterView/>;
-      default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
-    }
-  };
-
-
-  // DashboardView only renders the page content — sidebar is in App
-  return <div style={{height:"100%",background:"#080d14",overflowY:"auto"}}>{renderPage()}</div>;
-}
-
-
 // ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App(){
   const [workers,setWorkers]=useState([]);
