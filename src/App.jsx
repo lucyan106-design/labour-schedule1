@@ -1077,13 +1077,15 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
   const varTotal=s.variations.reduce((a,vr)=>a+(vr.type==="addition"?Number(vr.value||0):-Number(vr.value||0)),0);
 
   // Price work: gross = net + P&OH
+  // P&OH is deducted from agreed price: net = agreed - P&OH
   const pohAmount=isPriceWork ? scopeNet*(pohPct/100) : 0;
-  const scopeGross=isPriceWork ? scopeNet+pohAmount : scopeNet;
+  const scopeNet_afterPOH=isPriceWork ? scopeNet-pohAmount : scopeNet;
+  const scopeGross=scopeNet; // agreed (gross) price stays as is
   const contractValue=scopeGross+varTotal;
 
   // Retention
-  const retentionHeld=isPriceWork ? contractValue*(retPct/100) : 0;
-  const netCertified=contractValue-retentionHeld;
+  const retentionHeld=isPriceWork ? (contractValue-pohAmount)*(retPct/100) : 0;
+  const netCertified=(contractValue-pohAmount)-retentionHeld;
   const profit=contractValue-labourCost;
   const margin=contractValue>0?(profit/contractValue*100):0;
 
@@ -1102,8 +1104,8 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
     <div style={{display:"grid",gridTemplateColumns:isPriceWork?"repeat(5,1fr)":"repeat(4,1fr)",gap:10,marginBottom:18}}>
       {isPriceWork?[
         ["Net Value",`£${scopeNet.toFixed(2)}`,C2.net],
-        [`P&OH (${pohPct}%)`,`+£${pohAmount.toFixed(2)}`,C2.poh],
-        ["Gross Value",`£${scopeGross.toFixed(2)}`,C2.gross],
+        [`P&OH (${pohPct}%)`,`-£${pohAmount.toFixed(2)}`,C2.poh],
+        ["Net to BM",`£${scopeNet_afterPOH.toFixed(2)}`,C2.gross],
         [`Retention (${retPct}%)`,`-£${retentionHeld.toFixed(2)}`,C2.ret],
         ["Net Certified",`£${netCertified.toFixed(2)}`,"#34d399"],
       ]:[
@@ -1162,8 +1164,8 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
               <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#a78bfa",fontWeight:700,fontSize:13}}>%</span>
             </div>
             {pohPct>0&&<div style={{marginTop:6,background:"#1a0d2e",borderRadius:6,padding:"6px 10px",fontSize:11,color:"#a78bfa"}}>
-              Net cost of <span style={{fontWeight:700}}>£{scopeNet.toFixed(2)}</span> + {pohPct}% P&OH = gross <span style={{fontWeight:700}}>£{scopeGross.toFixed(2)}</span>
-              <div style={{color:"#64748b",marginTop:2}}>P&OH value: £{pohAmount.toFixed(2)}</div>
+              Agreed price <span style={{fontWeight:700}}>£{scopeNet.toFixed(2)}</span> − {pohPct}% P&OH = net to BM <span style={{fontWeight:700}}>£{scopeNet_afterPOH.toFixed(2)}</span>
+              <div style={{color:"#64748b",marginTop:2}}>P&OH deduction: £{pohAmount.toFixed(2)}</div>
             </div>}
           </div>
 
@@ -1191,8 +1193,8 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
           <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Live Calculation</div>
           {[
             ["Net Scope Value",`£${scopeNet.toFixed(2)}`,"#60a5fa"],
-            [`+ P&OH (${pohPct}%)`,`£${pohAmount.toFixed(2)}`,"#a78bfa"],
-            ["= Gross Contract Value",`£${scopeGross.toFixed(2)}`,"#34d399"],
+            [`− P&OH (${pohPct}%)`,`-£${pohAmount.toFixed(2)}`,"#fbbf24"],
+            ["= Net to BM",`£${scopeNet_afterPOH.toFixed(2)}`,"#34d399"],
             [`− Retention (${retPct}%)`,`£${retentionHeld.toFixed(2)}`,"#fbbf24"],
             ["= Net Certified",`£${netCertified.toFixed(2)}`,"#34d399"],
           ].map(([l,v,c])=>(
@@ -1250,9 +1252,10 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
         {s.scopes.map((sc,i)=>{
           const netTotal  = Number(sc.qty||0)*Number(sc.rate||0);
           const pohAmt    = isPriceWork ? netTotal*(pohPct/100) : 0;
-          const grossTotal= netTotal+pohAmt;
-          const retAmt    = isPriceWork ? grossTotal*(retPct/100) : 0;
-          const netCert   = grossTotal-retAmt;
+          const netAfterPOH = netTotal-pohAmt;
+          const grossTotal= netTotal; // agreed price
+          const retAmt    = isPriceWork ? netAfterPOH*(retPct/100) : 0;
+          const netCert   = netAfterPOH-retAmt;
           return <div key={sc.id}>
             {/* Input row */}
             {isPriceWork
@@ -1262,8 +1265,8 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
                 <input type="number" value={sc.qty} onChange={e=>updScope(sc.id,"qty",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
                 <input type="number" value={sc.rate} onChange={e=>updScope(sc.id,"rate",e.target.value)} style={{...INP,textAlign:"right",fontSize:11,padding:"5px 7px"}}/>
                 <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#60a5fa"}}>£{netTotal.toFixed(2)}</div>
-                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#a78bfa"}}>£{pohAmt.toFixed(2)}</div>
-                <div style={{textAlign:"right",fontSize:12,fontWeight:800,color:"#34d399"}}>£{grossTotal.toFixed(2)}</div>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#fbbf24"}}>-£{pohAmt.toFixed(2)}</div>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:800,color:"#34d399"}}>£{netAfterPOH.toFixed(2)}</div>
                 <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#fbbf24"}}>-£{retAmt.toFixed(2)}</div>
                 <button onClick={()=>delScope(sc.id)} style={{padding:"4px 7px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
               </div>
@@ -1283,7 +1286,7 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
               <div/>
               <div style={{textAlign:"right",fontSize:9,color:"#374151"}}>net/unit</div>
               <div style={{textAlign:"right",fontSize:9,color:"#60a5fa"}}>net total</div>
-              <div style={{textAlign:"right",fontSize:9,color:"#a78bfa"}}>+{pohPct}% P&OH</div>
+              <div style={{textAlign:"right",fontSize:9,color:"#fbbf24"}}>−{pohPct}% P&OH</div>
               <div style={{textAlign:"right",fontSize:9,color:"#34d399"}}>gross total</div>
               <div style={{textAlign:"right",fontSize:9,color:"#fbbf24"}}>{retPct}% ret.</div>
               <div style={{textAlign:"right",fontSize:9,color:"#34d399"}}>{retPct>0?"net cert.":""}</div>
@@ -1296,11 +1299,11 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
           {isPriceWork
             ?<>
               {[
-                ["Net Scope Total",`£${scopeNet.toFixed(2)}`,"#60a5fa","net value before P&OH"],
-                [`P&OH (${pohPct}%)`,`+£${pohAmount.toFixed(2)}`,"#a78bfa",`${pohPct}% on net = £${pohAmount.toFixed(2)}`],
-                ["Gross Scope Total",`£${scopeGross.toFixed(2)}`,"#34d399","net + P&OH"],
-                [`Retention (${retPct}%)`,`-£${retentionHeld.toFixed(2)}`,"#fbbf24",`${retPct}% of gross held back`],
-                ["Net Certified",`£${netCertified.toFixed(2)}`,"#34d399","gross − retention"],
+                ["Agreed Price (Gross)",`£${scopeNet.toFixed(2)}`,"#60a5fa","total agreed contract value"],
+                [`− P&OH (${pohPct}%)`,`-£${pohAmount.toFixed(2)}`,"#fbbf24",`${pohPct}% deducted = £${pohAmount.toFixed(2)}`],
+                ["= Net to BM",`£${scopeNet_afterPOH.toFixed(2)}`,"#34d399","after P&OH deduction"],
+                [`− Retention (${retPct}%)`,`-£${retentionHeld.toFixed(2)}`,"#fbbf24",`${retPct}% held until completion`],
+                ["= Net Certified",`£${netCertified.toFixed(2)}`,"#34d399","net to BM after retention"],
               ].map(([l,v,c,hint],idx,arr)=>(
                 <div key={l} style={{display:"flex",alignItems:"center",padding:"8px 14px",borderBottom:idx<arr.length-1?"1px solid #1e2535":"none",background:idx===arr.length-1?"#0d2218":"transparent"}}>
                   <span style={{fontSize:12,color:"#94a3b8",flex:1}}>{l}</span>
@@ -1325,7 +1328,9 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
       </div>
       {s.variations.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:8}}>No variations yet.</div>}
       {s.variations.map((vr,i)=>{
-        const grossVal=isPriceWork&&vr.type==="addition"?Number(vr.value||0)*(1+pohPct/100):Number(vr.value||0);
+        const grossVal=Number(vr.value||0); // variation value is agreed price
+        const varPohAmt=isPriceWork&&vr.type==="addition"?grossVal*(pohPct/100):0;
+        const varNetToMB=grossVal-varPohAmt; // net to BM after P&OH deduction
         return <div key={vr.id} style={{display:"grid",gridTemplateColumns:isPriceWork?"3fr 110px 110px 110px 110px 40px":"3fr 110px 110px 110px 40px",gap:8,alignItems:"flex-end",padding:"10px 12px",background:i%2===0?"#0f1421":"#111827",borderRadius:8,marginBottom:6}}>
           <div><label style={LBL}>Description</label><input value={vr.description} onChange={e=>updVar(vr.id,"description",e.target.value)} placeholder="Variation description…" style={INP}/></div>
           <div><label style={LBL}>Type</label>
@@ -1333,7 +1338,7 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
               <option value="addition">Addition (+)</option><option value="omission">Omission (−)</option>
             </select></div>
           <div><label style={LBL}>Net Value £</label><input type="number" value={vr.value} onChange={e=>updVar(vr.id,"value",e.target.value)} style={{...INP,textAlign:"right"}}/></div>
-          {isPriceWork&&<div><label style={LBL}>Gross (w/ P&OH)</label>
+          {isPriceWork&&<div><label style={LBL}>Net to BM (after P&OH)</label>
             <div style={{...INP,background:"#1a0d2e",color:"#a78bfa",fontWeight:700,textAlign:"right",padding:"7px 9px"}}>
               {vr.type==="addition"?`£${grossVal.toFixed(2)}`:`-£${Number(vr.value||0).toFixed(2)}`}
             </div></div>}
@@ -1380,7 +1385,7 @@ function SiteDetailModal({site,clients,workers,activeDays,siteHours,onSave,onClo
         <div style={{background:"#0f1421",borderRadius:10,padding:16,border:"1px solid #1e2535"}}>
           <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Income</div>
           <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Scope Net</span><span style={{fontWeight:700,color:"#60a5fa"}}>£{scopeNet.toFixed(2)}</span></div>
-          {isPriceWork&&<div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>P&OH ({pohPct}%)</span><span style={{fontWeight:700,color:"#a78bfa"}}>+£{pohAmount.toFixed(2)}</span></div>}
+          {isPriceWork&&<div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>P&OH deducted ({pohPct}%)</span><span style={{fontWeight:700,color:"#fbbf24"}}>-£{pohAmount.toFixed(2)}</span></div>}
           <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Variations</span><span style={{fontWeight:700,color:varTotal>=0?"#34d399":"#f87171"}}>{varTotal>=0?"+":""}£{varTotal.toFixed(2)}</span></div>
           <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:isPriceWork?"1px solid #1e2535":"none"}}><span style={{color:"#e2e8f0",fontWeight:700,fontSize:12}}>Contract Value</span><span style={{fontWeight:800,color:"#34d399",fontSize:15}}>£{contractValue.toFixed(2)}</span></div>
           {isPriceWork&&<><div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2535"}}><span style={{color:"#94a3b8",fontSize:12}}>Retention ({retPct}%)</span><span style={{fontWeight:700,color:"#fbbf24"}}>-£{retentionHeld.toFixed(2)}</span></div>
@@ -3655,11 +3660,12 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
   const retPct=Number(site.retentionPct)||0;
   const scopeT=sc.reduce((a,s)=>a+(Number(s.qty)||0)*(Number(s.rate)||0),0);
   const pohTotal=isPW?scopeT*(pohPct/100):0;
-  const scopeGross=scopeT+pohTotal;
+  const scopeGross=scopeT; // agreed (gross) price
+  const scopeNetToBM=scopeT-pohTotal; // after P&OH deduction
   const varT=vr.reduce((a,v)=>a+(v.type==="addition"?Number(v.value||0):-Number(v.value||0)),0);
   const contract=scopeGross+varT;
-  const retTotal=isPW?contract*(retPct/100):0;
-  const netCertified=contract-retTotal;
+  const retTotal=isPW?scopeNetToBM*(retPct/100):0;
+  const netCertified=scopeNetToBM-retTotal;
   const labourCost=useMemo(()=>{let t=0;workers.forEach(w=>{const{bd}=calcPay(w,activeDays,siteHours);Object.values(bd).forEach(b=>{if(b.site===site.name||b.site.includes(site.name))t+=b.gross;});});return t;},[workers,activeDays,siteHours,site.name]);
   const siteInvs=(invoices||[]).filter(i=>i.siteId===site.id);
   const totalInvoiced=siteInvs.reduce((a,i)=>{const s=(i.lines||[]).reduce((x,l)=>x+(l.qty||0)*(l.rate||0),0);return a+s;},0);
@@ -3781,8 +3787,8 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
               <th style={{...DS.th,width:60,textAlign:"right"}}>Qty</th>
               <th style={{...DS.th,width:90,textAlign:"right"}}>Net Rate £</th>
               <th style={{...DS.th,width:100,textAlign:"right",color:"#60a5fa"}}>Net Total</th>
-              {isPW&&pohPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#a78bfa"}}>P&OH ({pohPct}%)</th>}
-              {isPW&&<th style={{...DS.th,width:100,textAlign:"right",color:"#34d399"}}>Gross Total</th>}
+              {isPW&&pohPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#fbbf24"}}>P&OH ({pohPct}%)</th>}
+              {isPW&&<th style={{...DS.th,width:100,textAlign:"right",color:"#34d399"}}>Net to BM</th>}
               {isPW&&retPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#fbbf24"}}>Retention ({retPct}%)</th>}
               {isPW&&retPct>0&&<th style={{...DS.th,width:100,textAlign:"right",color:"#34d399"}}>Net Certified</th>}
               {!isPW&&<th style={{...DS.th,width:110,textAlign:"right",color:"#34d399"}}>Total £</th>}
@@ -3791,17 +3797,18 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
               {sc.map((s,i)=>{
                 const net=(Number(s.qty)||0)*(Number(s.rate)||0);
                 const poh=isPW?net*(pohPct/100):0;
-                const gross=net+poh;
-                const ret=isPW?gross*(retPct/100):0;
-                const cert=gross-ret;
+                const gross=net; // agreed price
+                const netToBM=net-poh;
+                const ret=isPW?netToBM*(retPct/100):0;
+                const cert=netToBM-ret;
                 return <tr key={s.id||i} style={{background:i%2===0?"#111827":"#0f1421"}}>
                   <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{s.description||"—"}</td>
                   <td style={{...DS.td,textAlign:"center"}}><span style={DS.badge("#94a3b8","#1e2535")}>{s.unit}</span></td>
                   <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:600}}>{s.qty}</td>
                   <td style={{...DS.td,textAlign:"right"}}>£{Number(s.rate).toLocaleString()}</td>
                   <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:600}}>£{net.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                  {isPW&&pohPct>0&&<td style={{...DS.td,textAlign:"right",color:"#a78bfa",fontWeight:600}}>+£{poh.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                  {isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{gross.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                  {isPW&&pohPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:600}}>-£{poh.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                  {isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{netToBM.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
                   {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:600}}>-£{ret.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
                   {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{cert.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
                   {!isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{net.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
@@ -3812,8 +3819,8 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
               <tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
                 <td colSpan={4} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTAL SCOPE</td>
                 <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:800}}>£{scopeT.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                {isPW&&pohPct>0&&<td style={{...DS.td,textAlign:"right",color:"#a78bfa",fontWeight:800}}>+£{pohTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
-                {isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{scopeGross.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                {isPW&&pohPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:800}}>-£{pohTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
+                {isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{scopeNetToBM.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
                 {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#fbbf24",fontWeight:800}}>-£{retTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
                 {isPW&&retPct>0&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{netCertified.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
                 {!isPW&&<td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:900,fontSize:14}}>£{scopeT.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>}
