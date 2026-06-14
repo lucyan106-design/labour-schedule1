@@ -1,5 +1,8 @@
 {
-  "appId": "brightgroup.com",
-  "appName": "labour-schedule",
-  "webDir": "dist"
+  "appId": "com.brightmetalwork.portal",
+  "appName": "Bright Metalwork",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
 }
