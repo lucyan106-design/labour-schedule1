@@ -3330,7 +3330,7 @@ function InviteWorkerModal({onClose,allSites}){
   </div>;
 }
 
-function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDetailId,setModal}){\
+function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDetailId,setModal}){
   const[search,setSearch]=useState("");
   const[showInvite,setShowInvite]=useState(false);
   const shown=workers.filter(w=>!search||w.name.toLowerCase().includes(search.toLowerCase())||w.position.toLowerCase().includes(search.toLowerCase()));
