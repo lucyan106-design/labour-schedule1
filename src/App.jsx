@@ -1118,6 +1118,19 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
         </select>
         <div style={{fontSize:10,color:"#64748b",marginTop:5}}>This determines what the user sees when they log into the admin app. Workers also use the separate Worker Portal app.</div>
       </div>
+      {(f.userRole==="manager")&&<div style={{marginBottom:14,padding:"10px 13px",background:"#0d1a2e",borderRadius:9,border:"1px solid #3b82f644"}}>
+        <label style={{...LBL,color:"#60a5fa",display:"block",marginBottom:6}}>Assigned Sites (Manager access)</label>
+        <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:140,overflowY:"auto"}}>
+          {allSites.filter(s=>!s.builtin).map(s=>{
+            const checked=(f.managedSites||[]).includes(s.id);
+            return <label key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",background:checked?"#1e3a5f":"#0f1421",borderRadius:6,border:`1px solid ${checked?"#3b82f644":"#1e2535"}`,cursor:"pointer"}}>
+              <input type="checkbox" checked={checked} onChange={()=>set("managedSites",checked?(f.managedSites||[]).filter(id=>id!==s.id):[...(f.managedSites||[]),s.id])} style={{accentColor:"#3b82f6"}}/>
+              <span style={{fontSize:12,color:checked?"#60a5fa":"#94a3b8"}}>{s.name}</span>
+            </label>;
+          })}
+        </div>
+        <div style={{fontSize:10,color:"#64748b",marginTop:5}}>Manager will only see these sites in their portal.</div>
+      </div>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
         <FI label="Agreed Rate £/hr" value={f.agreedRate} onChange={v=>set("agreedRate",v?Number(v):null)} type="number"/>
         <FI label="Actual Rate £/hr" value={f.actualRate} onChange={v=>set("actualRate",v?Number(v):null)} type="number"/>
@@ -9578,29 +9591,319 @@ function LoginGate({onLogin}){
 }
 
 // ─── MANAGER VIEW ─────────────────────────────────────────────────────────────
-// Manager sees the SiteManagerView (already built) as their full interface
+// ─── Manager View — real sites from Supabase, filtered to assigned sites ──────
 function ManagerView({authState,onLogout}){
-  return(
-    <div style={{minHeight:"100vh",background:"#0a0e1a",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      {/* Manager top bar */}
-      <div style={{background:"#0f172a",borderBottom:"1px solid #1e2535",padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:32,height:32,background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🏗</div>
-          <div>
-            <div style={{color:"#f1f5f9",fontSize:13,fontWeight:700}}>Bright Metalwork — Manager Portal</div>
-            <div style={{color:"#64748b",fontSize:10}}>{authState.worker?.name||authState.email}</div>
+  const mgr=authState.worker;
+  const [allSites,setAllSites]=useState([]);
+  const [allWorkers,setAllWorkers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [openSiteId,setOpenSiteId]=useState(null);
+  const [varModal,setVarModal]=useState(null); // {siteId, variation|null}
+
+  // ── Fetch real data from Supabase ──────────────────────────────────────────
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const [sRows,wRows]=await Promise.all([
+          sbGet("sites","select=id,data&order=data->name"),
+          sbGet("workers","select=id,data&order=data->name"),
+        ]);
+        setAllSites(sRows.map(r=>({...r.data,id:r.id})));
+        setAllWorkers(wRows.map(r=>({...r.data,id:r.id})));
+      }catch(e){console.warn("Manager fetch failed:",e.message);}
+      setLoading(false);
+    })();
+  },[]);
+
+  // Only sites this manager is assigned to
+  const mgrSites=useMemo(()=>{
+    const assigned=mgr?.managedSites||[];
+    if(assigned.length===0) return allSites; // fallback: show all if none assigned yet
+    return allSites.filter(s=>assigned.includes(s.id));
+  },[allSites,mgr]);
+
+  const site=mgrSites.find(s=>s.id===openSiteId);
+
+  // Net-to-BM calculation (what manager manages — hides margins from client price)
+  const netToBM=(s)=>{
+    const sc=s.scopes||[];
+    const scopeT=sc.reduce((a,x)=>a+(Number(x.qty)||0)*(Number(x.rate)||0),0);
+    const poh=Number(s.pohPct)||0;
+    return Math.round(scopeT*(1-poh/100)*100)/100;
+  };
+
+  const scopeNetToBM=(scope,site)=>{
+    const full=(Number(scope.qty)||0)*(Number(scope.rate)||0);
+    const poh=Number(site.pohPct)||0;
+    return Math.round(full*(1-poh/100)*100)/100;
+  };
+
+  const fmt=n=>"£"+Math.round(n).toLocaleString("en-GB");
+  const initials=n=>(n||"?").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
+
+  // ── Header ─────────────────────────────────────────────────────────────────
+  const Header=()=><div style={{background:"#0f172a",borderBottom:"1px solid #1e2535",padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      {openSiteId&&<button onClick={()=>setOpenSiteId(null)} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:20,padding:"0 6px 0 0",lineHeight:1}}>←</button>}
+      <div style={{width:32,height:32,background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🏗</div>
+      <div>
+        <div style={{color:"#f1f5f9",fontSize:13,fontWeight:700}}>{openSiteId&&site?site.name:"Manager Portal"}</div>
+        <div style={{color:"#64748b",fontSize:10}}>{mgr?.name||authState.email}</div>
+      </div>
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,background:"#60a5fa22",color:"#60a5fa",border:"1px solid #60a5fa44",fontWeight:700}}>🏗 Manager</span>
+      <button onClick={onLogout} style={{padding:"5px 12px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:11,fontWeight:600}}>Sign Out</button>
+    </div>
+  </div>;
+
+  if(loading) return <div style={{minHeight:"100vh",background:"#0a0e1a",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontFamily:"system-ui"}}>Loading your sites…</div>;
+
+  // ── SITE LIST ──────────────────────────────────────────────────────────────
+  if(!openSiteId) return <div style={{minHeight:"100vh",background:"#0a0e1a",fontFamily:"'Inter',system-ui,sans-serif"}}>
+    <Header/>
+    <div style={{maxWidth:640,margin:"0 auto",padding:"16px 16px 48px"}}>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9"}}>My Sites</div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{mgrSites.length} site{mgrSites.length!==1?"s":""} assigned</div>
+      </div>
+      {mgrSites.length===0&&<div style={{textAlign:"center",padding:48,color:"#374151",border:"1px dashed #1e2535",borderRadius:12}}>
+        <div style={{fontSize:32,marginBottom:10}}>🏗</div>
+        <div style={{fontWeight:600,marginBottom:4}}>No sites assigned yet</div>
+        <div style={{fontSize:12}}>Ask your director or admin to assign you to a site.</div>
+      </div>}
+      {mgrSites.map(s=>{
+        const sc=s.scopes||[];
+        const budget=netToBM(s);
+        const avgDone=sc.length?sc.reduce((a,x)=>a+(Number(x.completed)||0),0)/sc.length:0;
+        const client=s.clientName||s.client||"—";
+        return <div key={s.id} onClick={()=>setOpenSiteId(s.id)}
+          style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:"14px 16px",marginBottom:10,cursor:"pointer",transition:"border-color .15s"}}
+          onMouseEnter={e=>e.currentTarget.style.borderColor="#2d3555"}
+          onMouseLeave={e=>e.currentTarget.style.borderColor="#1e2535"}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+            <div>
+              <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9"}}>{s.name}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{client}{s.address?" · "+s.address:""}</div>
+            </div>
+            <span style={{fontSize:11,padding:"2px 9px",borderRadius:20,fontWeight:700,background:s.status==="complete"?"#34d39922":"#3b82f622",color:s.status==="complete"?"#34d399":"#60a5fa",border:`1px solid ${s.status==="complete"?"#34d39944":"#3b82f644"}`}}>
+              {s.status==="complete"?"Complete":"Active"}
+            </span>
           </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+            <div style={{background:"#0d1117",borderRadius:8,padding:"7px 10px"}}>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>Budget</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#60a5fa",marginTop:1}}>{fmt(budget)}</div>
+            </div>
+            <div style={{background:"#0d1117",borderRadius:8,padding:"7px 10px"}}>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>Scopes</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#94a3b8",marginTop:1}}>{sc.length} items</div>
+            </div>
+            <div style={{background:"#0d1117",borderRadius:8,padding:"7px 10px"}}>
+              <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>Progress</div>
+              <div style={{fontSize:13,fontWeight:700,color:avgDone===100?"#34d399":"#fbbf24",marginTop:1}}>{avgDone.toFixed(0)}%</div>
+            </div>
+          </div>
+          <div style={{background:"#0d1117",borderRadius:4,height:5,overflow:"hidden"}}>
+            <div style={{height:"100%",background:avgDone===100?"#34d399":"#3b82f6",width:avgDone+"%",borderRadius:4,transition:"width .4s"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:6,fontSize:10,color:"#3b82f6",fontWeight:600}}>Open →</div>
+        </div>;
+      })}
+    </div>
+  </div>;
+
+  // ── SITE DETAIL (manager view) ─────────────────────────────────────────────
+  const [siteTab,setSiteTab]=useState("scopes");
+  const sc=site.scopes||[];
+  const vr=site.variations||[];
+  const weekLabel=formatWeekLabel?.(new Date())||new Date().toISOString().slice(0,10);
+
+  // Workers on this site (from schedule)
+  const siteWorkers=allWorkers.filter(w=>Object.values(w.days||{}).some(d=>(d||"").includes(site.name)));
+
+  // Variation modal state (stored here so it persists across re-renders)
+  const [localVars,setLocalVars]=useState(vr);
+  const [varForm,setVarForm]=useState({ref:"",description:"",value:"",type:"addition",status:"pending"});
+  const [editingVarId,setEditingVarId]=useState(null);
+
+  const saveVar=()=>{
+    if(!varForm.description) return;
+    if(editingVarId){
+      setLocalVars(vs=>vs.map(v=>v.id===editingVarId?{...v,...varForm}:v));
+    } else {
+      const newVar={...varForm,id:"var_"+Date.now(),ref:varForm.ref||"VAR-"+(localVars.length+1).toString().padStart(3,"0"),addedAt:new Date().toISOString()};
+      setLocalVars(vs=>[...vs,newVar]);
+    }
+    setVarModal(null);setEditingVarId(null);setVarForm({ref:"",description:"",value:"",type:"addition",status:"pending"});
+  };
+
+  const TABS=[["scopes","📋 Scopes"],["variations","⚡ Variations ("+(localVars.length)+")"],["workers","👷 Workers"],["docs","📁 Documents"],["application","📊 Payment App"]];
+
+  const INP={width:"100%",background:"#0d1117",border:"1px solid #1e2535",borderRadius:8,padding:"9px 12px",color:"#f1f5f9",fontSize:13,outline:"none",boxSizing:"border-box"};
+
+  return <div style={{minHeight:"100vh",background:"#0a0e1a",fontFamily:"'Inter',system-ui,sans-serif"}}>
+    <Header/>
+
+    {/* Variation modal */}
+    {varModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16}}>
+      <div style={{background:"#111827",borderRadius:14,width:"100%",maxWidth:440,border:"1px solid #1e2535",padding:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9"}}>{editingVarId?"Edit Variation":"New Variation"}</div>
+          <button onClick={()=>{setVarModal(null);setEditingVarId(null);setVarForm({ref:"",description:"",value:"",type:"addition",status:"pending"});}} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:20}}>×</button>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,background:"#60a5fa22",color:"#60a5fa",border:"1px solid #60a5fa44",fontWeight:700}}>🏗 Manager</span>
-          <button onClick={onLogout} style={{padding:"5px 12px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:11,fontWeight:600}}>Sign Out</button>
+        {[["Ref","ref","e.g. VAR-001"],["Description","description","What changed / reason…"],["Value £","value","0.00"]].map(([l,k,ph])=>(
+          <div key={k} style={{marginBottom:12}}>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{l}</div>
+            <input value={varForm[k]} onChange={e=>setVarForm(f=>({...f,[k]:e.target.value}))} placeholder={ph} style={INP}/>
+          </div>
+        ))}
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Type</div>
+          <select value={varForm.type} onChange={e=>setVarForm(f=>({...f,type:e.target.value}))} style={{...INP,cursor:"pointer"}}>
+            <option value="addition">Addition (+)</option>
+            <option value="omission">Omission (−)</option>
+          </select>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:4}}>
+          <button onClick={()=>{setVarModal(null);setEditingVarId(null);}} style={{flex:1,padding:"9px",background:"#1e2535",border:"1px solid #374151",borderRadius:8,color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}}>Cancel</button>
+          <button onClick={saveVar} style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>Save Variation</button>
         </div>
       </div>
-      {/* Render the Site Manager App — already built */}
-      <SiteManagerView/>
+    </div>}
+
+    <div style={{maxWidth:720,margin:"0 auto",padding:"16px 16px 48px"}}>
+      {/* Site header */}
+      <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+        <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9"}}>{site.name}</div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:3}}>{site.clientName||site.client||"—"}{site.address?" · "+site.address:""}</div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:9,padding:3,marginBottom:14,overflowX:"auto"}}>
+        {TABS.map(([v,l])=>(
+          <button key={v} onClick={()=>setSiteTab(v)}
+            style={{padding:"7px 13px",borderRadius:7,border:`1px solid ${siteTab===v?"#3b82f6":"transparent"}`,background:siteTab===v?"#1e3a5f":"transparent",color:siteTab===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:siteTab===v?700:400,whiteSpace:"nowrap"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* ── SCOPES (net-to-BM only, no client prices/margins) ── */}
+      {siteTab==="scopes"&&<div>
+        <div style={{background:"#0d1117",borderRadius:8,padding:"9px 13px",marginBottom:12,fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:7}}>
+          <span style={{fontSize:14}}>ℹ️</span>
+          <span>Amounts shown are your net budget after company margins. Client contract values are managed by the director.</span>
+        </div>
+        {sc.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>No scopes defined yet.</div>}
+        {sc.map((s,i)=>{
+          const budget=scopeNetToBM(s,site);
+          const done=Number(s.completed)||0;
+          const earned=Math.round(budget*done/100*100)/100;
+          return <div key={s.id||i} style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:"13px 14px",marginBottom:9}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+              <div style={{flex:1,marginRight:10}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>{s.description||s.name}</div>
+                {s.unit&&<div style={{fontSize:11,color:"#64748b",marginTop:1}}>{Number(s.qty)||0} {s.unit}</div>}
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:15,fontWeight:800,color:"#60a5fa"}}>{fmt(budget)}</div>
+                <div style={{fontSize:10,color:"#64748b",marginTop:1}}>your budget</div>
+              </div>
+            </div>
+            <div style={{background:"#1e2535",borderRadius:4,height:6,overflow:"hidden",marginBottom:6}}>
+              <div style={{height:"100%",background:done===100?"#34d399":done>60?"#3b82f6":"#fbbf24",width:done+"%",borderRadius:4,transition:"width .4s"}}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#64748b"}}>
+              <span>Completion: <b style={{color:"#f1f5f9"}}>{done}%</b></span>
+              <span>Earned value: <b style={{color:"#34d399"}}>{fmt(earned)}</b></span>
+            </div>
+          </div>;
+        })}
+      </div>}
+
+      {/* ── VARIATIONS (manager can view, add, edit) ── */}
+      {siteTab==="variations"&&<div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+          <button onClick={()=>setVarModal(true)}
+            style={{padding:"8px 16px",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+            + New Variation
+          </button>
+        </div>
+        {localVars.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>No variations yet. Add the first one.</div>}
+        {localVars.map((v,i)=>{
+          const isAdd=v.type==="addition";
+          const col=isAdd?"#34d399":"#f87171";
+          const badge=v.status==="approved"?"✓ Approved":v.status==="rejected"?"✕ Rejected":"⏳ Pending";
+          const badgeC={approved:"#34d399",rejected:"#f87171",pending:"#fbbf24"}[v.status||"pending"];
+          return <div key={v.id||i} style={{background:"#111827",border:`1px solid ${col}33`,borderRadius:11,padding:"13px 14px",marginBottom:9}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:"#64748b",fontFamily:"monospace",marginBottom:2}}>{v.ref}</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>{v.description}</div>
+              </div>
+              <div style={{display:"flex",gap:7,alignItems:"center"}}>
+                <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,fontWeight:700,background:badgeC+"22",color:badgeC,border:`1px solid ${badgeC}44`}}>{badge}</span>
+                <button onClick={()=>{setEditingVarId(v.id);setVarForm({ref:v.ref||"",description:v.description||"",value:v.value||"",type:v.type||"addition",status:v.status||"pending"});setVarModal(true);}}
+                  style={{padding:"3px 9px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,color:"#94a3b8",cursor:"pointer",fontSize:11}}>Edit</button>
+              </div>
+            </div>
+            <div style={{fontSize:15,fontWeight:800,color:col}}>{isAdd?"+":"-"}{fmt(Number(v.value)||0)}</div>
+          </div>;
+        })}
+      </div>}
+
+      {/* ── WORKERS ── */}
+      {siteTab==="workers"&&<SiteWorkersPanel site={site} allWorkers={allWorkers} weekLabel={weekLabel} scopes={sc} setDetailId={()=>{}} setPage={()=>{}}/>}
+
+      {/* ── DOCUMENTS ── */}
+      {siteTab==="docs"&&<div style={{textAlign:"center",padding:48,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
+        <div style={{fontSize:32,marginBottom:10}}>📁</div>
+        <div style={{fontWeight:600,marginBottom:4}}>Site Documents</div>
+        <div style={{fontSize:12}}>Documents for {site.name} will appear here once uploaded by admin or via the Site Documents tool.</div>
+      </div>}
+
+      {/* ── PAYMENT APPLICATION ── */}
+      {siteTab==="application"&&<div>
+        <div style={{background:"#0d1117",borderRadius:8,padding:"9px 13px",marginBottom:14,fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:7}}>
+          <span style={{fontSize:14}}>📊</span>
+          <span>Your payment application is based on the net budget amounts (after company margins). The director will add margins before issuing to the client.</span>
+        </div>
+        {sc.map((s,i)=>{
+          const budget=scopeNetToBM(s,site);
+          const done=Number(s.completed)||0;
+          const earned=Math.round(budget*done/100*100)/100;
+          return <div key={s.id||i} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:i%2===0?"#111827":"#0f1421",borderRadius:i===0?"10px 10px 0 0":i===sc.length-1?"0 0 10px 10px":"0",border:"1px solid #1e2535",borderBottom:i<sc.length-1?"none":"1px solid #1e2535"}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:12,fontWeight:600,color:"#f1f5f9"}}>{s.description||s.name}</div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{done}% complete</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:14,fontWeight:700,color:"#34d399"}}>{fmt(earned)}</div>
+              <div style={{fontSize:10,color:"#64748b"}}>of {fmt(budget)}</div>
+            </div>
+          </div>;
+        })}
+        {localVars.filter(v=>v.status==="approved").length>0&&<>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",margin:"14px 0 8px"}}>Approved Variations</div>
+          {localVars.filter(v=>v.status==="approved").map((v,i)=><div key={v.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"#111827",borderRadius:9,border:"1px solid #34d39944",marginBottom:7}}>
+            <div style={{fontSize:12,color:"#f1f5f9"}}>{v.ref} — {v.description}</div>
+            <div style={{fontSize:14,fontWeight:700,color:v.type==="addition"?"#34d399":"#f87171"}}>{v.type==="addition"?"+":"-"}{fmt(Number(v.value)||0)}</div>
+          </div>)}
+        </>}
+        <div style={{background:"linear-gradient(135deg,#0d1e3a,#1a2535)",border:"1px solid #3b82f644",borderRadius:11,padding:"14px 16px",marginTop:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:".05em"}}>Manager's Total (net of margins)</div>
+            <div style={{fontSize:11,color:"#374151",marginTop:2}}>Director adds margins before issuing to client</div>
+          </div>
+          <div style={{fontSize:24,fontWeight:900,color:"#34d399"}}>{fmt(sc.reduce((a,s)=>a+Math.round(scopeNetToBM(s,site)*( Number(s.completed)||0)/100*100)/100,0)+localVars.filter(v=>v.status==="approved").reduce((a,v)=>a+(v.type==="addition"?Number(v.value||0):-Number(v.value||0)),0))}</div>
+        </div>
+      </div>}
     </div>
-  );
+  </div>;
 }
+
+
 
 // ─── WORKER SELF VIEW ─────────────────────────────────────────────────────────
 // Worker sees their own data — read-only except they can add holidays + sign-in
