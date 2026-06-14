@@ -186,7 +186,7 @@ function ColorPicker({value,onChange}){
 }
 
 // ─── Inline Cell ──────────────────────────────────────────────────────────────
-function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate}){
+function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate,confirmed=false}){
   const [editing,setEditing]=useState(false);
   const [val,setVal]=useState(value||"");
   const ref=useRef(null);
@@ -201,9 +201,20 @@ function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate}){
       style={{width:"100%",background:"#0d1117",border:`2px solid ${getSiteColor(val,allSites)||"#3b82f6"}`,borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
     <datalist id={uid}>{allSiteNames.map(s=><option key={s} value={s}/>)}</datalist>
   </div>;
-  return <div onClick={()=>setEditing(true)} title="Click to edit" style={{cursor:"text",minWidth:110,padding:"3px 4px",borderRadius:5,border:"1px solid transparent",transition:"border-color 0.15s"}}
-    onMouseEnter={e=>e.currentTarget.style.borderColor="#2d3555"} onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>
-    {value?<Bdg label={value.trim()} color={getSiteColor(value,allSites)}/>:<span style={{color:"#374151",fontSize:11}}>— click —</span>}
+  return <div onClick={()=>setEditing(true)} title={confirmed?"✅ GPS confirmed — click to edit forecast":"📋 Forecast — click to edit"}
+    style={{cursor:"text",minWidth:110,padding:"3px 4px",borderRadius:5,
+      border:`1px solid ${confirmed?"#34d39933":"transparent"}`,
+      background:confirmed?"#0d221811":"transparent",transition:"border-color 0.15s"}}
+    onMouseEnter={e=>{if(!confirmed)e.currentTarget.style.borderColor="#2d3555";}}
+    onMouseLeave={e=>{if(!confirmed)e.currentTarget.style.borderColor="transparent";}}>
+    {value
+      ?<div style={{display:"flex",alignItems:"center",gap:3}}>
+          <Bdg label={value.trim()} color={getSiteColor(value,allSites)}/>
+          {confirmed
+            ?<span style={{fontSize:9,color:"#34d399",fontWeight:700}}>✓</span>
+            :<span style={{fontSize:9,color:"#64748b"}}>📋</span>}
+        </div>
+      :<span style={{color:"#374151",fontSize:11}}>— click —</span>}
   </div>;
 }
 
@@ -494,7 +505,10 @@ function doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites){
 function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
   const [sites,setSites]=useState(allSites.map(s=>({...s})));
   const [nn,setNn]=useState(""),[nc,setNc]=useState(PRESET_COLORS[0]),[ncl,setNcl]=useState("");
-  const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false}]);setNn("");};
+  const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9,contractType:"dayrate",pohPct:0,retentionPct:0}]);setNn("");};
+  const [locating,setLocating]=useState({});
+  const useMyLocation=(id)=>{setLocating(l=>({...l,[id]:true}));navigator.geolocation.getCurrentPosition(pos=>{up(id,"lat",+pos.coords.latitude.toFixed(6));up(id,"lng",+pos.coords.longitude.toFixed(6));setLocating(l=>({...l,[id]:false}));},()=>{alert("Could not get location. Please type coordinates manually.");setLocating(l=>({...l,[id]:false}));},{enableHighAccuracy:true,timeout:10000});};
+  const GpsFields=({s})=><div style={{marginTop:8,background:"#0a0e1a",borderRadius:7,padding:"8px 10px",border:"1px solid #1e2535"}}><div style={{fontSize:9,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:6}}>📍 GPS — Worker Sign In/Out</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Latitude</div><input type="number" step="0.000001" value={s.lat||""} onChange={e=>up(s.id,"lat",+e.target.value||null)} placeholder="51.509865" style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Longitude</div><input type="number" step="0.000001" value={s.lng||""} onChange={e=>up(s.id,"lng",+e.target.value||null)} placeholder="-0.118092" style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Radius (m)</div><input type="number" min="10" max="2000" step="10" value={s.radius||100} onChange={e=>up(s.id,"radius",+e.target.value||100)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div></div><div style={{marginBottom:8}}><div style={{fontSize:9,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>⏱ Hours & Overtime</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Start Time</div><input type="time" value={s.startTime||"07:30"} onChange={e=>up(s.id,"startTime",e.target.value)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Std Hours/Day</div><input type="number" min="1" max="24" step="0.5" value={s.stdHours||9} onChange={e=>up(s.id,"stdHours",+e.target.value||9)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>OT After (hrs)</div><input type="number" min="1" max="24" step="0.5" value={s.otThreshold||s.stdHours||9} onChange={e=>up(s.id,"otThreshold",+e.target.value||9)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div></div></div><div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={()=>useMyLocation(s.id)} disabled={locating[s.id]} style={{padding:"4px 10px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700,opacity:locating[s.id]?0.6:1}}>{locating[s.id]?"Getting…":"📍 Use My Current Location"}</button>{s.lat&&s.lng?<span style={{fontSize:10,color:"#34d399",fontWeight:600}}>✓ GPS set · {s.radius||100}m</span>:<span style={{fontSize:10,color:"#f87171",fontWeight:700}}>🔒 No GPS — workers cannot sign in</span>}</div></div>;
   const rm=id=>{if(window.confirm("Delete this site?"))setSites(s=>s.filter(x=>x.id!==id));};
   const up=(id,k,v)=>setSites(s=>s.map(x=>x.id===id?{...x,[k]:v}:x));
   const builtins=sites.filter(s=>s.builtin);
@@ -522,6 +536,7 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
           </div>
           <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
           <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <GpsFields s={s}/>
         </div>)}
       </div>
     </div>
@@ -536,6 +551,7 @@ function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
           </div>
           <div style={{marginBottom:7}}><ColorPicker value={s.color} onChange={(c)=>{up(s.id,"color",c);}}/></div>
           <select value={s.clientId||""} onChange={(e)=>{up(s.id,"clientId",e.target.value||null);}} style={{...INP,fontSize:12,padding:"4px 7px",cursor:"pointer"}}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <GpsFields s={s}/>
         </div>)}
       </div>
     </div>}
@@ -552,7 +568,14 @@ function WorkerModal({worker,onSave,onClose,allSiteNames,allSites,activeDays}){
   const [tab,setTab]=useState("personal");
   const [allPositions,setAllPositions]=useState([...POSITIONS]);
   const [showCustomInput,setShowCustomInput]=useState(!POSITIONS.includes(worker.position)&&!!worker.position);
-  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  const set=(k,v)=>{
+    if(["agreedRate","taxRate","overtimeMultiplier","customOTRate"].includes(k)&&worker.id&&worker[k]!==undefined&&worker[k]!==null&&worker[k]!==v){
+      const histEntry={changedAt:new Date().toISOString(),[k]:worker[k],changedBy:"Admin"};
+      setF(x=>({...x,[k]:v,payRateHistory:[...(x.payRateHistory||[]),histEntry]}));
+    } else {
+      setF(x=>({...x,[k]:v}));
+    }
+  };
   const setD=(d,v)=>setF(x=>({...x,days:{...x.days,[d]:v}}));
   const setH=(d,v)=>setF(x=>({...x,hoursPerDay:{...x.hoursPerDay,[d]:Number(v)||0}}));
   const setOT=(d,v)=>setF(x=>({...x,overtimeHours:{...x.overtimeHours,[d]:Number(v)||0}}));
@@ -2776,350 +2799,504 @@ function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDeta
 }
 
 // ── Dashboard Worker Detail ───────────────────────────────────────────────────
-function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,timesheetRecords,payslipRecords,setTimesheetRecords,setPayslipRecords,setPage,setModal}){
+function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,timesheetRecords,payslipRecords,setTimesheetRecords,setPayslipRecords,setPage,setModal,weekLabel}){
   const w=workers.find(x=>x.id===workerId);
-  if(!w) return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Worker not found.</div></div>;
-  const {gross,net,stdH,otH}=calcPay(w,activeDays,siteHours);
-  const heldCerts=Object.entries(w.certs||{}).filter(([,v])=>v.held).map(([k,v])=>({...v,key:k,label:CERTS.find(c=>c.key===k)?.label||k}));
+  if(!w)return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Worker not found.</div></div>;
+
   const [tab,setTab]=useState("profile");
 
-  // Worker's timesheets and payslips
-  const wTimesheets=(timesheetRecords||[]).filter(t=>t.workerId===w.id).sort((a,b)=>new Date(b.weekLabel)-new Date(a.weekLabel));
-  const wPayslips=(payslipRecords||[]).filter(p=>p.workerId===w.id).sort((a,b)=>new Date(b.weekLabel)-new Date(a.weekLabel));
+  // ── Derived data ────────────────────────────────────────────────────────────
+  const {gross,net,stdH,otH}=calcPay(w,activeDays,siteHours);
+  const heldCerts=CERTS.filter(c=>w.certs?.[c.key]?.held);
+  const certAlerts=heldCerts.filter(c=>{const s=cSt(c,w);return s==="expired"||s==="expiring";});
+  const CERT_STATUS_C={valid:"#34d399",expiring:"#fbbf24",expired:"#f87171",missing:"#374151"};
 
-  // Holiday requests
-  const [holidays,setHolidays]=useState(w.holidayRequests||[]);
-  const [newHolFrom,setNewHolFrom]=useState("");
-  const [newHolTo,setNewHolTo]=useState("");
-  const [newHolNote,setNewHolNote]=useState("");
-  function requestHoliday(){
-    if(!newHolFrom) return;
-    const req={id:"hol_"+Date.now(),from:newHolFrom,to:newHolTo||newHolFrom,note:newHolNote,status:"pending",requestedAt:new Date().toISOString()};
-    setHolidays(h=>[...h,req]);
-    // Save back to worker (handled by parent via setModal — here we just show it locally)
-    setNewHolFrom("");setNewHolTo("");setNewHolNote("");
-  }
-  function approveHoliday(id){setHolidays(h=>h.map(r=>r.id===id?{...r,status:"approved"}:r));}
-  function declineHoliday(id){setHolidays(h=>h.map(r=>r.id===id?{...r,status:"declined"}:r));}
-  function deleteHoliday(id){setHolidays(h=>h.filter(r=>r.id!==id));}
-
-  // RTW expiry check
+  // RTW
   const rtwExp=w.shareCodeExpiry?new Date(w.shareCodeExpiry):null;
   const rtwDays=rtwExp?(rtwExp-new Date())/86400000:null;
   const rtwStatus=!w.shareCode?"missing":!rtwExp?"valid":rtwDays<0?"expired":rtwDays<30?"expiring":"valid";
-  const rtwColor={missing:"#374151",valid:"#34d399",expiring:"#fbbf24",expired:"#f87171"}[rtwStatus];
+  const rtwColor={missing:"#f87171",valid:"#34d399",expiring:"#fbbf24",expired:"#f87171"}[rtwStatus];
+  const rtwUploaded=!!(w.workerFiles||[]).length;
+
+  // Pay rate history
+  const payHistory=w.payRateHistory||[];
+
+  // Timesheets & payslips for this worker
+  const wTimesheets=(timesheetRecords||[]).filter(t=>t.workerId===w.id)
+    .sort((a,b)=>new Date(b.weekLabel)-new Date(a.weekLabel));
+  const wPayslips=(payslipRecords||[]).filter(p=>p.workerId===w.id)
+    .sort((a,b)=>new Date(b.weekLabel)-new Date(a.weekLabel));
+
+  // GPS confirmed work entries
+  const wLogs=(w.attendanceLogs||[]).filter(l=>l.signIn&&l.signOut)
+    .sort((a,b)=>new Date(b.signIn)-new Date(a.signIn));
+
+  // This week's confirmed entries
+  const thisWeekLogs=wLogs.filter(l=>l.weekLabel===weekLabel);
+  const confirmedHrsThisWeek=thisWeekLogs.reduce((a,l)=>a+Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100,0);
 
   const initials=(w.name||"?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase();
-  const wColor="#3b82f6";
+  const fmtD=d=>d?new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—";
+  const fmtT=iso=>iso?new Date(iso).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—";
+
+  // ── Action buttons ─────────────────────────────────────────────────────────
+  const ActionButtons=()=><div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:0}}>
+    <button onClick={()=>setModal({type:"worker",worker:w})}
+      style={{padding:"7px 13px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700}}>
+      ✏️ Edit
+    </button>
+    <button onClick={()=>setTab("payslips")}
+      style={{padding:"7px 13px",background:tab==="payslips"?"#1a0d2e":"#0d1117",border:`1px solid ${tab==="payslips"?"#a78bfa":"#1e2535"}`,borderRadius:7,color:tab==="payslips"?"#a78bfa":"#94a3b8",cursor:"pointer",fontSize:12,fontWeight:600}}>
+      💷 Payslips{wPayslips.length>0?` (${wPayslips.length})`:""}
+    </button>
+    <button onClick={()=>exportWorkerProfile(w,allSites,weekLabel||formatWeekLabel(new Date()))}
+      style={{padding:"7px 13px",background:"#0d1117",border:"1px solid #1e2535",borderRadius:7,color:"#64748b",cursor:"pointer",fontSize:12}}>
+      📋 PDF
+    </button>
+  </div>;
 
   return <div>
-    <DPageHdr title={<span style={{display:"flex",alignItems:"center",gap:10}}>
-      <div style={{width:36,height:36,borderRadius:9,background:wColor+"22",border:"1px solid "+wColor+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:wColor,flexShrink:0}}>{initials}</div>
-      <span>{w.name}</span>
-    </span>} sub={w.position+" · "+w.company} back="Workers" onBack={()=>setPage("workers")}
-      actions={<div style={{display:"flex",gap:6}}>
-        <button onClick={()=>setModal({type:"worker",worker:w})} style={{padding:"6px 12px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:600}}>✏️ Edit</button>
-        <button onClick={()=>exportWorkerProfile(w,allSites,formatWeekLabel(new Date()))} style={{padding:"6px 12px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,color:"#94a3b8",cursor:"pointer",fontSize:12}}>📋 Profile PDF</button>
-        <button onClick={()=>exportPayslip(w,activeDays,formatWeekLabel(new Date()),siteHours)} style={{padding:"6px 12px",background:"#0d2218",border:"1px solid #10b981",borderRadius:6,color:"#34d399",cursor:"pointer",fontSize:12,fontWeight:600}}>💷 Payslip</button>
-      </div>}/>
+    <DPageHdr
+      title={<span style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:38,height:38,borderRadius:9,background:"#3b82f622",border:"1px solid #3b82f644",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#3b82f6"}}>{initials}</div>
+        <div>
+          <div>{w.name}</div>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:400,marginTop:1}}>{w.position} · {w.company}</div>
+        </div>
+      </span>}
+      sub="" back="Workers" onBack={()=>setPage("workers")}
+      actions={<ActionButtons/>}
+    />
 
     <div style={DS.body}>
-      {/* Top stat cards */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}}>
+      {/* ── KPI STRIP — 4 tiles (no Certs Held) ── */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:16}}>
         <DStat label="Hourly Rate" value={w.agreedRate?"£"+w.agreedRate+"/hr":"Not set"} color="#34d399"/>
-        <DStat label="Tax Rate" value={Math.round((w.taxRate||0)*100)+"%"} color={w.taxRate===0.30?"#f87171":w.taxRate===0.20?"#fbbf24":"#34d399"}/>
-        <DStat label="This Week Gross" value={gross>0?"£"+gross.toFixed(0):"£0"} color="#60a5fa"/>
-        <DStat label="This Week Net" value={net>0?"£"+net.toFixed(0):"£0"} color="#a78bfa"/>
-        <DStat label="Right to Work" value={rtwStatus.toUpperCase()} color={rtwColor} sub={rtwDays!==null&&rtwDays<30?rtwDays<0?"EXPIRED":Math.ceil(rtwDays)+"d remaining":""}/>
+        <DStat label="CIS Tax" value={Math.round((w.taxRate||0)*100)+"%"} color={w.taxRate===0.30?"#f87171":w.taxRate===0.20?"#fbbf24":"#34d399"}/>
+        <DStat label="Wk Confirmed" value={confirmedHrsThisWeek>0?confirmedHrsThisWeek.toFixed(1)+"h":"—"} color="#60a5fa" sub="GPS sign-ins"/>
+        <DStat label="Right to Work" value={rtwStatus.toUpperCase()} color={rtwColor} sub={rtwDays!==null&&rtwDays<30?rtwDays<0?"EXPIRED":Math.ceil(rtwDays)+"d left":""}/>
       </div>
 
-      {/* Tab bar */}
-      <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:20,width:"fit-content",flexWrap:"wrap"}}>
-        {[["profile","👤 Profile"],["rtw","🛡 Right to Work"],["schedule","📅 Schedule"],["timesheets","⏱ Timesheets ("+wTimesheets.length+")"],["payslips","💷 Payslips ("+wPayslips.length+")"],["certs","🏅 Certs ("+heldCerts.length+")"],["holidays","🏖 Holidays ("+holidays.length+")"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setTab(v)} style={{padding:"6px 12px",background:tab===v?"#1e3a5f":"transparent",border:tab===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:tab===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:11,fontWeight:tab===v?700:400,whiteSpace:"nowrap"}}>{l}</button>
+      {/* ── TAB NAV ── */}
+      <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:16,overflowX:"auto",flexWrap:"wrap"}}>
+        {[
+          ["profile","👤 Profile"],
+          ["pay","💷 Pay Rate"],
+          ["workentries","✅ Work Entries"],
+          ["timesheets","⏱ Timesheets"+(wTimesheets.length?` (${wTimesheets.length})`:"")],
+          ["payslips","💰 Payslips"+(wPayslips.length?` (${wPayslips.length})`:"")],
+          ["certs","🏅 Certs"+(certAlerts.length?` ⚠${certAlerts.length}`:`(${heldCerts.length})`)],
+          ["rtw","🛡 RTW"],
+          ["schedule","📅 Schedule"],
+          ["holidays","🏖 Holidays"],
+        ].map(([v,l])=>(
+          <button key={v} onClick={()=>setTab(v)}
+            style={{padding:"6px 11px",background:tab===v?"#1e3a5f":"transparent",
+              border:tab===v?"1px solid #3b82f6":"1px solid transparent",
+              borderRadius:6,color:tab===v?"#60a5fa":"#64748b",cursor:"pointer",
+              fontSize:11,fontWeight:tab===v?700:400,whiteSpace:"nowrap"}}>
+            {l}
+          </button>
         ))}
       </div>
 
-      {/* Profile tab */}
-      {tab==="profile"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        {/* Personal details */}
+      {/* ══ PROFILE TAB ══════════════════════════════════════════════════════ */}
+      {tab==="profile"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        {/* Left — personal */}
         <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
           <div style={{fontSize:11,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Personal Details</div>
-          {[
-            ["Full Name",w.name],["Position",w.position],["Company",w.company],
-            ["Nationality",w.nationality||"—"],["Date of Birth",w.dob?fmtDate(w.dob):"—"],
-            ["Contact",w.contact||"—"],["Email",w.email||"—"],
-            ["Address",w.address||"—"],
-            ["Next of Kin",w.nextOfKin?(w.nextOfKin+(w.nextOfKinPhone?" · "+w.nextOfKinPhone:"")):"—"],
-          ].map(([l,v])=>(
-            <div key={l} style={{display:"flex",gap:10,padding:"7px 0",borderBottom:"1px solid #1e2535"}}>
-              <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:90,textTransform:"uppercase",flexShrink:0,lineHeight:1.6}}>{l}</span>
+          {[["Full Name",w.name],["Position",w.position],["Company",w.company],["Nationality",w.nationality||"—"],["Date of Birth",w.dob?fmtD(w.dob):"—"],["Contact",w.contact||"—"],["Email",w.email||"—"],["Address",w.address||"—"],["Next of Kin",w.nextOfKin?(w.nextOfKin+(w.nextOfKinPhone?" · "+w.nextOfKinPhone:"")):"—"]].map(([l,v])=>(
+            <div key={l} style={{display:"flex",gap:8,padding:"6px 0",borderBottom:"1px solid #1e2535"}}>
+              <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:90,textTransform:"uppercase",flexShrink:0}}>{l}</span>
               <span style={{fontSize:12,color:"#e2e8f0",wordBreak:"break-word"}}>{v}</span>
             </div>
           ))}
         </div>
 
-        {/* Work & Pay details */}
+        {/* Right — pay summary + certs widget */}
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {/* Pay summary */}
           <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
             <div style={{fontSize:11,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Pay Details</div>
-            {[
-              ["Agreed Rate",w.agreedRate?"£"+w.agreedRate+"/hr":"Not set"],
-              ["OT Rate",w.customOTRate?"£"+w.customOTRate+"/hr":"×"+(w.overtimeMultiplier||1.5)+" std"],
-              ["Tax Rate",Math.round((w.taxRate||0)*100)+"%"],
-              ["NINO",w.nino||"—"],["UTR",w.utr||"—"],
-              ["Bank",w.bankName?(w.bankName+" · "+w.bankAccount+" · "+w.bankSort):"—"],
-            ].map(([l,v])=>(
-              <div key={l} style={{display:"flex",gap:10,padding:"5px 0",borderBottom:"1px solid #1e2535"}}>
+            {[["Hourly Rate",w.agreedRate?"£"+w.agreedRate+"/hr":"Not set"],["CIS Tax",Math.round((w.taxRate||0)*100)+"%"],["OT Rate",w.customOTRate?"£"+w.customOTRate+"/hr":"×"+(w.overtimeMultiplier||1.5)+" standard"],["NINO",w.nino||"—"],["UTR",w.utr||"—"],["Bank",w.bankName?(w.bankName+" · "+(w.bankAccount||"")+" · "+(w.bankSort||"")):"—"]].map(([l,v])=>(
+              <div key={l} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid #1e2535"}}>
                 <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:80,textTransform:"uppercase",flexShrink:0}}>{l}</span>
                 <span style={{fontSize:12,color:"#e2e8f0"}}>{v}</span>
               </div>
             ))}
           </div>
 
-          {/* This week allocation */}
+          {/* Certificates widget — held certs only */}
           <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
-            <div style={{fontSize:11,color:"#34d399",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>This Week Allocation</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:12}}>
-              {BASE_DAYS.map(d=>{const site=w.days?.[d];const s=site&&allSites.find(x=>site.includes(x.name));const c=s?.color||"#374151";return <div key={d} style={{textAlign:"center"}}>
-                <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{d}</div>
-                <div style={{height:3,borderRadius:2,background:c,marginBottom:4}}/>
-                <div style={{fontSize:9,color:c,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",padding:"0 2px"}} title={site}>{site?site.split("-")[0].trim():"—"}</div>
-              </div>;})}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontSize:11,color:"#a78bfa",fontWeight:700,textTransform:"uppercase"}}>🏅 Certifications</div>
+              <button onClick={()=>setTab("certs")} style={{fontSize:10,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontWeight:600}}>View all →</button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7}}>
-              {[["Std Hrs",stdH+"h","#60a5fa"],["OT Hrs",otH>0?otH+"h":"—","#fbbf24"],["Gross","£"+gross.toFixed(0),"#34d399"]].map(([l,v,c])=>(
-                <div key={l} style={{background:"#0f1421",borderRadius:7,padding:9,textAlign:"center"}}>
-                  <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div>
-                  <div style={{fontSize:15,fontWeight:800,color:c,marginTop:2}}>{v}</div>
-                </div>
-              ))}
-            </div>
+            {heldCerts.length===0
+              ?<div style={{fontSize:12,color:"#374151",fontStyle:"italic"}}>No certifications recorded.</div>
+              :<div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {heldCerts.map(cert=>{
+                  const s=cSt(cert,w);
+                  const val=w.certs[cert.key];
+                  return <div key={cert.key} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 7px",background:"#0f1421",borderRadius:6,border:`1px solid ${CERT_STATUS_C[s]}33`}}>
+                    <div style={{width:6,height:6,borderRadius:"50%",background:CERT_STATUS_C[s],flexShrink:0}}/>
+                    <span style={{fontSize:11,color:"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cert.label}</span>
+                    {cert.hasExpiry&&val?.expiry&&<span style={{fontSize:10,color:CERT_STATUS_C[s],fontWeight:600,flexShrink:0}}>{fmtD(val.expiry)}</span>}
+                    <span style={{fontSize:9,color:CERT_STATUS_C[s],fontWeight:700,textTransform:"uppercase",flexShrink:0}}>{s}</span>
+                  </div>;
+                })}
+              </div>}
           </div>
         </div>
-      </div>}
-
-      {/* Right to Work tab */}
-      {tab==="rtw"&&<div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
-          <div style={{background:"#111827",border:"1px solid "+rtwColor+"44",borderRadius:11,padding:16,borderLeft:"4px solid "+rtwColor}}>
-            <div style={{fontSize:11,color:rtwColor,fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Right to Work Status: {rtwStatus.toUpperCase()}</div>
-            {[
-              ["Share Code",w.shareCode||"—"],
-              ["Date Added / Checked",w.shareCodeDate?fmtDate(w.shareCodeDate):"—"],
-              ["Expiry Date",w.shareCodeExpiry?fmtDate(w.shareCodeExpiry):"—"],
-              ["Nationality",w.nationality||"—"],
-              ["NINO",w.nino||"—"],
-            ].map(([l,v])=>(
-              <div key={l} style={{display:"flex",gap:10,padding:"7px 0",borderBottom:"1px solid #1e2535"}}>
-                <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:110,textTransform:"uppercase",flexShrink:0}}>{l}</span>
-                <span style={{fontSize:12,color:l==="Share Code"&&w.shareCode?"#34d399":"#e2e8f0",fontWeight:l==="Share Code"?700:400}}>{v}</span>
-              </div>
-            ))}
-            {rtwDays!==null&&rtwDays<30&&<div style={{marginTop:10,padding:"9px 12px",background:rtwColor+"18",borderRadius:8,border:"1px solid "+rtwColor+"44",fontSize:11,color:rtwColor,fontWeight:700}}>
-              {rtwDays<0?"⚠️ RIGHT TO WORK EXPIRED — must not work until renewed":"⚠️ Expiring in "+Math.ceil(rtwDays)+" days — renew urgently"}
-            </div>}
-          </div>
-
-          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>📎 Documents Attached ({(w.workerFiles||[]).length})</div>
-            {(w.workerFiles||[]).length===0?<div style={{color:"#374151",fontSize:12,textAlign:"center",padding:"20px 0",border:"1px dashed #1e2535",borderRadius:8}}>No documents. Edit worker to attach ID, RTW proof, licence, agreement.</div>:
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {(w.workerFiles||[]).map((wf,i)=>{
-                const isImg=wf.type&&wf.type.startsWith("image/");
-                const icon=isImg?"🖼":wf.type==="application/pdf"?"📄":wf.type&&wf.type.includes("word")?"📝":"📎";
-                return <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#0f1421",borderRadius:8,border:"1px solid #2d3555"}}>
-                  <span style={{fontSize:18,flexShrink:0}}>{icon}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:600,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{wf.name}</div>
-                    {wf.addedAt&&<div style={{fontSize:10,color:"#374151"}}>Added: {fmtDate(wf.addedAt)}</div>}
+          {/* ── WEEK FORECAST WIDGET ── */}
+          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16,marginTop:0}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontSize:11,color:"#3b82f6",fontWeight:700,textTransform:"uppercase"}}>📅 Week Forecast — WC {weekLabel||"—"}</div>
+              <span style={{fontSize:10,color:"#374151",fontStyle:"italic"}}>Route only — confirmed by GPS sign-in</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
+              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>{
+                const site=w.days?.[d];
+                const off=!site||isOff(site);
+                const confirmed=thisWeekLogs.some(l=>l.day===d);
+                const activeNow=thisWeekLogs.some(l=>l.day===d&&l.signIn&&!l.signOut);
+                const siteObj=allSites.find(s=>site&&(site.includes(s.name)||s.name.includes((site||"").split("-")[0]?.trim())));
+                const col=siteObj?.color||"#3b82f6";
+                const isToday=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()]===d;
+                return <div key={d} style={{
+                  textAlign:"center",
+                  background:confirmed?"#0d2218":activeNow?"#0d1e2a":isToday?"#1a1f2e":"#0f1421",
+                  borderRadius:9,
+                  padding:"8px 4px",
+                  border:`2px solid ${activeNow?"#fbbf24":confirmed?"#34d399":isToday?col+"88":"#1e2535"}`,
+                  transition:"all 0.2s"
+                }}>
+                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:4,
+                    color:activeNow?"#fbbf24":confirmed?"#34d399":isToday?col:"#64748b"}}>
+                    {d}
                   </div>
-                  {isImg?<a href={wf.url} target="_blank" rel="noreferrer" style={{padding:"3px 9px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",fontSize:10,textDecoration:"none",fontWeight:700}}>👁 View</a>:
-                    <a href={wf.url} download={wf.name} style={{padding:"3px 9px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",fontSize:10,textDecoration:"none",fontWeight:700}}>⬇ Download</a>}
+                  {activeNow&&<div style={{fontSize:9,color:"#fbbf24",marginBottom:3}}>● Live</div>}
+                  {!activeNow&&confirmed&&<div style={{fontSize:11,marginBottom:3}}>✅</div>}
+                  {!off
+                    ?<div style={{fontSize:9,color:off?"#374151":col,fontWeight:600,lineHeight:1.3,
+                        overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",
+                        wordBreak:"break-word",minHeight:28}}>
+                        {site.trim()}
+                      </div>
+                    :<div style={{fontSize:9,color:"#374151",fontStyle:"italic"}}>Off</div>}
                 </div>;
               })}
-            </div>}
-            <div style={{marginTop:10,fontSize:10,color:"#374151"}}>To add documents, click ✏️ Edit above → Right to Work section</div>
+            </div>
+            <div style={{display:"flex",gap:14,marginTop:8,fontSize:10,color:"#374151"}}>
+              <span>✅ GPS confirmed</span>
+              <span style={{color:"#fbbf24"}}>● On site now</span>
+              <span>📋 Forecast only</span>
+            </div>
           </div>
         </div>
       </div>}
 
-      {/* Schedule tab */}
-      {tab==="schedule"&&<div>
-        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr>
-              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=><th key={d} style={{...DS.th,textAlign:"center",color:d==="Sat"||d==="Sun"?"#fbbf24":"#64748b"}}>{d}</th>)}
-            </tr></thead>
-            <tbody><tr>
-              {ALL_DAYS.map(d=>{const site=w.days?.[d];const c=getSiteColor(site,allSites);return <td key={d} style={{...DS.td,textAlign:"center",padding:"10px 6px",background:d==="Sat"||d==="Sun"?"rgba(251,191,36,0.03)":undefined}}>
-                {site?<span style={{display:"inline-block",padding:"3px 8px",borderRadius:5,fontSize:11,fontWeight:700,color:"#fff",background:c,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={site}>{site}</span>:<span style={{color:"#374151",fontSize:11}}>—</span>}
-              </td>;})}
-            </tr></tbody>
-          </table>
-        </div>
-      </div>}
-
-      {/* Timesheets tab */}
-      {tab==="timesheets"&&<div>
-        {wTimesheets.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
-          <div style={{fontSize:28,marginBottom:8}}>⏱</div>No timesheets yet. Timesheets are auto-generated each week.
-        </div>:
-        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr>
-              <th style={DS.th}>Week Commencing</th><th style={DS.th}>Std h</th><th style={DS.th}>OT h</th>
-              <th style={DS.th}>Rate</th><th style={DS.th}>Gross</th><th style={DS.th}>Tax</th><th style={DS.th}>Net</th>
-              <th style={DS.th}>Status</th><th style={DS.th}>Download</th>
-            </tr></thead>
-            <tbody>{wTimesheets.map((t,i)=>{
-              const ST={draft:{c:"#64748b",bg:"#1e2535"},submitted:{c:"#fbbf24",bg:"#1a1500"},approved:{c:"#34d399",bg:"#0d2218"},payslip_generated:{c:"#a78bfa",bg:"#1a0d2e"}};
-              const st=ST[t.status]||ST.draft;
-              return <tr key={t.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
-                <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>WC {t.weekLabel}</td>
-                <td style={{...DS.td,color:"#60a5fa",fontWeight:600,textAlign:"center"}}>{t.stdHours}h</td>
-                <td style={{...DS.td,color:"#fbbf24",textAlign:"center"}}>{t.otHours>0?t.otHours+"h":"—"}</td>
-                <td style={{...DS.td,color:"#34d399"}}>{t.rate?"£"+t.rate+"/hr":"—"}</td>
-                <td style={{...DS.td,color:"#34d399",fontWeight:700}}>£{(t.gross||0).toFixed(2)}</td>
-                <td style={{...DS.td,color:"#f87171"}}>£{(t.tax||0).toFixed(2)}</td>
-                <td style={{...DS.td,color:"#a78bfa",fontWeight:800}}>£{(t.net||0).toFixed(2)}</td>
-                <td style={DS.td}><span style={{padding:"2px 8px",borderRadius:4,fontSize:10,fontWeight:700,color:st.c,background:st.bg,textTransform:"capitalize"}}>{t.status}</span></td>
-                <td style={DS.td}><button onClick={()=>exportPayslip({...w,agreedRate:t.rate,taxRate:t.taxRate,days:t.days||{},overtimeHours:{},hoursPerDay:{}},activeDays,t.weekLabel,siteHours||{})}
-                  style={{padding:"3px 9px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>💷 PDF</button></td>
-              </tr>;
-            })}</tbody>
-            <tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
-              <td style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>ALL TIME TOTALS</td>
-              <td style={{...DS.td,color:"#60a5fa",fontWeight:700,textAlign:"center"}}>{wTimesheets.reduce((a,t)=>a+t.stdHours,0)}h</td>
-              <td style={{...DS.td,color:"#fbbf24",textAlign:"center"}}>{wTimesheets.reduce((a,t)=>a+t.otHours,0)>0?wTimesheets.reduce((a,t)=>a+t.otHours,0)+"h":"—"}</td>
-              <td style={DS.td}/>
-              <td style={{...DS.td,color:"#34d399",fontWeight:800}}>£{wTimesheets.reduce((a,t)=>a+(t.gross||0),0).toFixed(2)}</td>
-              <td style={{...DS.td,color:"#f87171",fontWeight:700}}>£{wTimesheets.reduce((a,t)=>a+(t.tax||0),0).toFixed(2)}</td>
-              <td style={{...DS.td,color:"#a78bfa",fontWeight:900,fontSize:13}}>£{wTimesheets.reduce((a,t)=>a+(t.net||0),0).toFixed(2)}</td>
-              <td colSpan={2} style={DS.td}/>
-            </tr></tfoot>
-          </table>
-        </div>}
-      </div>}
-
-      {/* Payslips tab */}
-      {tab==="payslips"&&<div>
-        {wPayslips.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
-          <div style={{fontSize:28,marginBottom:8}}>💷</div>No payslips yet. Created automatically after timesheets are approved.
-        </div>:
-        <div>
-          {/* Payslip cards */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10,marginBottom:16}}>
-            {wPayslips.map(p=>{
-              const issued=p.status==="issued";
-              return <div key={p.id} style={{background:"linear-gradient(145deg,#141924,#1a2035)",border:"1px solid "+(issued?"#065f4666":"#1e2535"),borderRadius:11,padding:14,position:"relative",overflow:"hidden"}}>
-                {issued&&<div style={{position:"absolute",top:8,right:-18,background:"#059669",color:"#fff",fontSize:8,fontWeight:800,padding:"2px 22px",transform:"rotate(30deg)"}}>ISSUED</div>}
-                <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",marginBottom:8}}>WC {p.weekLabel}</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5,marginBottom:10}}>
-                  {[["Gross","£"+(p.gross||0).toFixed(0),"#34d399"],["Tax","-£"+(p.tax||0).toFixed(0),"#f87171"],["Net","£"+(p.net||0).toFixed(0),"#a78bfa"]].map(([l,v,c])=>(
-                    <div key={l} style={{textAlign:"center",background:"#0f1421",borderRadius:6,padding:"5px 4px"}}>
-                      <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div>
-                      <div style={{fontSize:12,fontWeight:800,color:c,marginTop:1}}>{v}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{fontSize:10,color:"#64748b",marginBottom:8}}>{p.stdHours}h std{p.otHours>0?" · "+p.otHours+"h OT":""} · £{p.rate||0}/hr</div>
-                <button onClick={()=>exportPayslip({...w,agreedRate:p.rate,taxRate:p.taxRate,days:p.days||{},overtimeHours:{},hoursPerDay:{}},activeDays,p.weekLabel,siteHours||{})}
-                  style={{width:"100%",padding:"6px 0",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:700}}>💷 Download Payslip PDF</button>
-                {p.issuedAt&&<div style={{fontSize:8,color:"#374151",textAlign:"center",marginTop:5}}>Issued {fmtDate(p.issuedAt)}</div>}
-              </div>;
-            })}
-          </div>
-          {/* All-time totals */}
-          <div style={{background:"#0d2218",border:"1px solid #065f46",borderRadius:10,padding:14,display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
-            {[["Total Gross","£"+wPayslips.reduce((a,p)=>a+(p.gross||0),0).toFixed(2),"#34d399"],["Total Tax","£"+wPayslips.reduce((a,p)=>a+(p.tax||0),0).toFixed(2),"#f87171"],["Total Net Pay","£"+wPayslips.reduce((a,p)=>a+(p.net||0),0).toFixed(2),"#a78bfa"]].map(([l,v,c])=>(
-              <div key={l} style={{textAlign:"center"}}>
-                <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",fontWeight:700,marginBottom:4}}>{l}</div>
-                <div style={{fontSize:18,fontWeight:900,color:c}}>{v}</div>
+      {/* ══ PAY RATE TAB ═════════════════════════════════════════════════════ */}
+      {tab==="pay"&&<div>
+        {/* Current rates */}
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16,marginBottom:14}}>
+          <div style={{fontSize:11,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Current Pay Rates</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+            {[["Hourly Rate",w.agreedRate?"£"+w.agreedRate+"/hr":"Not set","#34d399"],["CIS Tax Rate",Math.round((w.taxRate||0)*100)+"%",w.taxRate===0.30?"#f87171":w.taxRate===0.20?"#fbbf24":"#34d399"],["OT Multiplier","×"+(w.overtimeMultiplier||1.5),"#fbbf24"],["Custom OT Rate",w.customOTRate?"£"+w.customOTRate+"/hr":"—","#f97316"]].map(([l,v,c])=>(
+              <div key={l} style={{background:"#0d1117",borderRadius:9,padding:"10px 13px",border:`1px solid ${c}22`}}>
+                <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{l}</div>
+                <div style={{fontSize:16,fontWeight:800,color:c}}>{v}</div>
               </div>
             ))}
           </div>
-        </div>}
-      </div>}
-
-      {/* Certificates tab */}
-      {tab==="certs"&&<div>
-        {heldCerts.length===0?<div style={{color:"#374151",fontSize:12,textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:8}}>No certificates. Edit worker to add.</div>:
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-          {heldCerts.map(c=>{
-            const exp=c.expiry?new Date(c.expiry):null;const now=new Date();
-            const days=exp?(exp-now)/86400000:null;
-            const st=!exp?"valid":days<0?"expired":days<30?"expiring":"valid";
-            const stColor={valid:"#34d399",expiring:"#fbbf24",expired:"#f87171"}[st];
-            return <div key={c.key} style={{background:"#0f1421",borderRadius:9,padding:"12px 14px",border:"1px solid "+stColor+"44",borderLeft:"3px solid "+stColor}}>
-              <div style={{fontWeight:700,color:"#f1f5f9",fontSize:12,marginBottom:6}}>{c.label}</div>
-              {c.regNo&&<div style={{fontSize:11,color:"#60a5fa",marginBottom:3}}>🪪 Reg: {c.regNo}</div>}
-              {c.expiry&&<div style={{fontSize:10,color:"#64748b",marginBottom:4}}>📅 Expires: {fmtDate(c.expiry)} {days!==null&&days<30&&<span style={{color:stColor,fontWeight:700}}>({days<0?"EXPIRED":Math.ceil(days)+"d"})</span>}</div>}
-              {c.fileUrl&&<a href={c.fileUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#60a5fa",display:"block",marginBottom:4}}>📎 View Certificate</a>}
-              <div style={{fontSize:10,color:stColor,fontWeight:800,textTransform:"uppercase",marginTop:6,padding:"2px 7px",background:stColor+"18",borderRadius:4,display:"inline-block"}}>{st}</div>
-            </div>;
-          })}
-        </div>}
-      </div>}
-
-      {/* Holidays tab */}
-      {tab==="holidays"&&<div>
-        {/* Request form */}
-        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16,marginBottom:16}}>
-          <div style={{fontSize:11,color:"#84cc16",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>🏖 Request Holiday</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,alignItems:"flex-end"}}>
-            <div><label style={LBL}>From Date</label>
-              <input type="date" value={newHolFrom} onChange={e=>setNewHolFrom(e.target.value)} style={{...INP,padding:"6px 9px"}}/></div>
-            <div><label style={LBL}>To Date</label>
-              <input type="date" value={newHolTo} onChange={e=>setNewHolTo(e.target.value)} style={{...INP,padding:"6px 9px"}}/></div>
-            <div><label style={LBL}>Note (optional)</label>
-              <input value={newHolNote} onChange={e=>setNewHolNote(e.target.value)} placeholder="e.g. Annual leave" style={{...INP,padding:"6px 9px"}}/></div>
-            <button onClick={requestHoliday} disabled={!newHolFrom}
-              style={{padding:"8px 16px",background:"linear-gradient(135deg,#65a30d,#84cc16)",border:"none",borderRadius:7,color:"#fff",cursor:newHolFrom?"pointer":"default",fontSize:12,fontWeight:700,opacity:newHolFrom?1:0.4}}>
-              + Request
-            </button>
+          <div style={{display:"flex",gap:8,padding:"8px 0",borderTop:"1px solid #1e2535",fontSize:11,color:"#64748b"}}>
+            {w.payRateValidFrom&&<span>Valid from: <b style={{color:"#94a3b8"}}>{fmtD(w.payRateValidFrom)}</b></span>}
+            {w.payRateValidTo&&<span>· Until: <b style={{color:"#94a3b8"}}>{fmtD(w.payRateValidTo)}</b></span>}
+            <span style={{marginLeft:"auto",color:"#374151"}}>Edit rates via the ✏️ Edit button above</span>
           </div>
         </div>
 
-        {/* Holiday list */}
-        {holidays.length===0?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
-          <div style={{fontSize:28,marginBottom:8}}>🏖</div>No holiday requests yet.
-        </div>:
-        <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr>
-              <th style={DS.th}>From</th><th style={DS.th}>To</th><th style={DS.th}>Days</th>
-              <th style={DS.th}>Note</th><th style={DS.th}>Requested</th><th style={DS.th}>Status</th><th style={DS.th}>Actions</th>
-            </tr></thead>
-            <tbody>{holidays.map((h,i)=>{
-              const from=new Date(h.from),to=new Date(h.to||h.from);
-              const days=Math.round((to-from)/86400000)+1;
-              const SC={pending:{c:"#fbbf24",bg:"#1a1500"},approved:{c:"#34d399",bg:"#0d2218"},declined:{c:"#f87171",bg:"#2d1515"}};
-              const sc=SC[h.status]||SC.pending;
-              return <tr key={h.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
-                <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{fmtDate(h.from)}</td>
-                <td style={{...DS.td,color:"#94a3b8"}}>{h.to&&h.to!==h.from?fmtDate(h.to):"—"}</td>
-                <td style={{...DS.td,color:"#84cc16",fontWeight:700,textAlign:"center"}}>{days}d</td>
-                <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>{h.note||"—"}</td>
-                <td style={{...DS.td,color:"#64748b",fontSize:11}}>{fmtDate(h.requestedAt)}</td>
-                <td style={DS.td}><span style={{padding:"2px 9px",borderRadius:5,fontSize:10,fontWeight:700,color:sc.c,background:sc.bg,textTransform:"capitalize"}}>{h.status}</span></td>
-                <td style={DS.td}><div style={{display:"flex",gap:4}}>
-                  {h.status==="pending"&&<button onClick={()=>approveHoliday(h.id)} style={{padding:"3px 8px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>✓ Approve</button>}
-                  {h.status==="pending"&&<button onClick={()=>declineHoliday(h.id)} style={{padding:"3px 8px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:10,fontWeight:700}}>✗ Decline</button>}
-                  <button onClick={()=>deleteHoliday(h.id)} style={{padding:"3px 6px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:4,color:"#64748b",cursor:"pointer",fontSize:10}}>🗑</button>
-                </div></td>
-              </tr>;
-            })}</tbody>
-          </table>
-          <div style={{padding:"10px 14px",background:"#0d1117",fontSize:11,color:"#64748b",borderTop:"1px solid #1e2535"}}>
-            {holidays.filter(h=>h.status==="approved").reduce((a,h)=>{const d=Math.round((new Date(h.to||h.from)-new Date(h.from))/86400000)+1;return a+d;},0)} days approved · {holidays.filter(h=>h.status==="pending").length} pending
+        {/* Pay rate history */}
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+          <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>
+            Pay Rate History — {payHistory.length} change{payHistory.length!==1?"s":""}
           </div>
+          {payHistory.length===0
+            ?<div style={{fontSize:12,color:"#374151",fontStyle:"italic"}}>No rate changes recorded yet. When you update pay rates, previous values are automatically saved here with a timestamp.</div>
+            :<div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {[...payHistory].reverse().map((h,i)=>(
+                <div key={i} style={{background:"#0f1421",borderRadius:8,padding:"10px 13px",border:"1px solid #1e2535"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                    <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>Changed on {fmtD(h.changedAt)}</div>
+                    {h.changedBy&&<div style={{fontSize:10,color:"#64748b"}}>by {h.changedBy}</div>}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                    {h.agreedRate!==undefined&&<div><span style={{fontSize:10,color:"#64748b"}}>Rate: </span><span style={{fontSize:12,fontWeight:700,color:"#94a3b8",textDecoration:"line-through"}}>£{h.agreedRate}/hr</span></div>}
+                    {h.taxRate!==undefined&&<div><span style={{fontSize:10,color:"#64748b"}}>Tax: </span><span style={{fontSize:12,fontWeight:700,color:"#94a3b8",textDecoration:"line-through"}}>{Math.round(h.taxRate*100)}%</span></div>}
+                    {h.overtimeMultiplier!==undefined&&<div><span style={{fontSize:10,color:"#64748b"}}>OT: </span><span style={{fontSize:12,fontWeight:700,color:"#94a3b8",textDecoration:"line-through"}}>×{h.overtimeMultiplier}</span></div>}
+                  </div>
+                  {h.note&&<div style={{fontSize:11,color:"#64748b",marginTop:5,fontStyle:"italic"}}>{h.note}</div>}
+                </div>
+              ))}
+            </div>}
+        </div>
+      </div>}
+
+      {/* ══ WORK ENTRIES TAB ════════════════════════════════════════════════ */}
+      {tab==="workentries"&&<div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+          <DStat label="Total Entries" value={wLogs.length} color="#60a5fa"/>
+          <DStat label="This Week" value={thisWeekLogs.length} color="#34d399"/>
+          <DStat label="Conf. Hours Wk" value={confirmedHrsThisWeek>0?confirmedHrsThisWeek.toFixed(1)+"h":"—"} color="#fbbf24"/>
+          <DStat label="Sites Visited" value={[...new Set(wLogs.map(l=>l.siteName))].length} color="#a78bfa"/>
+        </div>
+        {wLogs.length===0
+          ?<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}>
+              <div style={{fontSize:32,marginBottom:10}}>📍</div>
+              No GPS work entries yet. Entries are created automatically when the worker signs in via the Worker Portal.
+            </div>
+          :<div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr>
+                <th style={{...DS.th,textAlign:"left"}}>Date</th>
+                <th style={{...DS.th,textAlign:"left"}}>Site</th>
+                <th style={{...DS.th,textAlign:"center"}}>Sign In</th>
+                <th style={{...DS.th,textAlign:"center"}}>Sign Out</th>
+                <th style={{...DS.th,textAlign:"right"}}>Hours</th>
+                <th style={{...DS.th,textAlign:"right"}}>OT</th>
+                <th style={{...DS.th,textAlign:"left"}}>Week</th>
+              </tr></thead>
+              <tbody>
+                {wLogs.map((l,i)=>{
+                  const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;
+                  const site=allSites.find(s=>s.id===l.siteId||s.name===l.siteName);
+                  const otThreshold=site?.otThreshold||site?.stdHours||9;
+                  const stdHrs=Math.min(hrs,otThreshold);
+                  const otHrs=Math.max(0,Math.round((hrs-otThreshold)*100)/100);
+                  const isThisWeek=l.weekLabel===weekLabel;
+                  return <tr key={l.id} style={{background:isThisWeek?"#0d1e2a":i%2===0?"#111827":"#0f1421"}}>
+                    <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>{fmtD(l.signIn?.split("T")[0])}</td>
+                    <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{l.siteName||"—"}</td>
+                    <td style={{...DS.td,textAlign:"center",color:"#34d399",fontWeight:600}}>{fmtT(l.signIn)}</td>
+                    <td style={{...DS.td,textAlign:"center",color:"#f87171",fontWeight:600}}>{l.signOut?fmtT(l.signOut):<span style={{color:"#fbbf24"}}>On site</span>}</td>
+                    <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:700}}>{hrs.toFixed(2)}h</td>
+                    <td style={{...DS.td,textAlign:"right",color:otHrs>0?"#fbbf24":"#374151",fontWeight:otHrs>0?700:400}}>{otHrs>0?"+"+otHrs.toFixed(1)+"h":"—"}</td>
+                    <td style={{...DS.td,fontSize:10,color:isThisWeek?"#3b82f6":"#64748b"}}>{l.weekLabel||"—"}{isThisWeek&&" ✓"}</td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>}
+      </div>}
+
+      {/* ══ TIMESHEETS TAB ════════════════════════════════════════════════════ */}
+      {tab==="timesheets"&&<div>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>
+          Timesheets are created automatically on first GPS sign-in of the week and close at week end ready for admin review.
+        </div>
+        {wTimesheets.length===0
+          ?<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}>
+              <div style={{fontSize:32,marginBottom:10}}>⏱</div>No timesheets yet. Auto-created on first sign-in of each week.
+            </div>
+          :wTimesheets.map(ts=>{
+            const tsLogs=wLogs.filter(l=>l.weekLabel===ts.weekLabel);
+            const days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+            const dayTotals={};
+            tsLogs.forEach(l=>{
+              const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;
+              dayTotals[l.day]=(dayTotals[l.day]||0)+hrs;
+            });
+            const totalHrs=Object.values(dayTotals).reduce((a,v)=>a+v,0);
+            const site0=allSites.find(s=>tsLogs[0]&&(s.id===tsLogs[0].siteId||s.name===tsLogs[0].siteName));
+            const otThreshold=site0?.otThreshold||9;
+            const otHrs=Math.max(0,totalHrs-otThreshold*Object.keys(dayTotals).length);
+            const stdHrs=totalHrs-otHrs;
+            const isOpen=ts.status==="open";
+            return <div key={ts.id} style={{background:"#111827",border:`1px solid ${isOpen?"#3b82f644":"#34d39944"}`,borderRadius:11,padding:16,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:800,color:"#f1f5f9"}}>WC {ts.weekLabel}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{w.name} · {tsLogs.length} entries</div>
+                </div>
+                <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,
+                  background:ts.status==="approved"?"#34d39922":ts.status==="open"?"#3b82f622":"#fbbf2422",
+                  color:ts.status==="approved"?"#34d399":ts.status==="open"?"#60a5fa":"#fbbf24",
+                  border:`1px solid ${ts.status==="approved"?"#34d39944":ts.status==="open"?"#3b82f644":"#fbbf2444"}`}}>
+                  {ts.status==="approved"?"✓ Approved":ts.status==="open"?"● Open":"⏳ Pending Review"}
+                </span>
+              </div>
+              {/* Day grid */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:5,marginBottom:10}}>
+                {days.map(d=>{
+                  const hrs=dayTotals[d]||0;
+                  return <div key={d} style={{textAlign:"center",background:"#0f1421",borderRadius:6,padding:"6px 4px",border:`1px solid ${hrs>0?"#3b82f633":"#1e2535"}`}}>
+                    <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{d}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:hrs>0?"#60a5fa":"#374151",marginTop:2}}>{hrs>0?hrs.toFixed(1)+"h":"—"}</div>
+                  </div>;
+                })}
+              </div>
+              {/* Totals */}
+              <div style={{display:"flex",gap:12,padding:"8px 10px",background:"#0d1117",borderRadius:7}}>
+                <div><span style={{fontSize:10,color:"#64748b"}}>Std Hours: </span><span style={{fontSize:12,fontWeight:700,color:"#60a5fa"}}>{stdHrs.toFixed(1)}h</span></div>
+                <div><span style={{fontSize:10,color:"#64748b"}}>OT Hours: </span><span style={{fontSize:12,fontWeight:700,color:"#fbbf24"}}>{otHrs.toFixed(1)}h</span></div>
+                <div><span style={{fontSize:10,color:"#64748b"}}>Total: </span><span style={{fontSize:14,fontWeight:900,color:"#34d399"}}>{totalHrs.toFixed(1)}h</span></div>
+                <div style={{marginLeft:"auto",fontSize:10,color:"#374151",fontStyle:"italic"}}>Pay calculated in payslip — not here</div>
+              </div>
+              {ts.status!=="approved"&&<button
+                onClick={()=>{
+                  const updated=timesheetRecords.map(t=>t.id===ts.id?{...t,status:"approved",approvedAt:new Date().toISOString()}:t);
+                  setTimesheetRecords(updated);
+                }}
+                style={{marginTop:10,width:"100%",padding:"8px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                ✓ Approve Timesheet
+              </button>}
+            </div>;
+          })}
+      </div>}
+
+      {/* ══ PAYSLIPS TAB ══════════════════════════════════════════════════════ */}
+      {tab==="payslips"&&<div>
+        {wPayslips.length===0
+          ?<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}>
+              <div style={{fontSize:32,marginBottom:10}}>💰</div>No payslips yet.
+            </div>
+          :wPayslips.map(ps=>(
+            <div key={ps.id} style={{background:"#111827",border:`1px solid ${ps.status==="paid"?"#34d39944":"#1e2535"}`,borderRadius:11,padding:16,marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:800,color:"#f1f5f9"}}>WC {ps.weekLabel}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{w.name} · {w.address||"—"}</div>
+                </div>
+                <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:ps.status==="paid"?"#34d39922":"#fbbf2422",color:ps.status==="paid"?"#34d399":"#fbbf24",border:`1px solid ${ps.status==="paid"?"#34d39944":"#fbbf2444"}`}}>
+                  {ps.status==="paid"?"✓ Paid":"⏳ Pending"}
+                </span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:10}}>
+                {[["Std Hours",(ps.stdH||0).toFixed(1)+"h @ £"+(w.agreedRate||0)+"/hr","#60a5fa"],["OT Hours",(ps.otH||0).toFixed(1)+"h @ ×"+(w.overtimeMultiplier||1.5),"#fbbf24"],["Gross","£"+(ps.gross||0).toFixed(2),"#34d399"],["CIS Tax "+Math.round((w.taxRate||0)*100)+"%","-£"+(ps.taxAmt||0).toFixed(2),"#f87171"],["Net Pay","£"+(ps.net||0).toFixed(2),"#a78bfa"],["Payment","£"+(ps.net||0).toFixed(2)+" → "+( w.bankAccount||"—"),"#34d399"]].map(([l,v,c])=>(
+                  <div key={l} style={{background:"#0d1117",borderRadius:7,padding:"8px 10px"}}>
+                    <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:c,marginTop:2}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              {ps.status!=="paid"&&<button
+                onClick={()=>{
+                  const updated=payslipRecords.map(p=>p.id===ps.id?{...p,status:"paid",paidAt:new Date().toISOString()}:p);
+                  setPayslipRecords(updated);
+                }}
+                style={{width:"100%",padding:"8px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                💷 Mark as Paid
+              </button>}
+            </div>
+          ))}
+      </div>}
+
+      {/* ══ CERTS TAB ════════════════════════════════════════════════════════ */}
+      {tab==="certs"&&<div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+          {[["Held",heldCerts.length,"#60a5fa"],["Valid",heldCerts.filter(c=>cSt(c,w)==="valid").length,"#34d399"],["Expiring Soon",heldCerts.filter(c=>cSt(c,w)==="expiring").length,"#fbbf24"],["Expired",heldCerts.filter(c=>cSt(c,w)==="expired").length,"#f87171"]].map(([l,v,c])=>(
+            <DStat key={l} label={l} value={v} color={c}/>
+          ))}
+        </div>
+        {/* Full cert list — ALL certs, held ones highlighted */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {CERTS.map(cert=>{
+            const val=w.certs?.[cert.key];
+            const held=val?.held;
+            const s=cSt(cert,w);
+            if(!held)return null;
+            return <div key={cert.key} style={{background:"#0f1421",borderRadius:9,padding:"10px 12px",border:`1px solid ${CERT_STATUS_C[s]}44`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                <span style={{fontSize:12,fontWeight:700,color:"#f1f5f9"}}>{cert.label}</span>
+                <span style={{fontSize:10,fontWeight:700,color:CERT_STATUS_C[s],textTransform:"uppercase"}}>{s}</span>
+              </div>
+              {cert.hasExpiry&&<div style={{fontSize:10,color:"#64748b"}}>Expires: <span style={{color:CERT_STATUS_C[s],fontWeight:600}}>{val?.expiry?fmtD(val.expiry):"—"}</span></div>}
+              {val?.photoUrl&&<img src={val.photoUrl} alt={cert.label} style={{marginTop:7,width:"100%",maxHeight:80,objectFit:"cover",borderRadius:5,border:"1px solid #1e2535",cursor:"pointer"}} onClick={()=>window.open(val.photoUrl,"_blank")}/>}
+            </div>;
+          }).filter(Boolean)}
+        </div>
+        {heldCerts.length===0&&<div style={{textAlign:"center",padding:32,color:"#374151"}}>No certifications recorded. Edit the worker to add certificates.</div>}
+      </div>}
+
+      {/* ══ RTW TAB ══════════════════════════════════════════════════════════ */}
+      {tab==="rtw"&&<div>
+        <div style={{background:"#111827",border:`1px solid ${rtwColor}44`,borderRadius:11,padding:16,marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:800,color:"#f1f5f9"}}>Right to Work Status</div>
+            <span style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:700,background:rtwColor+"22",color:rtwColor,border:`1px solid ${rtwColor}44`}}>{rtwStatus.toUpperCase()}</span>
+          </div>
+          {[["Share Code",w.shareCode||"Not provided"],["Date Checked",w.shareCodeDate?fmtD(w.shareCodeDate):"—"],["Expiry",w.shareCodeExpiry?fmtD(w.shareCodeExpiry):"—"],["Documents",(w.workerFiles||[]).length+" file(s) attached"]].map(([l,v])=>(
+            <div key={l} style={{display:"flex",gap:8,padding:"7px 0",borderBottom:"1px solid #1e2535"}}>
+              <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:100,textTransform:"uppercase",flexShrink:0}}>{l}</span>
+              <span style={{fontSize:12,color:"#e2e8f0"}}>{v}</span>
+            </div>
+          ))}
+          {(w.workerFiles||[]).length>0&&<div style={{marginTop:10,display:"flex",gap:6,flexWrap:"wrap"}}>
+            {(w.workerFiles||[]).map((wf,i)=>(
+              <a key={i} href={wf.url} target="_blank" rel="noreferrer"
+                style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",background:"#1a2035",borderRadius:6,border:"1px solid #2d3555",color:"#60a5fa",fontSize:11,textDecoration:"none"}}>
+                {wf.type?.startsWith("image/")?"🖼":wf.type==="application/pdf"?"📄":"📎"} {wf.name}
+              </a>
+            ))}
+          </div>}
+        </div>
+        {!rtwUploaded&&<div style={{background:"#2d1515",border:"1px solid #ef444444",borderRadius:9,padding:12,fontSize:12,color:"#f87171"}}>
+          ⚠ No RTW documents uploaded. Please attach ID / share code proof via the Edit button.
         </div>}
       </div>}
+
+      {/* ══ SCHEDULE TAB ══════════════════════════════════════════════════════ */}
+      {tab==="schedule"&&<div>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>Current week forecast allocation. ✅ = GPS confirmed on site.</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
+          {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>{
+            const site=w.days?.[d];
+            const off=!site||isOff(site);
+            const confirmed=wLogs.some(l=>l.day===d&&l.weekLabel===weekLabel);
+            const s=allSites.find(x=>site&&(site.includes(x.name)||x.name.includes(site)));
+            const c=s?.color||"#374151";
+            return <div key={d} style={{textAlign:"center",background:"#0f1421",borderRadius:8,padding:"10px 6px",border:`1px solid ${confirmed?"#34d39944":off?"#1e2535":c+"44"}`}}>
+              <div style={{fontSize:10,color:confirmed?"#34d399":off?"#374151":c,fontWeight:700,textTransform:"uppercase",marginBottom:5}}>{d}</div>
+              {confirmed&&<div style={{fontSize:10,color:"#34d399",marginBottom:3}}>✅</div>}
+              <div style={{fontSize:10,color:off?"#374151":c,fontWeight:off?400:600,wordBreak:"break-word",lineHeight:1.3}}>{site||"—"}</div>
+            </div>;
+          })}
+        </div>
+      </div>}
+
+      {/* ══ HOLIDAYS TAB ══════════════════════════════════════════════════════ */}
+      {tab==="holidays"&&(()=>{
+        const [holidays,setHolidays]=useState(w.holidayRequests||[]);
+        const [from,setFrom]=useState("");const [to,setTo]=useState("");const [note,setNote]=useState("");
+        return <div>
+          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16,marginBottom:14}}>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Request Holiday</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr",gap:8,marginBottom:10}}>
+              <div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>From</div><input type="date" value={from} onChange={e=>setFrom(e.target.value)} style={{...INP}}/></div>
+              <div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>To</div><input type="date" value={to} onChange={e=>setTo(e.target.value)} style={{...INP}}/></div>
+              <div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Note</div><input value={note} onChange={e=>setNote(e.target.value)} placeholder="Reason…" style={{...INP}}/></div>
+            </div>
+            <button onClick={()=>{if(!from)return;setHolidays(h=>[...h,{id:"hol_"+Date.now(),from,to:to||from,note,status:"pending",requestedAt:new Date().toISOString()}]);setFrom("");setTo("");setNote("");}}
+              style={{...BP,padding:"7px 16px",fontSize:12}}>+ Add Holiday</button>
+          </div>
+          {holidays.map(h=>(
+            <div key={h.id} style={{background:"#111827",border:`1px solid ${h.status==="approved"?"#34d39944":h.status==="declined"?"#ef444444":"#fbbf2444"}`,borderRadius:9,padding:"11px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#f1f5f9"}}>{fmtD(h.from)}{h.to&&h.to!==h.from?" — "+fmtD(h.to):""}</div>
+                {h.note&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{h.note}</div>}
+              </div>
+              <span style={{padding:"2px 9px",borderRadius:20,fontSize:10,fontWeight:700,background:h.status==="approved"?"#34d39922":h.status==="declined"?"#ef444422":"#fbbf2422",color:h.status==="approved"?"#34d399":h.status==="declined"?"#f87171":"#fbbf24"}}>{h.status}</span>
+              {h.status==="pending"&&<div style={{display:"flex",gap:5}}>
+                <button onClick={()=>setHolidays(hs=>hs.map(x=>x.id===h.id?{...x,status:"approved"}:x))} style={{padding:"4px 9px",background:"#0d2218",border:"1px solid #34d399",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:11}}>✓</button>
+                <button onClick={()=>setHolidays(hs=>hs.map(x=>x.id===h.id?{...x,status:"declined"}:x))} style={{padding:"4px 9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11}}>✕</button>
+              </div>}
+            </div>
+          ))}
+        </div>;
+      })()}
     </div>
   </div>;
 }
-
 
 // ── Dashboard Sites Page ──────────────────────────────────────────────────────
 function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetailId,setModal}){
@@ -3163,6 +3340,95 @@ function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetail
 // ── Dashboard Site Detail ─────────────────────────────────────────────────────
 
 // ─── SiteWorkersPanel — GPS-confirmed workers with scope allocation ────────────
+
+// ─── Pending Registrations View ───────────────────────────────────────────────
+function PendingWorkersView({workers,onApprove}){
+  const [pending,setPending]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [actioning,setActioning]=useState({});
+  const [expanded,setExpanded]=useState(null);
+  const [rejectNote,setRejectNote]=useState({});
+  const CERT_LABELS=Object.fromEntries(CERTS.map(c=>[c.key,c.label]));
+  const load=async()=>{setLoading(true);try{const rows=await sbGet("pending_workers","select=id,created_at,status,data&order=created_at.desc");setPending(rows);}catch(e){console.error(e);}setLoading(false);};
+  useEffect(()=>{load();},[]);
+  const approve=async(row)=>{
+    if(!window.confirm(`Approve ${row.data.name} and add them as an active worker?`))return;
+    setActioning(a=>({...a,[row.id]:"approving"}));
+    try{
+      await sbUpsert("workers",[{id:row.data.id,data:{...row.data,approvedAt:new Date().toISOString()}}]);
+      await fetch(`${SB_URL}/rest/v1/pending_workers?id=eq.${row.id}`,{method:"PATCH",headers:{...SB_H,"Prefer":"return=minimal"},body:JSON.stringify({status:"approved"})});
+      setPending(p=>p.map(x=>x.id===row.id?{...x,status:"approved"}:x));
+      if(onApprove)onApprove();
+    }catch(e){alert("Approval failed: "+e.message);}
+    setActioning(a=>({...a,[row.id]:null}));
+  };
+  const reject=async(row)=>{
+    if(!window.confirm(`Reject ${row.data.name}?`))return;
+    setActioning(a=>({...a,[row.id]:"rejecting"}));
+    try{
+      await fetch(`${SB_URL}/rest/v1/pending_workers?id=eq.${row.id}`,{method:"PATCH",headers:{...SB_H,"Prefer":"return=minimal"},body:JSON.stringify({status:"rejected",data:{...row.data,rejectedAt:new Date().toISOString(),rejectionNote:rejectNote[row.id]||""}})});
+      setPending(p=>p.map(x=>x.id===row.id?{...x,status:"rejected"}:x));
+    }catch(e){alert("Rejection failed: "+e.message);}
+    setActioning(a=>({...a,[row.id]:null}));
+  };
+  const pendingRows=pending.filter(r=>r.status==="pending");
+  const doneRows=pending.filter(r=>r.status!=="pending");
+  const WorkerCard=({row})=>{
+    const d=row.data||{};const isOpen=expanded===row.id;const act=actioning[row.id];const isPend=row.status==="pending";const isApp=row.status==="approved";
+    const heldCerts=Object.entries(d.certs||{}).filter(([,v])=>v?.held);
+    return <div style={{background:"#111827",border:`1px solid ${isPend?"#f59e0b44":isApp?"#34d39944":"#ef444444"}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 15px",cursor:"pointer"}} onClick={()=>setExpanded(isOpen?null:row.id)}>
+        <div style={{width:38,height:38,borderRadius:"50%",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:"#fff",flexShrink:0}}>{d.name?.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()||"?"}</div>
+        <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:"#f1f5f9"}}>{d.name||"Unknown"}</div><div style={{fontSize:11,color:"#64748b",marginTop:1}}>{d.position||"—"} · {d.company||"—"} · {d.email||"—"}</div></div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,color:"#64748b"}}>{new Date(row.created_at).toLocaleDateString("en-GB")}</span>
+          <span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:isPend?"#f59e0b22":isApp?"#34d39922":"#ef444422",color:isPend?"#fbbf24":isApp?"#34d399":"#f87171",border:`1px solid ${isPend?"#f59e0b44":isApp?"#34d39944":"#ef444444"}`}}>{isPend?"⏳ Pending":isApp?"✓ Approved":"✕ Rejected"}</span>
+          <span style={{color:"#64748b",fontSize:13}}>{isOpen?"▲":"▼"}</span>
+        </div>
+      </div>
+      {isOpen&&<div style={{borderTop:"1px solid #1e2535",padding:"14px 15px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 20px",marginBottom:14}}>
+          {[["Full Name",d.name],["Position",d.position],["Company",d.company],["Date of Birth",d.dob?new Date(d.dob).toLocaleDateString("en-GB"):"—"],["Phone",d.phone],["NI Number",d.niNumber],["Email",d.email],["Address",d.address],["Emergency Contact",d.emergencyName],["Emergency Phone",d.emergencyPhone],["Bank Name",d.bankName],["Sort Code",d.sortCode],["Account No",d.accountNo?"••••"+d.accountNo.slice(-4):"—"],["T&Cs Signed",d.termsSignedAt?new Date(d.termsSignedAt).toLocaleString("en-GB"):"—"]].map(([l,v])=>
+            <div key={l} style={{padding:"4px 0",borderBottom:"1px solid #1e2535"}}><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div><div style={{fontSize:12,color:v?"#f1f5f9":"#374151",marginTop:1}}>{v||"—"}</div></div>
+          )}
+        </div>
+        {d.termsAccepted&&<div style={{background:"#0d2218",border:"1px solid #34d39944",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#34d399"}}>✅ T&Cs signed {d.termsSignedAt?new Date(d.termsSignedAt).toLocaleString("en-GB"):""}</div>}
+        {heldCerts.length>0&&<div style={{marginBottom:12}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:7}}>Certifications ({heldCerts.length})</div>
+          {heldCerts.map(([key,val])=><div key={key} style={{background:"#0f1421",borderRadius:7,padding:"8px 12px",marginBottom:6,border:"1px solid #1e2535"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:val.photoUrl?6:0}}>
+              <span style={{fontSize:12,fontWeight:600,color:"#e2e8f0"}}>{CERT_LABELS[key]||key}</span>
+              <div style={{display:"flex",gap:8}}>{val.expiry&&<span style={{fontSize:11,color:"#64748b"}}>Exp: {new Date(val.expiry).toLocaleDateString("en-GB")}</span>}<span style={{fontSize:11,fontWeight:700,color:"#34d399"}}>✓</span></div>
+            </div>
+            {val.photoUrl&&<img src={val.photoUrl} alt={key} style={{width:"100%",maxHeight:120,objectFit:"cover",borderRadius:6,border:"1px solid #2d3555",cursor:"pointer"}} onClick={()=>window.open(val.photoUrl,"_blank")}/>}
+          </div>)}
+        </div>}
+        {isPend&&<div style={{borderTop:"1px solid #1e2535",paddingTop:12,marginTop:4}}>
+          <div style={{marginBottom:9}}><div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Rejection Note (optional)</div>
+            <input value={rejectNote[row.id]||""} onChange={e=>setRejectNote(n=>({...n,[row.id]:e.target.value}))} placeholder="Reason for rejection…" style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:7,padding:"8px 11px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{display:"flex",gap:9}}>
+            <button onClick={()=>reject(row)} disabled={!!act} style={{flex:1,padding:"9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:8,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,opacity:act?0.6:1}}>{act==="rejecting"?"Rejecting…":"✕ Reject"}</button>
+            <button onClick={()=>approve(row)} disabled={!!act} style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"1px solid #34d399",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:800,opacity:act?0.6:1}}>{act==="approving"?"Approving…":"✓ Approve & Add to Workers"}</button>
+          </div>
+        </div>}
+      </div>}
+    </div>;
+  };
+  return <div style={{padding:"16px 20px"}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18}}>
+      {[["Pending",pendingRows.length,"#f59e0b"],["Approved",pending.filter(r=>r.status==="approved").length,"#34d399"],["Rejected",pending.filter(r=>r.status==="rejected").length,"#f87171"]].map(([l,v,c])=>
+        <div key={l} style={{background:"#1a1f2e",border:`1px solid ${c}44`,borderRadius:10,padding:"10px 14px"}}><div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div><div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div></div>
+      )}
+    </div>
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><button onClick={load} style={{padding:"5px 13px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:600}}>↻ Refresh</button></div>
+    {loading&&<div style={{textAlign:"center",padding:40,color:"#64748b"}}>Loading registrations…</div>}
+    {!loading&&pendingRows.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}><div style={{fontSize:32,marginBottom:10}}>✅</div>No pending registrations.</div>}
+    {pendingRows.map(row=><WorkerCard key={row.id} row={row}/>)}
+    {doneRows.length>0&&<div style={{marginTop:20}}><div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Previously Processed ({doneRows.length})</div>{doneRows.map(row=><WorkerCard key={row.id} row={row}/>)}</div>}
+  </div>;
+}
+
 function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}){
   const [scopeAlloc,setScopeAlloc]=useState({});
   // ── Fresh worker data fetched from Supabase on every render of this tab ──────
@@ -5357,7 +5623,7 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
                   <td style={{...TD2,color:"#94a3b8",fontSize:10}}>{w.position||"—"}</td>
                   {(activeDays||BASE_DAYS).map(d=>(
                     <td key={d} style={{...TD2,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"3px 6px"}}>
-                      <InlineCell value={w.days?.[d]||""} workerId={w.id} day={d} allSiteNames={siteNames} allSites={allSites} onUpdate={updateCell||((id,day,val)=>{})}/>
+                      {(()=>{const confirmedLog=w.attendanceLogs?.find(l=>l.day===d&&l.weekLabel===weekLabel&&l.signIn&&l.signOut);return <InlineCell value={w.days?.[d]||""} workerId={w.id} day={d} allSiteNames={siteNames} allSites={allSites} onUpdate={updateCell||((id,day,val)=>{})} confirmed={!!confirmedLog}/>;})()}
                     </td>
                   ))}
                   <td style={{...TD2,color:"#34d399",fontWeight:600,fontSize:11}}>{w.agreedRate?`£${w.agreedRate}/hr`:"—"}</td>
@@ -5465,6 +5731,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "stats":         return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
       case "bank":          return <DBankFull {...SP}/>;
       case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+      case "pending_reg":   return <PendingWorkersView workers={workers} onApprove={()=>window.location.reload()}/>;
       case "app_sitemanager":  return <SiteManagerView/>;
       case "app_sitedocs":    return <SiteDocGeneratorView/>;
       case "app_assets":      return <AssetRegisterView/>;
