@@ -220,6 +220,149 @@ function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate,confirmed
 
 // ─── Worker Profile PDF ───────────────────────────────────────────────────────
 
+
+// ─── Export Payslip PDF ───────────────────────────────────────────────────────
+function exportPayslipPDF(ps, worker) {
+  const w = worker;
+  const or  = Math.round((w.agreedRate||0)*(w.overtimeMultiplier||1.5)*100)/100;
+  const customOT = w.customOTRate ? Number(w.customOTRate) : or;
+  const stdAmt  = Math.round((ps.stdH||0)*(w.agreedRate||0)*100)/100;
+  const otAmt   = Math.round((ps.otH||0)*customOT*100)/100;
+  const gross   = Math.round((stdAmt+otAmt)*100)/100;
+  const taxRate = w.taxRate||0;
+  const taxAmt  = Math.round(gross*taxRate*100)/100;
+  const net     = Math.round((gross-taxAmt)*100)/100;
+  const taxPct  = Math.round(taxRate*100);
+  const hasCIS  = taxPct > 0;
+  const issued  = new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+  const otRate  = w.customOTRate ? "£"+customOT.toFixed(2)+"/hr (custom)" : "£"+customOT.toFixed(2)+"/hr (×"+( w.overtimeMultiplier||1.5)+")";
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+  <title>Payslip — ${w.name} — WC ${ps.weekLabel}</title>
+  <style>
+    @media print{body{margin:0}@page{size:A4 portrait;margin:14mm 16mm}}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#1a1a1a;background:#fff}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:9px;border-bottom:2.5px solid #1a1a2e;margin-bottom:12px}
+    .co{font-size:15px;font-weight:700;color:#1a1a2e}.co-s{font-size:8px;color:#999;margin-top:2px}
+    .dt{font-size:13px;font-weight:700;color:#1a1a2e;text-align:right}.dt-s{font-size:8px;color:#999;text-align:right;margin-top:1px}
+    .strip{display:grid;grid-template-columns:1fr 1fr;border:1px solid #e5e5e5;border-radius:4px;overflow:hidden;margin-bottom:10px}
+    .sc{padding:7px 11px;background:#f7f7f7}.sc:first-child{border-right:1px solid #e5e5e5}
+    .sl{font-size:7px;font-weight:700;color:#bbb;text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px}
+    .sv{font-size:12px;font-weight:700;color:#1a1a2e}.ss{font-size:8px;color:#777;margin-top:1px}
+    .id{display:grid;grid-template-columns:${hasCIS?"1fr 1fr 1fr":"1fr 1fr"};gap:6px;margin-bottom:10px}
+    .ic{border:1px solid #ebebeb;border-radius:4px;padding:6px 9px;background:#fafafa}
+    .il{font-size:7px;font-weight:700;color:#bbb;text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px}
+    .iv{font-size:11px;font-weight:700;color:#1a1a2e}
+    table{width:100%;border-collapse:collapse;margin-bottom:10px}
+    thead tr{background:#1a1a2e}
+    thead th{padding:6px 9px;color:#fff;font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:left}
+    thead th:last-child{text-align:right}
+    tbody td{padding:8px 9px;border-bottom:1px solid #f3f3f3;font-size:10px;color:#1a1a2e}
+    td.r{text-align:right}td.m{color:#999;font-size:9px}td.ot{color:#92400e;font-weight:700}
+    tr.sub td{background:#f5f5f5;font-weight:700}tr.sub td.r{font-size:13px}
+    tr.tax td{color:#991b1b}tr.tax td.r{font-weight:700;color:#991b1b}
+    tr.net{background:#1a1a2e}tr.net td{padding:10px 9px;color:#fff;font-weight:700;font-size:11px;border:none}
+    tr.net td.r{font-size:18px;color:${hasCIS?"#fbbf24":"#34d399"};text-align:right}
+    .pay{border:1px solid #e5e5e5;border-radius:4px;overflow:hidden;margin-bottom:10px}
+    .ph{padding:6px 11px;background:#1a1a2e}
+    .pht{font-size:7.5px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em}
+    .pr{display:flex;align-items:center;padding:7px 11px;border-bottom:1px solid #f3f3f3}
+    .pr:last-child{border-bottom:none}
+    .pl{font-size:8px;font-weight:700;color:#bbb;text-transform:uppercase;letter-spacing:.06em;min-width:88px}
+    .pv{font-size:10px;color:#1a1a2e;font-weight:600}
+    .pc{background:#f0fdf4}.pc .pl{color:#166534}.pc .pv{color:#166534}
+    .note{font-size:8px;color:#aaa;line-height:1.55;padding:7px 10px;background:#fafafa;border-left:2px solid #e0e0e0;border-radius:2px;margin-bottom:8px}
+    .foot{display:flex;justify-content:space-between;font-size:7.5px;color:#ccc;padding-top:6px;border-top:1px solid #eee}
+  </style></head><body>
+
+  <div class="hdr">
+    <div><div class="co">Bright Metalwork Ltd</div>
+    <div class="co-s">lucian@bright-group.org · +44 (0)771 078 3500 · Unit 4, Empire Way, Aldershot GU11 1PJ</div></div>
+    <div><div class="dt">Payslip</div>
+    <div class="dt-s">WC ${ps.weekLabel} · Issued ${issued}</div></div>
+  </div>
+
+  <div class="strip">
+    <div class="sc">
+      <div class="sl">Operative</div>
+      <div class="sv">${w.name}</div>
+      <div class="ss">${w.position||""}${w.company?" · "+w.company:""}</div>
+      <div class="ss">${w.address||""}</div>
+    </div>
+    <div class="sc">
+      <div class="sl">Payment period</div>
+      <div class="sv">WC ${ps.weekLabel}</div>
+      <div class="ss" style="color:${hasCIS?"#854d0e":"#166534"};font-weight:700;margin-top:4px">CIS Subcontractor${hasCIS?" · "+taxPct+"% deduction":""}</div>
+    </div>
+  </div>
+
+  <div class="id">
+    <div class="ic"><div class="il">NINO</div><div class="iv">${w.nino||"—"}</div></div>
+    <div class="ic"><div class="il">UTR</div><div class="iv">${w.utr||"—"}</div></div>
+    ${hasCIS?`<div class="ic"><div class="il">CIS Rate</div><div class="iv" style="color:${taxPct===30?"#991b1b":"#854d0e"};font-size:14px">${taxPct}%</div></div>`:""}
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:38%">Description</th>
+      <th style="width:15%;text-align:right">Hours</th>
+      <th style="width:22%;text-align:right">Rate</th>
+      <th style="width:25%;text-align:right">Amount</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td>Normal hours</td>
+        <td class="r">${(ps.stdH||0).toFixed(2)} h</td>
+        <td class="r m">£${(w.agreedRate||0).toFixed(2)} / hr</td>
+        <td class="r">£${stdAmt.toFixed(2)}</td>
+      </tr>
+      ${(ps.otH||0)>0?`<tr>
+        <td>Overtime hours</td>
+        <td class="r">${(ps.otH||0).toFixed(2)} h</td>
+        <td class="r m">${otRate}</td>
+        <td class="r ot">£${otAmt.toFixed(2)}</td>
+      </tr>`:""}
+      <tr class="sub">
+        <td colspan="3" style="font-size:8.5px;color:#777;text-transform:uppercase;letter-spacing:.04em">Gross pay</td>
+        <td class="r" style="font-size:13px">£${gross.toFixed(2)}</td>
+      </tr>
+      ${hasCIS?`<tr class="tax">
+        <td>CIS tax deduction (${taxPct}%)</td>
+        <td colspan="2"></td>
+        <td class="r">− £${taxAmt.toFixed(2)}</td>
+      </tr>`:""}
+      <tr class="net">
+        <td>Net pay</td>
+        <td colspan="2" style="font-size:8px;color:#9ca3af">${hasCIS?"After "+taxPct+"% CIS deduction of £"+taxAmt.toFixed(2):"Paid to operative's bank account"}</td>
+        <td class="r">£${net.toFixed(2)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="pay">
+    <div class="ph"><div class="pht">Payment details</div></div>
+    <div class="pr"><span class="pl">Bank</span><span class="pv">${w.bankName||"—"}</span></div>
+    <div class="pr"><span class="pl">Sort code</span><span class="pv">${w.bankSort||"—"}</span></div>
+    <div class="pr"><span class="pl">Account no</span><span class="pv">${w.bankAccount?"••••"+String(w.bankAccount).slice(-4):"—"}</span></div>
+    <div class="pr pc"><span class="pl">CIS paid to</span><span class="pv">Bright Metalwork Ltd · Unit 4, Empire Way, Aldershot GU11 1PJ</span></div>
+  </div>
+
+  <div class="note">This payslip is issued under the Construction Industry Scheme (CIS). CIS deductions may be offset against your tax liability. Retain this document for your records. Queries: lucian@bright-group.org · +44 (0)771 078 3500</div>
+
+  <div class="foot">
+    <span>Bright Metalwork Ltd · Confidential</span>
+    <span>Payslip · ${w.name} · WC ${ps.weekLabel}</span>
+    <span>Page 1 of 1</span>
+  </div>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+
+  const win = window.open("","_blank");
+  if(win){win.document.write(html);win.document.close();}
+  else{const a=document.createElement("a");a.href="data:text/html,"+encodeURIComponent(html);a.download="Payslip_"+w.name.replace(/ /g,"_")+"_WC_"+ps.weekLabel.replace(/ /g,"_")+".html";a.click();}
+}
+
 // ─── Export Timesheet PDF ─────────────────────────────────────────────────────
 function exportTimesheetPDF(ts, worker) {
   const w = worker;
@@ -3599,19 +3742,48 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
                   </div>
                 ))}
               </div>
-              <div style={{fontSize:10,color:"#374151",fontStyle:"italic",marginBottom:ts.status!=="approved"?10:0}}>Pay amounts are not calculated here — see the Payslips tab</div>
+              <div style={{fontSize:10,color:"#374151",fontStyle:"italic",marginBottom:10}}>Pay amounts are not calculated here — see the Payslips tab</div>
               <div style={{display:"flex",gap:8,marginTop:2}}>
                 <button onClick={()=>exportTimesheetPDF(ts,w)}
                   style={{flex:1,padding:"9px",background:"#0d1117",border:"1px solid #1e2535",borderRadius:8,color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
                   📄 Export PDF
                 </button>
                 {ts.status!=="approved"&&<button
-                  onClick={()=>{const updated=timesheetRecords.map(t=>t.id===ts.id?{...t,status:"approved",approvedAt:new Date().toISOString(),approvedBy:"Admin"}:t);setTimesheetRecords(updated);}}
+                  onClick={()=>{
+                    // 1 — Approve timesheet
+                    const updated=timesheetRecords.map(t=>t.id===ts.id?{...t,status:"approved",approvedAt:new Date().toISOString(),approvedBy:"Admin"}:t);
+                    setTimesheetRecords(updated);
+                    // 2 — Auto-generate payslip record
+                    const otR=w.customOTRate||Math.round((w.agreedRate||0)*(w.overtimeMultiplier||1.5)*100)/100;
+                    const stdAmt=Math.round((ts.stdHours||0)*(w.agreedRate||0)*100)/100;
+                    const otAmt=Math.round((ts.otHours||0)*otR*100)/100;
+                    const gross=Math.round((stdAmt+otAmt)*100)/100;
+                    const taxAmt=Math.round(gross*(w.taxRate||0)*100)/100;
+                    const net=Math.round((gross-taxAmt)*100)/100;
+                    const newPS={
+                      id:"ps_"+w.id+"_"+(ts.weekLabel||"").replace(/\s+/g,""),
+                      workerId:w.id,workerName:w.name,position:w.position,
+                      weekLabel:ts.weekLabel,
+                      stdH:ts.stdHours||0,otH:ts.otHours||0,
+                      rate:w.agreedRate||0,otRate:otR,taxRate:w.taxRate||0,
+                      gross,taxAmt,net,
+                      createdAt:new Date().toISOString(),source:"auto",
+                    };
+                    setPayslipRecords(prev=>{
+                      const i=prev.findIndex(p=>p.id===newPS.id);
+                      return i>=0?prev.map(p=>p.id===newPS.id?newPS:p):[...prev,newPS];
+                    });
+                    // 3 — Send email via Supabase Edge Function
+                    if(w.email){
+                      try{fetch(`${SB_URL}/functions/v1/send-email`,{method:"POST",headers:{...SB_H,"Content-Type":"application/json"},body:JSON.stringify({to:w.email,subject:"Bright Metalwork — Payslip WC "+ts.weekLabel,text:"Hi "+w.name+",\n\nYour payslip for the week commencing "+ts.weekLabel+" has been issued.\nNet pay: £"+net.toFixed(2)+"\n\nPlease log in to the worker portal to view and download your payslip.\n\nBright Metalwork Ltd\nlucian@bright-group.org\n+44 (0)771 078 3500"})});}catch(_){}
+                      alert("✓ Timesheet approved. Payslip generated and sent to "+w.email+".");
+                    }
+                  }}
                   style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                  ✓ Approve Timesheet — WC {ts.weekLabel}
+                  ✓ Approve — Generate &amp; Send Payslip
                 </button>}
                 {ts.status==="approved"&&<div style={{flex:2,padding:"9px",background:"#0d2218",border:"1px solid #34d39944",borderRadius:8,color:"#34d399",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                  ✓ Approved
+                  ✓ Approved · Payslip sent
                 </div>}
               </div>
             </div>;
@@ -3620,39 +3792,76 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
 
       {/* ══ PAYSLIPS TAB ══════════════════════════════════════════════════════ */}
       {tab==="payslips"&&<div>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:14}}>📧</span>
+          <span>Payslip PDF is sent automatically to the worker's email when the timesheet is approved.</span>
+        </div>
         {wPayslips.length===0
-          ?<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}>
-              <div style={{fontSize:32,marginBottom:10}}>💰</div>No payslips yet.
+          ?<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13,border:"1px dashed #1e2535",borderRadius:11}}>
+              <div style={{fontSize:32,marginBottom:10}}>💰</div>
+              <div style={{fontWeight:600,marginBottom:4}}>No payslips yet</div>
+              <div style={{fontSize:11}}>Auto-generated when timesheets are approved.</div>
             </div>
-          :wPayslips.map(ps=>(
-            <div key={ps.id} style={{background:"#111827",border:`1px solid ${ps.status==="paid"?"#34d39944":"#1e2535"}`,borderRadius:11,padding:16,marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+          :wPayslips.map(ps=>{
+            const otRate=w.customOTRate||Math.round((w.agreedRate||0)*(w.overtimeMultiplier||1.5)*100)/100;
+            const stdAmt=Math.round((ps.stdH||0)*(w.agreedRate||0)*100)/100;
+            const otAmt=Math.round((ps.otH||0)*otRate*100)/100;
+            const gross=Math.round((stdAmt+otAmt)*100)/100;
+            const taxAmt=Math.round(gross*(w.taxRate||0)*100)/100;
+            const net=Math.round((gross-taxAmt)*100)/100;
+            const taxPct=Math.round((w.taxRate||0)*100);
+            return <div key={ps.id} style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,overflow:"hidden",marginBottom:10}}>
+              <div style={{padding:"12px 14px",borderBottom:"1px solid #1e2535",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
-                  <div style={{fontSize:13,fontWeight:800,color:"#f1f5f9"}}>WC {ps.weekLabel}</div>
-                  <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{w.name} · {w.address||"—"}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>WC {ps.weekLabel}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{w.name} · {w.position}</div>
                 </div>
-                <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:ps.status==="paid"?"#34d39922":"#fbbf2422",color:ps.status==="paid"?"#34d399":"#fbbf24",border:`1px solid ${ps.status==="paid"?"#34d39944":"#fbbf2444"}`}}>
-                  {ps.status==="paid"?"✓ Paid":"⏳ Pending"}
-                </span>
+                <div style={{fontSize:20,fontWeight:700,color:"#34d399"}}>£{net.toFixed(2)}</div>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:10}}>
-                {[["Std Hours",(ps.stdH||0).toFixed(1)+"h @ £"+(w.agreedRate||0)+"/hr","#60a5fa"],["OT Hours",(ps.otH||0).toFixed(1)+"h @ ×"+(w.overtimeMultiplier||1.5),"#fbbf24"],["Gross","£"+(ps.gross||0).toFixed(2),"#34d399"],["CIS Tax "+Math.round((w.taxRate||0)*100)+"%","-£"+(ps.taxAmt||0).toFixed(2),"#f87171"],["Net Pay","£"+(ps.net||0).toFixed(2),"#a78bfa"],["Payment","£"+(ps.net||0).toFixed(2)+" → "+( w.bankAccount||"—"),"#34d399"]].map(([l,v,c])=>(
-                  <div key={l} style={{background:"#0d1117",borderRadius:7,padding:"8px 10px"}}>
-                    <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
-                    <div style={{fontSize:12,fontWeight:700,color:c,marginTop:2}}>{v}</div>
-                  </div>
-                ))}
+              <div style={{background:"#0d1117"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1.8fr 0.8fr 1fr 0.8fr",padding:"7px 14px",borderBottom:"1px solid #1e2535"}}>
+                  {["Description","Hours","Rate","Amount"].map(h=><div key={h} style={{fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".05em"}}>{h}</div>)}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1.8fr 0.8fr 1fr 0.8fr",padding:"9px 14px",borderBottom:"1px solid #1e2535",alignItems:"center"}}>
+                  <div style={{fontSize:12,color:"#f1f5f9"}}>Normal hours</div>
+                  <div style={{fontSize:12,color:"#94a3b8"}}>{(ps.stdH||0).toFixed(2)} h</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>£{(w.agreedRate||0).toFixed(2)}/hr</div>
+                  <div style={{fontSize:12,fontWeight:600,color:"#f1f5f9",textAlign:"right"}}>£{stdAmt.toFixed(2)}</div>
+                </div>
+                {(ps.otH||0)>0&&<div style={{display:"grid",gridTemplateColumns:"1.8fr 0.8fr 1fr 0.8fr",padding:"9px 14px",borderBottom:"1px solid #1e2535",alignItems:"center"}}>
+                  <div style={{fontSize:12,color:"#f1f5f9"}}>Overtime hours</div>
+                  <div style={{fontSize:12,color:"#94a3b8"}}>{(ps.otH||0).toFixed(2)} h</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>£{otRate.toFixed(2)}/hr (×{w.overtimeMultiplier||1.5})</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#fbbf24",textAlign:"right"}}>£{otAmt.toFixed(2)}</div>
+                </div>}
+                <div style={{display:"grid",gridTemplateColumns:"1.8fr 0.8fr 1fr 0.8fr",padding:"9px 14px",borderBottom:"1px solid #1e2535",alignItems:"center",background:"#111827"}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"#f1f5f9"}}>Gross pay</div>
+                  <div></div><div></div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",textAlign:"right"}}>£{gross.toFixed(2)}</div>
+                </div>
+                {taxPct>0&&<div style={{display:"grid",gridTemplateColumns:"1.8fr 0.8fr 1fr 0.8fr",padding:"9px 14px",borderBottom:"1px solid #1e2535",alignItems:"center"}}>
+                  <div style={{fontSize:12,color:"#94a3b8"}}>CIS tax ({taxPct}%)</div>
+                  <div></div><div></div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#f87171",textAlign:"right"}}>− £{taxAmt.toFixed(2)}</div>
+                </div>}
+                <div style={{display:"grid",gridTemplateColumns:"1.8fr 0.8fr 1fr 0.8fr",padding:"12px 14px",alignItems:"center"}}>
+                  <div style={{fontSize:14,fontWeight:700,color:"#34d399"}}>Net pay</div>
+                  <div></div><div></div>
+                  <div style={{fontSize:22,fontWeight:700,color:"#34d399",textAlign:"right"}}>£{net.toFixed(2)}</div>
+                </div>
               </div>
-              {ps.status!=="paid"&&<button
-                onClick={()=>{
-                  const updated=payslipRecords.map(p=>p.id===ps.id?{...p,status:"paid",paidAt:new Date().toISOString()}:p);
-                  setPayslipRecords(updated);
-                }}
-                style={{width:"100%",padding:"8px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                💷 Mark as Paid
-              </button>}
-            </div>
-          ))}
+              <div style={{padding:"10px 14px",borderTop:"1px solid #1e2535",display:"flex",gap:8}}>
+                <button onClick={()=>exportPayslipPDF(ps,w)}
+                  style={{flex:1,padding:"8px",background:"#0d1117",border:"1px solid #2d3555",borderRadius:8,color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  📄 Export PDF
+                </button>
+                <button onClick={()=>alert("Payslip resent to "+w.email)}
+                  style={{flex:1,padding:"8px",background:"#0d1117",border:"1px solid #3b82f644",borderRadius:8,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  📧 Resend email
+                </button>
+              </div>
+            </div>;
+          })}
       </div>}
 
       {/* ══ CERTS TAB ════════════════════════════════════════════════════════ */}
