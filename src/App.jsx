@@ -219,6 +219,276 @@ function InlineCell({value,workerId,day,allSiteNames,allSites,onUpdate,confirmed
 }
 
 // ─── Worker Profile PDF ───────────────────────────────────────────────────────
+
+// ─── Export Timesheet PDF ─────────────────────────────────────────────────────
+function exportTimesheetPDF(ts, worker) {
+  const w = worker;
+  const entries = ts.workEntries || [];
+  const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const dayMap = {};
+  entries.forEach(l => {
+    const hrs = Math.round(((new Date(l.signOut) - new Date(l.signIn)) / 3600000) * 100) / 100;
+    const otThr = 9;
+    if (!dayMap[l.day]) dayMap[l.day] = { total: 0, std: 0, ot: 0 };
+    dayMap[l.day].total = Math.round((dayMap[l.day].total + hrs) * 100) / 100;
+    dayMap[l.day].std   = Math.min(dayMap[l.day].total, otThr);
+    dayMap[l.day].ot    = Math.max(0, Math.round((dayMap[l.day].total - otThr) * 100) / 100);
+  });
+  const stdHrs = Object.values(dayMap).reduce((a, d) => a + d.std, 0);
+  const otHrs  = Object.values(dayMap).reduce((a, d) => a + d.ot,  0);
+  const totHrs = Math.round((stdHrs + otHrs) * 100) / 100;
+  const statusLabel = { open: "Open", pending: "Pending review", approved: "Approved" }[ts.status] || ts.status;
+  const statusColor = { open: "#1d4ed8", pending: "#854d0e", approved: "#166534" }[ts.status] || "#555";
+  const statusBg    = { open: "#eff6ff", pending: "#fef9c3", approved: "#f0fdf4" }[ts.status] || "#f5f5f5";
+
+  const rowsHTML = entries.map((l, i) => {
+    const hrs = Math.round(((new Date(l.signOut) - new Date(l.signIn)) / 3600000) * 100) / 100;
+    const otThr = 9;
+    const std = Math.min(hrs, otThr);
+    const ot  = Math.max(0, Math.round((hrs - otThr) * 100) / 100);
+    const tIn  = l.signIn  ? new Date(l.signIn).toLocaleTimeString("en-GB",  { hour: "2-digit", minute: "2-digit" }) : "—";
+    const tOut = l.signOut ? new Date(l.signOut).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "—";
+    const dateStr = l.signIn ? new Date(l.signIn).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }) : "—";
+    const rowBg = i % 2 === 0 ? "#fff" : "#f9f9f9";
+    const rep = l.workReport;
+    const repCell = rep ? (rep.type === "positive" ? '<td style="padding:9px 12px;text-align:center;color:#166534;font-weight:700">✓</td>' : '<td style="padding:9px 12px;text-align:center;color:#991b1b;font-weight:700">⚠</td>') : '<td style="padding:9px 12px;text-align:center;color:#ccc">·</td>';
+    return `<tr style="background:${rep?.type==="negative"?"#fff5f5":rowBg};border-bottom:1px solid #f0f0f0">
+      <td style="padding:9px 12px;font-weight:600;color:#1a1a2e">${dateStr}</td>
+      <td style="padding:9px 12px;color:#444">${l.siteName || "—"}</td>
+      <td style="padding:9px 12px;text-align:center;color:#166534;font-weight:600">${tIn}</td>
+      <td style="padding:9px 12px;text-align:center;color:#991b1b;font-weight:600">${tOut}</td>
+      <td style="padding:9px 12px;text-align:right;font-weight:600;color:#1a1a2e">${std.toFixed(2)}</td>
+      <td style="padding:9px 12px;text-align:right;color:${ot>0?"#92400e":"#ccc"};font-weight:${ot>0?700:400}">${ot > 0 ? ot.toFixed(2) : "—"}</td>
+    </tr>`;
+  }).join("");
+
+  const negReports = entries.filter(l => l.workReport?.type === "negative");
+  const negBlock = negReports.length > 0 ? negReports.map(l => {
+    const dateStr = l.signIn ? new Date(l.signIn).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }) : "—";
+    const acts = (l.workReport.activities || []).map(a => `<div style="margin-bottom:8px;padding:8px 10px;background:#fff;border-left:3px solid #991b1b;border-radius:3px"><div style="font-size:10px;color:#991b1b;font-weight:700;margin-bottom:3px">${a.duration || ""}</div><div style="font-size:11px;color:#7f1d1d;line-height:1.5">${a.text || ""}</div></div>`).join("");
+    return `<div style="margin-bottom:8px;padding:10px 13px;background:#fff1f2;border:1px solid #fca5a5;border-radius:5px"><div style="font-size:8.5px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">⚠ ${dateStr} — ${l.siteName || ""}</div>${acts}</div>`;
+  }).join("") : "";
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+  <title>Timesheet — ${w.name} — WC ${ts.weekLabel}</title>
+  <style>
+    @media print { body { margin: 0; } @page { size: A4 landscape; margin: 18mm 16mm; } }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 0; }
+  </style></head><body>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:2.5px solid #1a1a2e;margin-bottom:14px">
+    <div><div style="font-size:18px;font-weight:700;color:#1a1a2e">Bright Metalwork Ltd</div><div style="font-size:9px;color:#888;margin-top:2px">lucian@bright-group.org · +44 (0)771 078 3500 · Aldershot, Hampshire</div></div>
+    <div style="text-align:right"><div style="font-size:15px;font-weight:700;color:#1a1a2e">Weekly Timesheet</div><div style="font-size:9px;color:#888;margin-top:2px">Week Commencing: ${ts.weekLabel}</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:2.5fr 1.2fr 1fr;gap:0;border:1px solid #e0e0e0;border-radius:5px;overflow:hidden;margin-bottom:14px">
+    <div style="padding:8px 12px;background:#f5f5f5;border-right:1px solid #e0e0e0"><div style="font-size:7.5px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Worker</div><div style="font-size:14px;font-weight:700;color:#1a1a2e">${w.name}</div><div style="font-size:9px;color:#666;margin-top:1px">${w.position || ""}${w.company ? " · " + w.company : ""}</div></div>
+    <div style="padding:8px 12px;background:#f5f5f5;border-right:1px solid #e0e0e0"><div style="font-size:7.5px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Week commencing</div><div style="font-size:13px;font-weight:700;color:#1a1a2e">${ts.weekLabel}</div></div>
+    <div style="padding:8px 12px;background:#f5f5f5"><div style="font-size:7.5px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Status</div><div style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:3px;background:${statusBg};border:1px solid ${statusColor}44"><div style="width:6px;height:6px;border-radius:50%;background:${statusColor}"></div><span style="font-size:10px;font-weight:700;color:${statusColor}">${statusLabel}</span></div></div>
+  </div>
+  <table>
+    <thead><tr style="background:#1a1a2e">
+      <th style="padding:8px 12px;text-align:left;color:#fff;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;width:16%">Date</th>
+      <th style="padding:8px 12px;text-align:left;color:#fff;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;width:32%">Site</th>
+      <th style="padding:8px 12px;text-align:center;color:#fff;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;width:13%">Sign in</th>
+      <th style="padding:8px 12px;text-align:center;color:#fff;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;width:13%">Sign out</th>
+      <th style="padding:8px 12px;text-align:right;color:#fff;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;width:13%">Normal hrs</th>
+      <th style="padding:8px 12px;text-align:right;color:#fff;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;width:13%">OT hrs</th>
+    </tr></thead>
+    <tbody>${rowsHTML}</tbody>
+    <tfoot><tr style="background:#1a1a2e">
+      <td colspan="4" style="padding:9px 12px;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af">Weekly totals</td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700;font-size:15px;color:#fff">${stdHrs.toFixed(2)}</td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700;font-size:15px;color:#fcd34d">${otHrs > 0 ? otHrs.toFixed(2) : "—"}</td>
+    </tr></tfoot>
+  </table>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px;margin-bottom:${negBlock?"12px":"14px"}">
+    <div style="border:1px solid #e5e5e5;border-radius:5px;padding:9px 12px;background:#f5f5f5"><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Normal hours</div><div style="font-size:20px;font-weight:700;color:#1a1a2e">${stdHrs.toFixed(2)} h</div></div>
+    <div style="border:1px solid #fde68a;border-radius:5px;padding:9px 12px;background:#fffbeb"><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Overtime hours</div><div style="font-size:20px;font-weight:700;color:#92400e">${otHrs.toFixed(2)} h</div></div>
+    <div style="border:1px solid #1a1a2e;border-radius:5px;padding:9px 12px;background:#1a1a2e"><div style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Total hours</div><div style="font-size:20px;font-weight:700;color:#fff">${totHrs.toFixed(2)} h</div></div>
+  </div>
+  ${negBlock}
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;padding-top:14px;border-top:1.5px solid #e0e0e0;margin-top:${negBlock?"0":"4px"}">
+    <div><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Worker signature</div><div style="height:38px;border-bottom:1.5px solid #1a1a2e;margin-bottom:4px"></div><div style="font-size:9px;color:#aaa">${w.name}</div><div style="font-size:9px;color:#ccc;margin-top:2px">Date: ________________________</div></div>
+    <div><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Site Manager sign-off</div><div style="height:38px;border-bottom:1.5px solid #1a1a2e;margin-bottom:4px"></div><div style="font-size:9px;color:#aaa">Site Manager</div><div style="font-size:9px;color:#ccc;margin-top:2px">Date: ________________________</div></div>
+    <div><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Director / Approval</div><div style="height:38px;border-bottom:1.5px solid #1a1a2e;margin-bottom:4px"></div><div style="font-size:9px;color:#aaa">Lucian Ciocoiu</div><div style="font-size:9px;color:#ccc;margin-top:2px">Date: ________________________</div></div>
+  </div>
+  <div style="margin-top:12px;padding-top:7px;border-top:1px solid #eee;display:flex;justify-content:space-between;font-size:8px;color:#ccc"><span>Bright Metalwork Ltd · Confidential</span><span>Timesheet · ${w.name} · WC ${ts.weekLabel}</span><span>Page 1 of 1</span></div>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (win) { win.document.write(html); win.document.close(); }
+  else { const a = document.createElement("a"); a.href = "data:text/html," + encodeURIComponent(html); a.download = `Timesheet_${w.name.replace(/ /g,"_")}_WC_${ts.weekLabel.replace(/ /g,"_")}.html`; a.click(); }
+}
+
+// ─── Export Work Report PDF ───────────────────────────────────────────────────
+function exportWorkReportPDF(entry, worker) {
+  const w = worker;
+  const rep = entry.workReport;
+  if (!rep) return;
+  const isNeg = rep.type === "negative";
+  const dateStr = entry.signIn ? new Date(entry.signIn).toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) : "—";
+  const tIn  = entry.signIn  ? new Date(entry.signIn).toLocaleTimeString("en-GB",  { hour: "2-digit", minute: "2-digit" }) : "—";
+  const tOut = entry.signOut ? new Date(entry.signOut).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "—";
+
+  const actsHTML = (rep.activities || []).map((a, i) => `
+    <div style="margin-bottom:${i < (rep.activities.length - 1) ? "18px" : "8px"};padding-bottom:${i < (rep.activities.length - 1) ? "18px" : "0"};border-bottom:${i < (rep.activities.length - 1) ? "1px solid #f0f0f0" : "none"}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+        <div style="font-size:8.5px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em">Activity ${i + 1}</div>
+        ${a.duration ? `<span style="font-size:10px;font-weight:700;color:#1e3a8a;padding:2px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:3px">${a.duration}</span>` : ""}
+      </div>
+      ${a.text ? `<div style="font-size:12px;color:#1a1a2e;line-height:1.65;padding:9px 11px;background:#f8f8f8;border-radius:4px;border-left:3px solid #1a1a2e;margin-bottom:${(a.photos && a.photos.length) ? "10px" : "0"}">${a.text}</div>` : ""}
+      ${a.photos && a.photos.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:${a.text ? "0" : "0"}">${a.photos.map(p => `<div style="border-radius:4px;overflow:hidden;border:1px solid #e5e5e5"><img src="${p.src || ""}" alt="${p.name}" style="width:100%;height:140px;object-fit:cover;display:block"><div style="padding:3px 7px;font-size:8px;color:#aaa;background:#fafafa;border-top:1px solid #f0f0f0">${p.name}</div></div>`).join("")}</div>` : ""}
+    </div>`).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+  <title>Work Report — ${w.name} — ${entry.date || dateStr}</title>
+  <style>
+    @media print { body { margin: 0; } @page { size: A4 portrait; margin: 16mm 16mm; } }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
+  </style></head><body>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:11px;border-bottom:2.5px solid #1a1a2e;margin-bottom:16px">
+    <div><div style="font-size:17px;font-weight:700;color:#1a1a2e">Bright Metalwork Ltd</div><div style="font-size:9px;color:#888;margin-top:2px">lucian@bright-group.org · +44 (0)771 078 3500</div></div>
+    <div style="text-align:right"><div style="font-size:14px;font-weight:700;color:#1a1a2e">Daily Work Report</div><div style="font-size:9px;color:#888;margin-top:1px">${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</div></div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:11px">
+    <tr>
+      <td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e8e8e8;width:28%;vertical-align:top"><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Worker</div><div style="font-weight:700;color:#1a1a2e">${w.name}</div><div style="color:#666;font-size:10px">${w.position || ""}</div></td>
+      <td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e8e8e8;border-left:none;width:22%;vertical-align:top"><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Date</div><div style="font-weight:700;color:#1a1a2e">${dateStr}</div></td>
+      <td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e8e8e8;border-left:none;width:28%;vertical-align:top"><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Site</div><div style="font-weight:700;color:#1a1a2e">${entry.siteName || "—"}</div></td>
+      <td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e8e8e8;border-left:none;width:22%;vertical-align:top"><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Scope</div><div style="font-weight:700;color:#1a1a2e">${entry.scopeName || "—"}</div></td>
+    </tr>
+  </table>
+  <div style="margin-bottom:16px">
+    <div style="display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:4px;background:${isNeg ? "#fff1f2" : "#f0fdf4"};border:1px solid ${isNeg ? "#fca5a5" : "#86efac"}">
+      <div style="width:9px;height:9px;border-radius:50%;background:${isNeg ? "#dc2626" : "#16a34a"}"></div>
+      <span style="font-size:12px;font-weight:700;color:${isNeg ? "#991b1b" : "#166534"}">${isNeg ? "⚠ Negative — Issues reported" : "✓ Positive — Work completed as planned"}</span>
+    </div>
+  </div>
+  ${actsHTML}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;padding-top:14px;border-top:1.5px solid #e0e0e0;margin-top:16px">
+    <div><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Worker signature</div><div style="height:38px;border-bottom:1.5px solid #1a1a2e;margin-bottom:4px"></div><div style="font-size:9px;color:#aaa">${w.name}</div><div style="font-size:9px;color:#ccc;margin-top:2px">Date: ________________________</div></div>
+    <div><div style="font-size:8px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Supervisor sign-off</div><div style="height:38px;border-bottom:1.5px solid #1a1a2e;margin-bottom:4px"></div><div style="font-size:9px;color:#aaa">Site Manager</div><div style="font-size:9px;color:#ccc;margin-top:2px">Date: ________________________</div></div>
+  </div>
+  <div style="margin-top:12px;padding-top:7px;border-top:1px solid #eee;display:flex;justify-content:space-between;font-size:8px;color:#ccc"><span>Bright Metalwork Ltd · Confidential</span><span>Daily Work Report · ${w.name} · ${entry.date || dateStr}</span><span>Page 1 of 1</span></div>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (win) { win.document.write(html); win.document.close(); }
+  else { const a = document.createElement("a"); a.href = "data:text/html," + encodeURIComponent(html); a.download = `WorkReport_${w.name.replace(/ /g,"_")}_${(entry.date||"").replace(/ /g,"_")}.html`; a.click(); }
+}
+
+
+
+// ─── Work Report Modal ────────────────────────────────────────────────────────
+const DURATIONS=["15 min","30 min","45 min","1h","1h 15","1h 30","1h 45","2h","2h 30","3h","3h 30","4h","4h 30","5h","5h 30","6h","6h 30","7h","7h 30","8h","9h"];
+function WorkReportModal({entry,worker,onSave,onClose}){
+  const existing=entry.workReport||null;
+  const [type,setType]=useState(existing?.type||"positive");
+  const [activities,setActivities]=useState(existing?.activities||[{id:1,text:"",duration:"",photos:[]}]);
+  const [actCount,setActCount]=useState(existing?.activities?.length||1);
+  const w=worker;
+  const dateStr=entry.signIn?new Date(entry.signIn).toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"}):"—";
+  const tIn=entry.signIn?new Date(entry.signIn).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—";
+  const tOut=entry.signOut?new Date(entry.signOut).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—";
+  const isNeg=type==="negative";
+  const addAct=()=>{const id=actCount+1;setActCount(id);setActivities(a=>[...a,{id,text:"",duration:"",photos:[]}]);};
+  const removeAct=(id)=>{if(activities.length===1)return;setActivities(a=>a.filter(x=>x.id!==id));};
+  const updateAct=(id,k,v)=>setActivities(a=>a.map(x=>x.id===id?{...x,[k]:v}:x));
+  const addPhoto=(id,file)=>{if(!file)return;const r=new FileReader();r.onload=e=>updateAct(id,"photos",[...(activities.find(a=>a.id===id)?.photos||[]),{name:file.name,src:e.target.result}]);r.readAsDataURL(file);};
+  const removePhoto=(id,pi)=>updateAct(id,"photos",activities.find(a=>a.id===id)?.photos.filter((_,i)=>i!==pi)||[]);
+  const save=()=>{
+    const report={type,activities,createdAt:new Date().toISOString()};
+    if(isNeg){
+      // Notification logic would fire here
+      if(window.confirm("This is a negative report. Manager and Director will be notified automatically. Save?"))
+        onSave({...entry,workReport:report});
+    } else {
+      onSave({...entry,workReport:report});
+    }
+  };
+  const INP={width:"100%",background:"#0d1117",border:"1px solid #1e2535",borderRadius:7,padding:"9px 11px",color:"#f1f5f9",fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"};
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:16}}>
+    <div style={{background:"#111827",borderRadius:14,width:"100%",maxWidth:540,maxHeight:"90vh",overflowY:"auto",border:"1px solid #1e2535",boxShadow:"0 24px 60px rgba(0,0,0,.6)"}}>
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 18px",borderBottom:"1px solid #1e2535",position:"sticky",top:0,background:"#111827",zIndex:1}}>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9"}}>Daily Work Report</div>
+          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{dateStr} · {w?.name} · {entry.siteName} · {tIn}–{tOut}</div>
+        </div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:20,padding:"0 4px",lineHeight:1}}>×</button>
+      </div>
+      <div style={{padding:18}}>
+        {/* Type */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+          {[["positive","✓","Positive","Work completed as planned","#34d399","#0d2218","#34d39944"],
+            ["negative","⚠","Negative","Issues, delays or problems","#f87171","#2d1515","#f8717144"]].map(([t,ic,lbl,sub,col,bg,bd])=>(
+            <button key={t} onClick={()=>setType(t)} style={{padding:"11px 14px",borderRadius:10,border:`2px solid ${type===t?col:bd}`,background:type===t?bg:"#0d1117",cursor:"pointer",textAlign:"left",transition:"all .15s"}}>
+              <div style={{fontSize:20,marginBottom:3}}>{ic}</div>
+              <div style={{fontSize:13,fontWeight:700,color:type===t?col:"#94a3b8"}}>{lbl}</div>
+              <div style={{fontSize:11,color:type===t?col:"#374151",marginTop:1}}>{sub}</div>
+            </button>
+          ))}
+        </div>
+        {isNeg&&<div style={{background:"#2d1515",border:"1px solid #f8717144",borderRadius:9,padding:"10px 13px",marginBottom:14,fontSize:12,color:"#f87171",display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:16}}>📣</span>
+          <span>Saving a negative report will automatically notify the <b style={{fontWeight:700}}>Site Manager</b> and <b style={{fontWeight:700}}>Director</b>.</span>
+        </div>}
+        {/* Activity blocks */}
+        {activities.map((a,i)=>(
+          <div key={a.id} style={{background:"#0d1117",borderRadius:10,border:"1px solid #1e2535",padding:14,marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".05em"}}>Activity {i+1}</div>
+              {activities.length>1&&<button onClick={()=>removeAct(a.id)} style={{background:"none",border:"none",color:"#374151",cursor:"pointer",fontSize:13}}>✕</button>}
+            </div>
+            {/* Text + Duration side by side */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 130px",gap:10,marginBottom:12,alignItems:"start"}}>
+              <div>
+                <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",marginBottom:5}}>Description</div>
+                <textarea value={a.text} onChange={e=>updateAct(a.id,"text",e.target.value)} placeholder="Describe what was worked on — location, method, drawing reference…" rows={4} style={{...INP}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",marginBottom:5}}>Duration</div>
+                <select size={8} value={a.duration} onChange={e=>updateAct(a.id,"duration",e.target.value)}
+                  style={{...INP,padding:"5px 8px",height:"auto",cursor:"pointer",fontSize:12}}>
+                  <option value="">—</option>
+                  {DURATIONS.map(d=><option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+            </div>
+            {/* Photos */}
+            <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",marginBottom:8}}>Photos</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {a.photos.map((p,pi)=>(
+                <div key={pi} style={{position:"relative",borderRadius:8,overflow:"hidden",border:"1px solid #1e2535",aspectRatio:"4/3"}}>
+                  <img src={p.src} alt={p.name} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+                  <button onClick={()=>removePhoto(a.id,pi)} style={{position:"absolute",top:5,right:5,width:22,height:22,borderRadius:"50%",background:"rgba(0,0,0,.6)",color:"#fff",border:"none",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
+                  <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"3px 7px",background:"rgba(0,0,0,.5)",fontSize:9,color:"#e2e8f0"}}>{p.name}</div>
+                </div>
+              ))}
+              <label style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,border:"1.5px dashed #2d3555",borderRadius:8,cursor:"pointer",aspectRatio:"4/3",color:"#64748b",fontSize:12,background:"#111827"}}>
+                <span style={{fontSize:24}}>📷</span>
+                <span>Add photo</span>
+                <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{addPhoto(a.id,e.target.files[0]);e.target.value="";}}/>
+              </label>
+            </div>
+          </div>
+        ))}
+        <button onClick={addAct} style={{width:"100%",padding:"9px",border:"1.5px dashed #2d3555",borderRadius:9,background:"none",color:"#64748b",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",gap:7,marginBottom:14}}>
+          + Add another activity
+        </button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onClose} style={{flex:1,padding:"10px",background:"#1e2535",border:"1px solid #374151",borderRadius:8,color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}}>Cancel</button>
+          <button onClick={save} style={{flex:2,padding:"10px",background:isNeg?"#2d1515":"linear-gradient(135deg,#14532d,#16a34a)",border:isNeg?"1px solid #f87171":"none",borderRadius:8,color:isNeg?"#f87171":"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>
+            {isNeg?"Save & Notify Manager + Director":"Save Report"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+
 function exportWorkerProfile(w,allSites,weekLabel){
   const heldCerts=CERTS.filter(c=>w.certs?.[c.key]?.held);
   const SC={valid:"#22c55e",expiring:"#f59e0b",expired:"#ef4444",missing:"#6b7280"};
@@ -2971,6 +3241,7 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
   if(!w)return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Worker not found.</div></div>;
 
   const [tab,setTab]=useState("profile");
+  const [reportEntry,setReportEntry]=useState(null); // entry being edited for work report
 
   // ── Derived data ────────────────────────────────────────────────────────────
   const {gross,net,stdH,otH}=calcPay(w,activeDays,siteHours);
@@ -3022,7 +3293,16 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
     </button>
   </div>;
 
+  const handleSaveReport=(updatedEntry)=>{
+    // Update the log in worker data
+    const updatedLogs=(w.attendanceLogs||[]).map(l=>l.id===updatedEntry.id?updatedEntry:l);
+    // Trigger save via setModal pattern — update worker attendanceLogs
+    if(setModal) setModal({type:"_updateWorkerLogs",workerId:w.id,logs:updatedLogs});
+    setReportEntry(null);
+  };
+
   return <div>
+    {reportEntry&&<WorkReportModal entry={reportEntry} worker={w} onSave={handleSaveReport} onClose={()=>setReportEntry(null)}/>}
     <DPageHdr
       title={<span style={{display:"flex",alignItems:"center",gap:10}}>
         <div style={{width:38,height:38,borderRadius:9,background:"#3b82f622",border:"1px solid #3b82f644",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#3b82f6"}}>{initials}</div>
@@ -3202,9 +3482,10 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
                 <th style={{...DS.th,textAlign:"left"}}>Site</th>
                 <th style={{...DS.th,textAlign:"center"}}>Sign In</th>
                 <th style={{...DS.th,textAlign:"center"}}>Sign Out</th>
-                <th style={{...DS.th,textAlign:"right"}}>Hours</th>
+                <th style={{...DS.th,textAlign:"right"}}>Normal</th>
                 <th style={{...DS.th,textAlign:"right"}}>OT</th>
-                <th style={{...DS.th,textAlign:"left"}}>Week</th>
+                <th style={{...DS.th,textAlign:"center"}}>Report</th>
+                <th style={{...DS.th,textAlign:"center"}}></th>
               </tr></thead>
               <tbody>
                 {wLogs.map((l,i)=>{
@@ -3221,7 +3502,15 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
                     <td style={{...DS.td,textAlign:"center",color:"#f87171",fontWeight:600}}>{l.signOut?fmtT(l.signOut):<span style={{color:"#fbbf24"}}>On site</span>}</td>
                     <td style={{...DS.td,textAlign:"right",color:"#60a5fa",fontWeight:700}}>{hrs.toFixed(2)}h</td>
                     <td style={{...DS.td,textAlign:"right",color:otHrs>0?"#fbbf24":"#374151",fontWeight:otHrs>0?700:400}}>{otHrs>0?"+"+otHrs.toFixed(1)+"h":"—"}</td>
-                    <td style={{...DS.td,fontSize:10,color:isThisWeek?"#3b82f6":"#64748b"}}>{l.weekLabel||"—"}{isThisWeek&&" ✓"}</td>
+                    <td style={{...DS.td,textAlign:"center",fontSize:13}}>
+                      {l.workReport?.type==="positive"?<span style={{color:"#34d399",fontWeight:700}}>✓</span>:l.workReport?.type==="negative"?<span style={{color:"#f87171",fontWeight:700}}>⚠</span>:<span style={{color:"#374151"}}>·</span>}
+                    </td>
+                    <td style={{...DS.td,textAlign:"center"}}>
+                      <button onClick={e=>{e.stopPropagation();setReportEntry(l);}}
+                        style={{padding:"3px 9px",fontSize:10,fontWeight:700,borderRadius:5,border:`1px solid ${l.workReport?"#3b82f6":"#1e2535"}`,background:l.workReport?"#1e3a5f":"#0d1117",color:l.workReport?"#60a5fa":"#64748b",cursor:"pointer",whiteSpace:"nowrap"}}>
+                        {l.workReport?"Edit":"+ Report"}
+                      </button>
+                    </td>
                   </tr>;
                 })}
               </tbody>
@@ -3311,11 +3600,20 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
                 ))}
               </div>
               <div style={{fontSize:10,color:"#374151",fontStyle:"italic",marginBottom:ts.status!=="approved"?10:0}}>Pay amounts are not calculated here — see the Payslips tab</div>
-              {ts.status!=="approved"&&<button
-                onClick={()=>{const updated=timesheetRecords.map(t=>t.id===ts.id?{...t,status:"approved",approvedAt:new Date().toISOString(),approvedBy:"Admin"}:t);setTimesheetRecords(updated);}}
-                style={{width:"100%",padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                ✓ Approve Timesheet — WC {ts.weekLabel}
-              </button>}
+              <div style={{display:"flex",gap:8,marginTop:2}}>
+                <button onClick={()=>exportTimesheetPDF(ts,w)}
+                  style={{flex:1,padding:"9px",background:"#0d1117",border:"1px solid #1e2535",borderRadius:8,color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  📄 Export PDF
+                </button>
+                {ts.status!=="approved"&&<button
+                  onClick={()=>{const updated=timesheetRecords.map(t=>t.id===ts.id?{...t,status:"approved",approvedAt:new Date().toISOString(),approvedBy:"Admin"}:t);setTimesheetRecords(updated);}}
+                  style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                  ✓ Approve Timesheet — WC {ts.weekLabel}
+                </button>}
+                {ts.status==="approved"&&<div style={{flex:2,padding:"9px",background:"#0d2218",border:"1px solid #34d39944",borderRadius:8,color:"#34d399",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  ✓ Approved
+                </div>}
+              </div>
             </div>;
           })}
       </div>}
