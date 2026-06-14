@@ -2567,6 +2567,10 @@ function DashSidebar({page,setPage,workers,allSites,clients,invoices,bankTransac
       <button onClick={()=>doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites)} style={{width:"100%",padding:"7px 10px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:8}}>⬇ Export Excel</button>
         <div style={{borderTop:"1px solid #1e2535",paddingTop:8}}>
         <div style={{fontSize:9,color:"#374151",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6,paddingLeft:2}}>Integrated Tools</div>
+        <button onClick={()=>setPage("app_sitemanager")}
+          style={{width:"100%",padding:"9px 10px",background:page==="app_sitemanager"?"#0c1a2e":"#080f1a",border:`1px solid ${page==="app_sitemanager"?"#3b82f6":"#1e3a5f"}`,borderRadius:8,color:page==="app_sitemanager"?"#93c5fd":"#3b82f6",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}>
+          <span style={{fontSize:17}}>📊</span><span>Site Manager</span>
+        </button>
         <button onClick={()=>setPage("app_sitedocs")}
           style={{width:"100%",padding:"9px 10px",background:page==="app_sitedocs"?"#0d0a1e":"#0a0814",border:`1px solid ${page==="app_sitedocs"?"#7c3aed":"#2d1f4e"}`,borderRadius:8,color:page==="app_sitedocs"?"#c4b5fd":"#7c3aed",cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:5,display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}>
           <span style={{fontSize:17}}>📋</span><span>Site Documents</span>
@@ -5461,6 +5465,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "stats":         return <DStats workers={workers} allSites={allSites} activeDays={activeDays}/>;
       case "bank":          return <DBankFull {...SP}/>;
       case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
+      case "app_sitemanager":  return <SiteManagerView/>;
       case "app_sitedocs":    return <SiteDocGeneratorView/>;
       case "app_assets":      return <AssetRegisterView/>;
       default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
@@ -5473,6 +5478,740 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
 }
 
 
+// ─── Site Manager App — dark theme matching Labour Schedule ───────────────────
+const SiteManagerView = (()=>{
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const smFmt    = (n)  => `£${Math.round(n).toLocaleString("en-GB")}`;
+const allocVal = (s)  => Math.round(s.total * (1 - (s.profitPct + s.overheadPct) / 100));
+const earnedVal= (s)  => Math.round(allocVal(s) * s.completed / 100);
+const pctTag   = (p)  => p < 70 ? "green" : p < 90 ? "amber" : "red";
+const ragDot   = (p)  => p < 70 ? "🟢" : p < 90 ? "🟡" : "🔴";
+const fileIcon = (name) => {
+  const ext = (name||"").split(".").pop().toLowerCase();
+  if(["jpg","jpeg","png","webp"].includes(ext)) return "🖼️";
+  if(["mp4","mov","avi"].includes(ext))         return "🎬";
+  if(["pdf"].includes(ext))                     return "📄";
+  if(["eml","msg"].includes(ext))               return "📧";
+  return "📎";
+};
+
+const BASE_MON = new Date(2026,5,9);
+const DAY_SHORT = ["Mon","Tue","Wed","Thu","Fri","Sat"];
+const MONTHS    = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function weekMonday(off=0){ const d=new Date(BASE_MON); d.setDate(d.getDate()+off*7); return d; }
+function weekDates(off=0){ const m=weekMonday(off); return Array.from({length:6},(_,i)=>{ const d=new Date(m); d.setDate(d.getDate()+i); return d; }); }
+function weekKey(off=0){ const d=weekMonday(off); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+function smFmtDate(d){ return `${d.getDate()} ${MONTHS[d.getMonth()]}`; }
+function dateToWK(ds){ const d=new Date(ds); const di=(d.getDay()+6)%7; const m=new Date(d); m.setDate(d.getDate()-di); return `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,"0")}-${String(m.getDate()).padStart(2,"0")}`; }
+function dateToDI(ds){ return (new Date(ds).getDay()+6)%7; }
+
+// ─── Colour palette — matches Labour Schedule dark theme ──────────────────────
+const C = {
+  bg:     "#0a0e1a",   // page background
+  card:   "#111827",   // card background
+  card2:  "#1a1f2e",   // elevated card
+  border: "#1e2535",   // borders
+  border2:"#2d3555",   // lighter borders
+  accent: "#3b82f6",   // blue
+  green:  "#34d399",   // green
+  yellow: "#fbbf24",   // amber
+  red:    "#f87171",   // red
+  purple: "#a78bfa",   // purple
+  orange: "#f97316",   // orange
+  text:   "#f1f5f9",   // primary text
+  sub:    "#94a3b8",   // secondary text
+  muted:  "#64748b",   // muted text
+  dim:    "#374151",   // very dim
+};
+
+const RAG_C = {
+  green: {bg:"#0d221844",bd:"#34d39944",col:"#34d399"},
+  amber: {bg:"#1a150044",bd:"#fbbf2444",col:"#fbbf24"},
+  red:   {bg:"#2d151544",bd:"#f8717144",col:"#f87171"},
+};
+const TRADE_COL={
+  "Management":"#3b82f6","Structural":"#f97316","General":"#34d399",
+  "Plant":"#fbbf24","Mechanical":"#a78bfa","Electrical":"#818cf8",
+  "Masonry":"#94a3b8","Carpentry":"#2dd4bf"
+};
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const MANAGER={name:"James Mitchell",initials:"JM"};
+const SM_CATS=["Materials","Labour","Plant & Equipment","Subcontract","Preliminaries","Other"];
+const TODAY="2026-06-13";
+
+const SITES=[
+  {id:1,name:"Highfield Business Park",    client:"Nexus Developments Ltd", address:"Highfield Rd, Aldershot GU11",status:"active",  appStatus:"draft",    start:"Jan 2025",end:"Aug 2025"},
+  {id:2,name:"Riverside Apartments — Block C",client:"Riverside Living PLC",address:"Riverside Dr, Farnham GU9",  status:"active",  appStatus:"submitted",start:"Mar 2025",end:"Nov 2025"},
+  {id:3,name:"Sainsbury's Refurb — Fleet",client:"Sainsbury's Supermarkets",address:"Fleet Rd, Fleet GU51",       status:"complete",appStatus:"finalised",start:"Nov 2024",end:"Apr 2025"},
+];
+
+const INIT_SCOPES={
+  1:[
+    {id:1,name:"Groundworks & Drainage",  total:95000, profitPct:12,overheadPct:8, completed:100},
+    {id:2,name:"Structural Steel Frame",  total:142000,profitPct:15,overheadPct:7, completed:85},
+    {id:3,name:"Cladding & Curtain Wall", total:118000,profitPct:10,overheadPct:9, completed:40},
+    {id:4,name:"Electrical First Fix",    total:67000, profitPct:12,overheadPct:8, completed:60},
+    {id:5,name:"Mechanical Services",     total:63000, profitPct:11,overheadPct:9, completed:20},
+  ],
+  2:[
+    {id:6,name:"Demolition & Strip Out",  total:45000, profitPct:10,overheadPct:8, completed:100},
+    {id:7,name:"RC Frame Works",          total:120000,profitPct:14,overheadPct:8, completed:55},
+    {id:8,name:"Brickwork & Masonry",     total:88000, profitPct:12,overheadPct:7, completed:20},
+    {id:9,name:"Roof & Waterproofing",    total:67000, profitPct:11,overheadPct:9, completed:0},
+  ],
+  3:[
+    {id:10,name:"Strip Out & Demolition", total:32000, profitPct:8, overheadPct:7, completed:100},
+    {id:11,name:"M&E Services",           total:78000, profitPct:10,overheadPct:8, completed:100},
+    {id:12,name:"Finishes & Fittings",    total:68000, profitPct:9, overheadPct:8, completed:100},
+  ],
+};
+
+const INIT_EXP=[
+  {id:1,siteId:1,scopeId:2,desc:"Steel delivery — Phase 1",   amount:14800,date:"12 May 2025",category:"Materials",        files:["invoice_steel.pdf"], status:"approved"},
+  {id:2,siteId:1,scopeId:4,desc:"Cable drum & conduit supply", amount:3400, date:"20 May 2025",category:"Materials",        files:["receipt_elec.jpg"],  status:"pending"},
+  {id:3,siteId:2,scopeId:7,desc:"Pump hire — concrete pour",   amount:1650, date:"30 Apr 2025",category:"Plant & Equipment",files:["hire_invoice.pdf"],  status:"approved"},
+];
+
+const INIT_VAR=[
+  {id:1,siteId:1,ref:"VAR-001",title:"Additional waterproof membrane to basement",desc:"Client requested upgraded spec following high water table survey.",amount:8500,status:"pending", files:["survey_report.pdf","site_photo_001.jpg"]},
+  {id:2,siteId:1,ref:"VAR-002",title:"Revised escape route — Level 2",desc:"Building control requirement following L2 design change.",amount:3200,status:"approved",files:["bcf_email.eml","revised_plan.pdf"]},
+];
+
+const LABOUR_DATA={
+  1:{workers:[{id:"w1",name:"Dave Hartley",role:"Site Foreman",trade:"Management",initials:"DH",dailyRate:380},{id:"w2",name:"Mike Patel",role:"Steel Fixer",trade:"Structural",initials:"MP",dailyRate:280},{id:"w3",name:"John Walsh",role:"Steel Fixer",trade:"Structural",initials:"JW",dailyRate:270},{id:"w4",name:"Steve Clarke",role:"Labourer",trade:"General",initials:"SC",dailyRate:200},{id:"w5",name:"Ryan Brooks",role:"Plant Operator",trade:"Plant",initials:"RB",dailyRate:320},{id:"w6",name:"Lucy Chen",role:"M&E Engineer",trade:"Mechanical",initials:"LC",dailyRate:350}],
+    schedule:{"2026-05-19":{w1:[0,1,2,3,4],w2:[0,1,2,3,4],w3:[0,1,2,3,4],w4:[0,1,2,3,4],w5:[0,1,2],w6:[]},"2026-06-09":{w1:[0,1,2,3,4],w2:[0,1,2,3,4],w3:[0,1,2,3],w4:[0,1,2,3,4,5],w5:[0,2,4],w6:[2,3,4]},"2026-06-16":{w1:[0,1,2,3,4],w2:[0,1,3,4],w3:[0,1,2,3,4],w4:[1,2,3,4],w5:[0,1,2],w6:[0,1,2,3,4]}}},
+  2:{workers:[{id:"w7",name:"Tom Bradley",role:"Site Foreman",trade:"Management",initials:"TB",dailyRate:360},{id:"w8",name:"Sean Murphy",role:"Bricklayer",trade:"Masonry",initials:"SM",dailyRate:260},{id:"w9",name:"Ali Hassan",role:"Carpenter",trade:"Carpentry",initials:"AH",dailyRate:250},{id:"w10",name:"Chris Ford",role:"Labourer",trade:"General",initials:"CF",dailyRate:190}],
+    schedule:{"2026-06-09":{w7:[0,1,2,3,4],w8:[0,1,2,3,4],w9:[1,2,3],w10:[0,1,3,4]},"2026-06-16":{w7:[0,1,2,3,4],w8:[0,2,3,4],w9:[0,1,2,3,4],w10:[0,1,2]}}},
+  3:{workers:[{id:"w11",name:"Paul Green",role:"Site Foreman",trade:"Management",initials:"PG",dailyRate:360},{id:"w12",name:"Neil Carter",role:"M&E Engineer",trade:"Mechanical",initials:"NC",dailyRate:340},{id:"w13",name:"Sam Osei",role:"Electrician",trade:"Electrical",initials:"SO",dailyRate:290}],
+    schedule:{"2026-04-07":{w11:[0,1,2,3,4],w12:[0,1,2,3,4],w13:[0,1,2,3,4]}}},
+};
+
+const INIT_SIGN_INS={
+  1:{"2026-06-09":{w1:2,w2:2,w3:2,w4:3,w5:3,w6:null},"2026-06-10":{w1:2,w2:2,w3:2,w4:3,w5:null,w6:5},"2026-06-11":{w1:2,w2:2,w3:2,w4:3,w5:3,w6:5},"2026-06-12":{w1:2,w2:2,w3:2,w4:3,w5:null,w6:5},"2026-06-13":{w1:null,w2:null,w3:null,w4:3,w5:3,w6:null}},
+  2:{"2026-06-09":{w7:7,w8:8,w9:null,w10:7},"2026-06-10":{w7:7,w8:8,w9:7,w10:7},"2026-06-11":{w7:7,w8:8,w9:7,w10:7},"2026-06-12":{w7:7,w8:8,w9:null,w10:7}},
+  3:{},
+};
+
+// ─── Micro components ──────────────────────────────────────────────────────────
+function SmBadge({s}){
+  const M={
+    approved:[C.green+"22",C.green,"Approved"],
+    pending: [C.yellow+"22",C.yellow,"Pending"],
+    rejected:[C.red+"22",C.red,"Rejected"],
+    draft:   [C.border,C.muted,"Draft"],
+    submitted:[C.accent+"22",C.accent,"Submitted"],
+    finalised:[C.green+"22",C.green,"Finalised"],
+    active:  [C.accent+"22",C.accent,"Active"],
+    complete:[C.green+"22",C.green,"Complete"],
+  };
+  const [bg,col,lbl]=M[s]||[C.border,C.muted,s];
+  return <span style={{background:bg,color:col,padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700,border:`1px solid ${col}44`}}>{lbl}</span>;
+}
+
+function SmBar({pct,thin,color}){
+  const c=color||(pct===100?C.green:pct>80?C.red:pct>60?C.yellow:C.accent);
+  return <div style={{background:C.border,borderRadius:999,height:thin?3:6,overflow:"hidden"}}>
+    <div style={{width:`${Math.min(pct,100)}%`,background:c,borderRadius:999,height:"100%",transition:"width .4s ease"}}/>
+  </div>;
+}
+
+function SmCrumb({crumbs}){
+  return <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:14,flexWrap:"wrap"}}>
+    {crumbs.map((c,i)=>(
+      <span key={i} style={{display:"flex",alignItems:"center",gap:5}}>
+        {i>0&&<span style={{color:C.muted,fontSize:13}}>›</span>}
+        <span onClick={c.fn} style={{fontSize:12,color:c.fn?C.accent:C.sub,cursor:c.fn?"pointer":"default",fontWeight:c.fn?500:700}}>{c.label}</span>
+      </span>
+    ))}
+  </div>;
+}
+
+function SmPill({name,onX}){
+  return <span style={{background:C.card2,border:`1px solid ${C.border2}`,borderRadius:6,padding:"4px 10px",fontSize:11,color:C.sub,display:"inline-flex",alignItems:"center",gap:4}}>
+    {fileIcon(name)}{name}
+    {onX&&<span style={{cursor:"pointer",color:C.muted,marginLeft:2}} onClick={onX}>✕</span>}
+  </span>;
+}
+
+function SmDrop({fRef,onFiles,hint}){
+  return <>
+    <div onClick={()=>fRef.current?.click()} style={{border:`2px dashed ${C.border2}`,borderRadius:10,padding:"22px 16px",textAlign:"center",cursor:"pointer",background:C.card}}>
+      <div style={{fontSize:28,marginBottom:5}}>📎</div>
+      <div style={{color:C.sub,fontSize:13,fontWeight:500}}>Click to attach files</div>
+      <div style={{color:C.muted,fontSize:11,marginTop:2}}>{hint}</div>
+    </div>
+    <input ref={fRef} type="file" multiple style={{display:"none"}} onChange={e=>{onFiles(Array.from(e.target.files).map(f=>f.name));e.target.value="";}}/>
+  </>;
+}
+
+// ─── Financial Widget ──────────────────────────────────────────────────────────
+function FinancialWidget({fin,scopes,open,onToggle}){
+  const tag=pctTag(fin.pctUsed);
+  const rag=RAG_C[tag];
+  return <div style={{background:rag.bg,border:`1px solid ${rag.bd}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:8}}>
+      <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
+        {[["Allocated Budget",smFmt(fin.allocated),C.text],["Total Spent",smFmt(fin.totalSpent),C.sub],["Remaining",fin.remaining>=0?smFmt(fin.remaining):`${smFmt(Math.abs(fin.remaining))} OVER`,fin.remaining>=0?C.green:C.red]].map(([l,v,c])=>(
+          <div key={l}>
+            <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>{l}</div>
+            <div style={{fontSize:18,fontWeight:800,color:c}}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:22}}>{ragDot(fin.pctUsed)}</span>
+        <button onClick={onToggle} style={{background:C.card,border:`1px solid ${rag.bd}`,borderRadius:7,padding:"5px 11px",cursor:"pointer",fontSize:11,color:C.sub,fontWeight:700}}>
+          {open?"▲ Hide":"▼ Scopes"}
+        </button>
+      </div>
+    </div>
+    <SmBar pct={fin.pctUsed} thin color={rag.col}/>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.muted,marginTop:4}}>
+      <span>Labour {smFmt(fin.labour)} · Expenses {smFmt(fin.expenses)}</span>
+      <span style={{fontWeight:700,color:rag.col}}>{fin.pctUsed.toFixed(1)}% of budget used</span>
+    </div>
+    {open&&<div style={{marginTop:14,borderTop:`1px solid ${rag.bd}`,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
+      {scopes.map(s=>{
+        const av=allocVal(s),lc=fin.labourByScope[s.id]||0,ec=fin.expByScope[s.id]||0,sp=lc+ec,rem=av-sp,p=av>0?sp/av*100:0,st=pctTag(p);
+        return <div key={s.id}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+            <span style={{fontSize:12,fontWeight:700,color:C.text}}>{s.name}</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:10,color:C.muted}}>{smFmt(sp)} of {smFmt(av)}</span>
+              <span style={{fontSize:13}}>{ragDot(p)}</span>
+            </div>
+          </div>
+          <SmBar pct={p} thin color={RAG_C[st].col}/>
+          <div style={{fontSize:10,color:C.muted,marginTop:2,display:"flex",gap:10}}>
+            <span>Labour {smFmt(lc)}</span><span>Expenses {smFmt(ec)}</span>
+            <span style={{color:rem>=0?C.green:C.red,fontWeight:700}}>{rem>=0?`${smFmt(rem)} left`:`${smFmt(Math.abs(rem))} OVER`}</span>
+            <span style={{marginLeft:"auto",color:C.muted}}>{s.completed}% done</span>
+          </div>
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
+// ─── Shell ─────────────────────────────────────────────────────────────────────
+function Shell({view,siteId,go,toast,fin,scopes,widgetOpen,onWidgetToggle,children}){
+  const hasSite=siteId!==null;
+  const navItems=[
+    {id:"dashboard",icon:"🏗️",label:"My Sites"},
+    ...(hasSite?[
+      {id:"site",       icon:"📍",label:"Site"},
+      {id:"scopes",     icon:"📁",label:"Scopes"},
+      {id:"labour",     icon:"👷",label:"Labour"},
+      {id:"signin",     icon:"✅",label:"Sign-In"},
+      {id:"expenses",   icon:"🧾",label:"Expenses"},
+      {id:"variations", icon:"📐",label:"Variations"},
+      {id:"application",icon:"📊",label:"Application"},
+    ]:[]),
+  ];
+  const isActive=(id)=>{
+    if(id==="expenses")  return view==="expenses"||view==="expense-new";
+    if(id==="variations")return view==="variations"||view==="variation-new";
+    return view===id;
+  };
+  return <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column",color:C.text}}>
+    {/* Header */}
+    <header style={{background:"#0f172a",borderBottom:`1px solid ${C.border}`,height:56,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,.4)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:34,height:34,background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🏗️</div>
+        <div>
+          <div style={{color:C.text,fontSize:14,fontWeight:800,letterSpacing:"-0.01em"}}>Site Manager</div>
+          <div style={{color:C.muted,fontSize:10}}>Bright Metalwork</div>
+        </div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{textAlign:"right"}}>
+          <div style={{color:C.text,fontSize:12,fontWeight:600}}>{MANAGER.name}</div>
+          <div style={{color:C.muted,fontSize:10}}>Site Manager</div>
+        </div>
+        <div style={{width:34,height:34,background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:12}}>{MANAGER.initials}</div>
+      </div>
+    </header>
+
+    {/* Nav tabs */}
+    <nav style={{background:"#111827",borderBottom:`1px solid ${C.border}`,display:"flex",overflowX:"auto"}}>
+      {navItems.map(n=>(
+        <button key={n.id} onClick={()=>go(n.id)}
+          style={{padding:"11px 13px",background:"none",border:"none",
+            borderBottom:`2px solid ${isActive(n.id)?C.accent:"transparent"}`,
+            cursor:"pointer",fontSize:11,fontWeight:700,
+            color:isActive(n.id)?C.accent:C.muted,
+            whiteSpace:"nowrap",transition:"color .15s"}}>
+          <span style={{marginRight:3}}>{n.icon}</span>{n.label}
+        </button>
+      ))}
+    </nav>
+
+    <main style={{flex:1,maxWidth:860,width:"100%",margin:"0 auto",padding:"16px 16px 48px",boxSizing:"border-box"}}>
+      {hasSite&&fin&&<FinancialWidget fin={fin} scopes={scopes} open={widgetOpen} onToggle={onWidgetToggle}/>}
+      {children}
+    </main>
+
+    {toast&&<div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:C.green,color:"#0a1a10",padding:"11px 24px",borderRadius:10,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(52,211,153,.4)",zIndex:9999,whiteSpace:"nowrap"}}>{toast}</div>}
+  </div>;
+}
+
+// ─── Shared card / section styles ─────────────────────────────────────────────
+const smCard={background:C.card2,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14};
+const smBtn=(pri)=>({padding:"8px 16px",borderRadius:8,border:pri?"none":`1px solid ${C.border2}`,background:pri?"linear-gradient(135deg,#1e3a5f,#3b82f6)":C.card,color:pri?C.text:C.sub,cursor:"pointer",fontSize:12,fontWeight:700});
+const smInp={width:"100%",background:C.card,border:`1px solid ${C.border2}`,borderRadius:8,padding:"9px 12px",color:C.text,fontSize:13,outline:"none",boxSizing:"border-box"};
+const smSel={...smInp,cursor:"pointer"};
+const smTH={padding:"8px 12px",background:"#0d1117",color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"left",borderBottom:`1px solid ${C.border}`};
+const smTD={padding:"10px 12px",borderBottom:`1px solid ${C.border}`,fontSize:13,color:C.text};
+
+function pop(setToast,msg){setToast(msg);setTimeout(()=>setToast(null),2400);}
+function SmSec({title,action,children}){
+  return <div style={smCard}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <div style={{fontSize:12,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{title}</div>
+      {action}
+    </div>
+    {children}
+  </div>;
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+return function SiteManagerView(){
+  const [view,setView]       =useState("dashboard");
+  const [siteId,setSiteId]   =useState(null);
+  const [scopeId,setScopeId] =useState(null);
+  const [scopes,setScopes]   =useState(INIT_SCOPES);
+  const [expenses,setExp]    =useState(INIT_EXP);
+  const [variations,setVar]  =useState(INIT_VAR);
+  const [signIns,setSignIns] =useState(INIT_SIGN_INS);
+  const [scopePct,setScopePct]=useState(null);
+  const [weekOffset,setWeekOff]=useState(0);
+  const [widgetOpen,setWidgetOpen]=useState(false);
+  const [signInDate,setSignInDate]=useState(TODAY);
+  const [draftSI,setDraftSI] =useState(null);
+  const [expForm,setEF]=useState({desc:"",amount:"",category:"Materials",scopeId:"",date:"",files:[]});
+  const [varForm,setVF]=useState({title:"",desc:"",amount:"",files:[]});
+  const [toast,setToast]=useState(null);
+  const expRef=useRef(); const varRef=useRef();
+
+  const go=(v,opts={})=>{
+    setView(v);
+    if(opts.siteId!==undefined) setSiteId(opts.siteId);
+    if(opts.scopeId!==undefined) setScopeId(opts.scopeId);
+    if(opts.pct!==undefined) setScopePct(opts.pct);
+  };
+  const site=SITES.find(s=>s.id===siteId);
+  const siteSc=siteId?scopes[siteId]||[]:[];
+  const siteLD=siteId?LABOUR_DATA[siteId]:null;
+  const siteSI=siteId?signIns[siteId]||{}:{};
+
+  const fin=siteId?(()=>{
+    const ss=scopes[siteId]||[];
+    const allocated=ss.reduce((a,s)=>a+allocVal(s),0);
+    const labourByScope={};
+    const expByScope={};
+    Object.entries(siteSI).forEach(([date,day])=>{
+      Object.entries(day).forEach(([wid,sid])=>{
+        if(!sid) return;
+        const w=siteLD?.workers.find(x=>x.id===wid);
+        if(!w) return;
+        labourByScope[sid]=(labourByScope[sid]||0)+w.dailyRate;
+      });
+    });
+    (expenses.filter(e=>e.siteId===siteId)).forEach(e=>{
+      expByScope[e.scopeId]=(expByScope[e.scopeId]||0)+e.amount;
+    });
+    const labour=Object.values(labourByScope).reduce((a,v)=>a+v,0);
+    const exps=Object.values(expByScope).reduce((a,v)=>a+v,0);
+    const totalSpent=labour+exps;
+    const remaining=allocated-totalSpent;
+    const pctUsed=allocated>0?totalSpent/allocated*100:0;
+    return{allocated,labour,expenses:exps,totalSpent,remaining,pctUsed,labourByScope,expByScope};
+  })():null;
+
+  // ── DASHBOARD ─────────────────────────────────────────────────────────────
+  if(view==="dashboard") return <Shell view={view} siteId={null} go={(v)=>go(v)} toast={toast} fin={null} scopes={[]} widgetOpen={false} onWidgetToggle={()=>{}}>
+    <div style={{marginBottom:20}}>
+      <div style={{fontSize:22,fontWeight:800,color:C.text,marginBottom:2}}>My Sites</div>
+      <div style={{fontSize:12,color:C.muted}}>Welcome back, {MANAGER.name}</div>
+    </div>
+    {SITES.map(s=>{
+      const ss=scopes[s.id]||[];
+      const totalVal=ss.reduce((a,x)=>a+x.total,0);
+      const avgDone=ss.length?ss.reduce((a,x)=>a+x.completed,0)/ss.length:0;
+      return <div key={s.id} onClick={()=>go("site",{siteId:s.id})}
+        style={{...smCard,cursor:"pointer",borderLeft:`3px solid ${s.status==="complete"?C.green:C.accent}`,
+          transition:"border-color .15s"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+          <div>
+            <div style={{fontSize:15,fontWeight:800,color:C.text,marginBottom:2}}>{s.name}</div>
+            <div style={{fontSize:11,color:C.muted}}>{s.client} · {s.address}</div>
+          </div>
+          <SmBadge s={s.status}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+          {[["Contract Value",smFmt(totalVal),C.accent],["Avg Progress",avgDone.toFixed(0)+"%",avgDone===100?C.green:C.yellow],["Scopes",ss.length+" items",C.sub]].map(([l,v,col])=>(
+            <div key={l} style={{background:C.bg,borderRadius:8,padding:"8px 10px"}}>
+              <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+              <div style={{fontSize:14,fontWeight:800,color:col,marginTop:2}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <SmBar pct={avgDone}/>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:10,color:C.muted}}>
+          <span>{s.start} — {s.end}</span>
+          <span style={{color:C.accent,fontWeight:600}}>Open site →</span>
+        </div>
+      </div>;
+    })}
+  </Shell>;
+
+  // ── SITE OVERVIEW ─────────────────────────────────────────────────────────
+  if(view==="site"&&site) return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+    <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name}]}/>
+    <div style={{...smCard}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+        <div><div style={{fontSize:18,fontWeight:800,color:C.text}}>{site.name}</div><div style={{fontSize:11,color:C.muted,marginTop:2}}>{site.client} · {site.address}</div></div>
+        <SmBadge s={site.status}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {[["Start",site.start],["End",site.end],["PA Status",site.appStatus],["Scopes",siteSc.length+" items"]].map(([l,v])=>(
+          <div key={l} style={{background:C.bg,borderRadius:8,padding:"8px 10px"}}>
+            <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{l}</div>
+            <div style={{fontSize:13,fontWeight:600,color:C.text}}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      {[["📁 Scopes","scopes",C.accent],["👷 Labour","labour",C.purple],["✅ Sign-In","signin",C.green],["🧾 Expenses","expenses",C.yellow],["📐 Variations","variations",C.orange],["📊 Application","application",C.red]].map(([l,v,col])=>(
+        <button key={v} onClick={()=>go(v,{siteId})}
+          style={{padding:"14px 16px",background:C.card2,border:`1px solid ${col}33`,borderRadius:10,cursor:"pointer",textAlign:"left",transition:"border-color .15s"}}>
+          <div style={{fontSize:16,marginBottom:4}}>{l.split(" ")[0]}</div>
+          <div style={{fontSize:13,fontWeight:700,color:col}}>{l.split(" ").slice(1).join(" ")}</div>
+        </button>
+      ))}
+    </div>
+  </Shell>;
+
+  // ── SCOPES ─────────────────────────────────────────────────────────────────
+  if(view==="scopes"&&site) return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+    <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site",{siteId})},{label:"Scopes"}]}/>
+    {siteSc.map(s=>{
+      const av=allocVal(s),lab=fin?.labourByScope[s.id]||0,exp=fin?.expByScope[s.id]||0,sp=lab+exp,rem=av-sp,p=av>0?sp/av*100:0,st=pctTag(p);
+      return <div key={s.id} style={{...smCard,borderLeft:`3px solid ${RAG_C[st].col}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.text}}>{s.name}</div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:18}}>{ragDot(p)}</span>
+            <SmBadge s={s.completed===100?"complete":"active"}/>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:10}}>
+          {[["Contract",smFmt(s.total),C.accent],["Budget",smFmt(av),C.text],["Spent",smFmt(sp),sp>av?C.red:C.sub],["Remaining",rem>=0?smFmt(rem):`${smFmt(Math.abs(rem))} OVER`,rem>=0?C.green:C.red]].map(([l,v,c])=>(
+            <div key={l} style={{background:C.bg,borderRadius:7,padding:"7px 9px"}}>
+              <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+              <div style={{fontSize:13,fontWeight:700,color:c,marginTop:1}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <SmBar pct={p} color={RAG_C[st].col}/>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:5,fontSize:10,color:C.muted}}>
+          <span>Work done: <b style={{color:C.text}}>{s.completed}%</b></span>
+          <span>{p.toFixed(0)}% of budget used</span>
+        </div>
+        <div style={{marginTop:10}}>
+          <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:5}}>Completion Progress</div>
+          <SmBar pct={s.completed} color={s.completed===100?C.green:C.accent}/>
+        </div>
+      </div>;
+    })}
+  </Shell>;
+
+  // ── LABOUR ─────────────────────────────────────────────────────────────────
+  if(view==="labour"&&site&&siteLD) return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+    <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site",{siteId})},{label:"Labour"}]}/>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+      <button onClick={()=>setWeekOff(o=>o-1)} style={{...smBtn(false),padding:"6px 12px"}}>←</button>
+      <div style={{flex:1,textAlign:"center"}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:14}}>WC {smFmtDate(weekMonday(weekOffset))}</div>
+        <div style={{fontSize:10,color:C.muted}}>Week {weekOffset===0?"(Current)":weekOffset>0?`+${weekOffset}`:`${weekOffset}`}</div>
+      </div>
+      <button onClick={()=>setWeekOff(o=>o+1)} style={{...smBtn(false),padding:"6px 12px"}}>→</button>
+    </div>
+    <div style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",minWidth:520}}>
+        <thead><tr>
+          <th style={smTH}>Worker</th>
+          {weekDates(weekOffset).map(d=><th key={d} style={{...smTH,textAlign:"center",minWidth:48}}>{smFmtDate(d)}</th>)}
+          <th style={{...smTH,textAlign:"right"}}>Days</th>
+          <th style={{...smTH,textAlign:"right"}}>Cost</th>
+        </tr></thead>
+        <tbody>
+          {siteLD.workers.map((w,i)=>{
+            const wk=weekKey(weekOffset);
+            const sched=siteLD.schedule[wk]?.[w.id]||[];
+            const days=sched.length;
+            return <tr key={w.id} style={{background:i%2===0?C.card:"#0f1421"}}>
+              <td style={smTD}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:30,height:30,borderRadius:7,background:(TRADE_COL[w.trade]||C.accent)+"22",border:`1px solid ${(TRADE_COL[w.trade]||C.accent)}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:TRADE_COL[w.trade]||C.accent}}>{w.initials}</div>
+                  <div><div style={{fontSize:12,fontWeight:600,color:C.text}}>{w.name}</div><div style={{fontSize:10,color:C.muted}}>{w.role}</div></div>
+                </div>
+              </td>
+              {weekDates(weekOffset).map((d,di)=>{
+                const on=sched.includes(di);
+                return <td key={d} style={{...smTD,textAlign:"center"}}>
+                  <div style={{width:24,height:24,borderRadius:5,background:on?(TRADE_COL[w.trade]||C.accent)+"33":"transparent",border:`1px solid ${on?(TRADE_COL[w.trade]||C.accent)+"66":C.border}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:12}}>
+                    {on?"✓":""}
+                  </div>
+                </td>;
+              })}
+              <td style={{...smTD,textAlign:"right",color:C.accent,fontWeight:700}}>{days}</td>
+              <td style={{...smTD,textAlign:"right",color:C.green,fontWeight:700}}>{smFmt(days*w.dailyRate)}</td>
+            </tr>;
+          })}
+        </tbody>
+      </table>
+    </div>
+  </Shell>;
+
+  // ── SIGN-IN ────────────────────────────────────────────────────────────────
+  if(view==="signin"&&site&&siteLD){
+    const dayKey=signInDate;
+    const dayData=siteSI[dayKey]||{};
+    const draft=draftSI||Object.fromEntries(siteLD.workers.map(w=>[w.id,dayData[w.id]!==undefined?dayData[w.id]:null]));
+    const save=()=>{setSignIns(si=>({...si,[siteId]:{...si[siteId],[dayKey]:draft}}));setDraftSI(null);pop(setToast,"Sign-in saved ✓");};
+    return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+      <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site",{siteId})},{label:"Daily Sign-In"}]}/>
+      <div style={{...smCard,marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Date</div>
+            <input type="date" value={signInDate} onChange={e=>{setSignInDate(e.target.value);setDraftSI(null);}} style={{...smInp}}/>
+          </div>
+          <button onClick={save} style={{...smBtn(true),marginTop:16,whiteSpace:"nowrap"}}>Save Sign-In</button>
+        </div>
+      </div>
+      <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr>
+            <th style={smTH}>Worker</th>
+            <th style={smTH}>Trade</th>
+            <th style={{...smTH,textAlign:"center"}}>Present</th>
+            <th style={smTH}>Scope</th>
+          </tr></thead>
+          <tbody>
+            {siteLD.workers.map((w,i)=>{
+              const present=draft[w.id]!==null&&draft[w.id]!==undefined&&draft[w.id]!==false;
+              const sc=present?draft[w.id]:null;
+              return <tr key={w.id} style={{background:i%2===0?C.card:"#0f1421"}}>
+                <td style={smTD}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:28,height:28,borderRadius:7,background:(TRADE_COL[w.trade]||C.accent)+"22",border:`1px solid ${(TRADE_COL[w.trade]||C.accent)}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:TRADE_COL[w.trade]||C.accent}}>{w.initials}</div>
+                    <div style={{fontSize:12,fontWeight:600,color:C.text}}>{w.name}<div style={{fontSize:10,color:C.muted}}>{w.role}</div></div>
+                  </div>
+                </td>
+                <td style={smTD}><span style={{color:TRADE_COL[w.trade]||C.accent,fontSize:11,fontWeight:600}}>{w.trade}</span></td>
+                <td style={{...smTD,textAlign:"center"}}>
+                  <div onClick={()=>setDraftSI(d=>({...d,[w.id]:present?null:(siteSc[0]?.id||null)}))}
+                    style={{width:28,height:28,borderRadius:7,background:present?C.green+"22":C.card,border:`2px solid ${present?C.green:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",margin:"0 auto",fontSize:14,fontWeight:700,color:present?C.green:C.dim}}>
+                    {present?"✓":""}
+                  </div>
+                </td>
+                <td style={smTD}>
+                  {present
+                    ?<select value={sc||""} onChange={e=>setDraftSI(d=>({...d,[w.id]:Number(e.target.value)||null}))} style={{...smSel,width:"100%"}}>
+                        <option value="">— Scope —</option>
+                        {siteSc.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    :<span style={{fontSize:11,color:C.dim}}>—</span>}
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Shell>;
+  }
+
+  // ── EXPENSES ───────────────────────────────────────────────────────────────
+  if((view==="expenses"||view==="expense-new")&&site){
+    const siteExp=expenses.filter(e=>e.siteId===siteId);
+    if(view==="expense-new") return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+      <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site",{siteId})},{label:"Expenses",fn:()=>go("expenses",{siteId})},{label:"New Expense"}]}/>
+      <div style={smCard}>
+        {[["Description","text","desc","Steel delivery…"],["Amount £","number","amount","0.00"],["Date","date","date",""]].map(([l,t,k,ph])=>(
+          <div key={k} style={{marginBottom:12}}>
+            <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{l}</div>
+            <input type={t} value={expForm[k]} onChange={e=>setEF(f=>({...f,[k]:e.target.value}))} placeholder={ph} style={smInp}/>
+          </div>
+        ))}
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Category</div>
+          <select value={expForm.category} onChange={e=>setEF(f=>({...f,category:e.target.value}))} style={smSel}>
+            {SM_CATS.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Scope</div>
+          <select value={expForm.scopeId} onChange={e=>setEF(f=>({...f,scopeId:e.target.value}))} style={smSel}>
+            <option value="">— Select scope —</option>
+            {siteSc.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:6}}>Attachments</div>
+          <SmDrop fRef={expRef} onFiles={fs=>setEF(f=>({...f,files:[...f.files,...fs]}))} hint="Invoices, receipts, photos"/>
+          {expForm.files.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{expForm.files.map((n,i)=><SmPill key={i} name={n} onX={()=>setEF(f=>({...f,files:f.files.filter((_,j)=>j!==i)}))}/>)}</div>}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>go("expenses",{siteId})} style={{...smBtn(false),flex:1}}>Cancel</button>
+          <button onClick={()=>{if(!expForm.desc||!expForm.amount)return;setExp(ex=>[...ex,{id:Date.now(),siteId,scopeId:Number(expForm.scopeId)||null,desc:expForm.desc,amount:Number(expForm.amount),date:expForm.date||TODAY,category:expForm.category,files:expForm.files,status:"pending"}]);setEF({desc:"",amount:"",category:"Materials",scopeId:"",date:"",files:[]});go("expenses",{siteId});pop(setToast,"Expense submitted ✓");}} style={{...smBtn(true),flex:2}}>Submit Expense</button>
+        </div>
+      </div>
+    </Shell>;
+
+    return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+      <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site",{siteId})},{label:"Expenses"}]}/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button onClick={()=>go("expense-new",{siteId})} style={smBtn(true)}>+ New Expense</button>
+      </div>
+      {siteExp.length===0&&<div style={{...smCard,textAlign:"center",color:C.muted,padding:32}}>No expenses yet.</div>}
+      {siteExp.map(e=>(
+        <div key={e.id} style={{...smCard,borderLeft:`3px solid ${e.status==="approved"?C.green:e.status==="pending"?C.yellow:C.red}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.text,flex:1,marginRight:10}}>{e.desc}</div>
+            <SmBadge s={e.status}/>
+          </div>
+          <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:11,color:C.muted}}>
+            <span style={{color:C.green,fontWeight:700,fontSize:14}}>{smFmt(e.amount)}</span>
+            <span>{e.category}</span><span>{e.date}</span>
+            {e.scopeId&&<span style={{color:C.accent}}>{siteSc.find(s=>s.id===e.scopeId)?.name||"—"}</span>}
+          </div>
+          {e.files.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{e.files.map((n,i)=><SmPill key={i} name={n}/>)}</div>}
+        </div>
+      ))}
+    </Shell>;
+  }
+
+  // ── VARIATIONS ─────────────────────────────────────────────────────────────
+  if((view==="variations"||view==="variation-new")&&site){
+    const siteVar=variations.filter(v=>v.siteId===siteId);
+    if(view==="variation-new") return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+      <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site",{siteId})},{label:"Variations",fn:()=>go("variations",{siteId})},{label:"New Variation"}]}/>
+      <div style={smCard}>
+        {[["Title","text","title","e.g. Additional steelwork to level 3"],["Description","text","desc","Reason / instruction reference…"],["Amount £","number","amount","0.00"]].map(([l,t,k,ph])=>(
+          <div key={k} style={{marginBottom:12}}>
+            <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{l}</div>
+            <input type={t} value={varForm[k]} onChange={e=>setVF(f=>({...f,[k]:e.target.value}))} placeholder={ph} style={smInp}/>
+          </div>
+        ))}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:6}}>Supporting Files</div>
+          <SmDrop fRef={varRef} onFiles={fs=>setVF(f=>({...f,files:[...f.files,...fs]}))} hint="Emails, drawings, photos"/>
+          {varForm.files.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{varForm.files.map((n,i)=><SmPill key={i} name={n} onX={()=>setVF(f=>({...f,files:f.files.filter((_,j)=>j!==i)}))}/>)}</div>}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>go("variations",{siteId})} style={{...smBtn(false),flex:1}}>Cancel</button>
+          <button onClick={()=>{if(!varForm.title||!varForm.amount)return;const n=siteVar.length+1;setVar(vs=>[...vs,{id:Date.now(),siteId,ref:`VAR-${String(n).padStart(3,"0")}`,title:varForm.title,desc:varForm.desc,amount:Number(varForm.amount),status:"pending",files:varForm.files}]);setVF({title:"",desc:"",amount:"",files:[]});go("variations",{siteId});pop(setToast,"Variation submitted ✓");}} style={{...smBtn(true),flex:2}}>Submit Variation</button>
+        </div>
+      </div>
+    </Shell>;
+
+    return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+      <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site",{siteId})},{label:"Variations"}]}/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button onClick={()=>go("variation-new",{siteId})} style={smBtn(true)}>+ New Variation</button>
+      </div>
+      {siteVar.map(v=>(
+        <div key={v.id} style={{...smCard,borderLeft:`3px solid ${v.status==="approved"?C.green:v.status==="pending"?C.yellow:C.red}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+            <div>
+              <div style={{fontSize:10,color:C.muted,fontWeight:700,fontFamily:"monospace",marginBottom:2}}>{v.ref}</div>
+              <div style={{fontSize:13,fontWeight:700,color:C.text}}>{v.title}</div>
+            </div>
+            <SmBadge s={v.status}/>
+          </div>
+          {v.desc&&<div style={{fontSize:12,color:C.sub,marginBottom:8,lineHeight:1.5}}>{v.desc}</div>}
+          <div style={{fontSize:14,fontWeight:800,color:C.orange,marginBottom:8}}>{smFmt(v.amount)}</div>
+          {v.files.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{v.files.map((n,i)=><SmPill key={i} name={n}/>)}</div>}
+        </div>
+      ))}
+    </Shell>;
+  }
+
+  // ── PAYMENT APPLICATION ────────────────────────────────────────────────────
+  if(view==="application"&&site){
+    const appStat=site.appStatus;
+    const approvedVars=variations.filter(v=>v.siteId===siteId&&v.status==="approved");
+    const varTotal=approvedVars.reduce((a,v)=>a+v.amount,0);
+    const scopeTotal=siteSc.reduce((a,s)=>a+earnedVal(s),0);
+    return <Shell {...{view,siteId,go:(v)=>go(v,{siteId}),toast,fin,scopes:siteSc,widgetOpen,onWidgetToggle:()=>setWidgetOpen(o=>!o)}}>
+      <SmCrumb crumbs={[{label:"My Sites",fn:()=>go("dashboard")},{label:site.name,fn:()=>go("site",{siteId})},{label:"Payment Application"}]}/>
+      <div style={{...smCard,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.sub}}>Application Status</div>
+        <SmBadge s={appStat}/>
+      </div>
+      <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:14}}>
+        <div style={{padding:"9px 14px",background:"#0d1117",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>Scope Breakdown — Earned Value</div>
+        </div>
+        {siteSc.map((s,i)=>(
+          <div key={s.id} style={{display:"flex",justifyContent:"space-between",padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:i%2===0?C.card:"#0f1421",alignItems:"center"}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.text,flex:1}}>{s.name}</div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.accent}}>{smFmt(earnedVal(s))}</div>
+              <div style={{fontSize:10,color:C.muted}}>{s.completed}% of {smFmt(allocVal(s))}</div>
+            </div>
+          </div>
+        ))}
+        <div style={{padding:"10px 14px",background:"#0d1117",display:"flex",justifyContent:"space-between"}}>
+          <span style={{fontWeight:700,fontSize:12,color:C.sub}}>Scopes Subtotal</span>
+          <span style={{fontWeight:800,fontSize:14,color:C.green}}>{smFmt(scopeTotal)}</span>
+        </div>
+      </div>
+      {approvedVars.length>0&&<div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:14}}>
+        <div style={{padding:"9px 14px",background:"#0d1117",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>Approved Variations</div>
+        </div>
+        {approvedVars.map(v=><div key={v.id} style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",background:C.card}}>
+          <div style={{fontSize:13,fontWeight:600,color:C.text}}>{v.ref} — {v.title}</div>
+          <div style={{fontWeight:800,color:C.orange}}>{smFmt(v.amount)}</div>
+        </div>)}
+        <div style={{padding:"10px 14px",background:"#0d1117",display:"flex",justifyContent:"space-between"}}>
+          <span style={{fontWeight:700,fontSize:12,color:C.sub}}>Variations Subtotal</span>
+          <span style={{fontWeight:800,fontSize:14,color:C.orange}}>{smFmt(varTotal)}</span>
+        </div>
+      </div>}
+      <div style={{background:"linear-gradient(135deg,#1e3a5f,#1a1f2e)",border:`1px solid ${C.accent}44`,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Manager's Total (excl. margin)</div>
+          <div style={{color:C.sub,fontSize:11,marginTop:1}}>Director will add margin values before issuing to client</div>
+        </div>
+        <div style={{color:C.green,fontSize:28,fontWeight:900}}>{smFmt(scopeTotal+varTotal)}</div>
+      </div>
+      {appStat==="draft"&&<div style={{...smCard,border:`1px solid ${C.yellow}44`,background:C.yellow+"11"}}>
+        <div style={{fontWeight:800,color:C.yellow,fontSize:13,marginBottom:5}}>⚠️ Submit for Director Review</div>
+        <div style={{color:C.sub,fontSize:12,marginBottom:12,lineHeight:1.5}}>Once submitted the director and finance team will review, add full margin values, and issue to the client.</div>
+        <button style={smBtn(true)} onClick={()=>pop(setToast,"Submitted for director review ✓")}>Submit for Review</button>
+      </div>}
+      {appStat==="submitted"&&<div style={{...smCard,border:`1px solid ${C.accent}44`,background:C.accent+"11"}}>
+        <div style={{fontWeight:800,color:C.accent,fontSize:13,marginBottom:5}}>⏳ Awaiting Finalisation</div>
+        <div style={{color:C.sub,fontSize:12}}>With the director team. You'll be notified once finalised and issued to the client.</div>
+      </div>}
+      {appStat==="finalised"&&<div style={{...smCard,border:`1px solid ${C.green}44`,background:C.green+"11"}}>
+        <div style={{fontWeight:800,color:C.green,fontSize:13,marginBottom:5}}>✅ Finalised & Issued</div>
+        <div style={{color:C.sub,fontSize:12}}>Finalised by the director team and issued to the client.</div>
+      </div>}
+    </Shell>;
+  }
+
+  return null;
+};
+
+})();
 // ─── Site Doc Generator (self-contained IIFE — zero scope conflicts) ─────────
 const SiteDocGeneratorView = (()=>{
 
