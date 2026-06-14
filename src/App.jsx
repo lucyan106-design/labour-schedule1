@@ -4103,10 +4103,9 @@ function PendingWorkersView({workers,onApprove}){
 }
 
 function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}){
-  const [scopeAlloc,setScopeAlloc]=useState({});
-  // ── Fresh worker data fetched from Supabase on every render of this tab ──────
-  // allWorkers is cached at startup; attendanceLogs are written by the Worker Portal
-  // so we need a live fetch to see sign-ins that happened after the admin app loaded
+  const [subtab,setSubtab]=useState("entries");
+  const [entryScopes,setEntryScopes]=useState({}); // {entryId: scopeId}
+  const [reportEntry,setReportEntry]=useState(null);
   const [liveWorkers,setLiveWorkers]=useState(allWorkers);
   const [fetching,setFetching]=useState(false);
   const [lastFetch,setLastFetch]=useState(null);
@@ -4120,247 +4119,219 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
     setFetching(false);
     setLastFetch(new Date());
   };
+  useEffect(()=>{refreshFromDB();const t=setInterval(refreshFromDB,30000);return()=>clearInterval(t);},[site.id]);
 
-  // Auto-refresh when panel first mounts and every 30 seconds while open
-  useEffect(()=>{
-    refreshFromDB();
-    const t=setInterval(refreshFromDB,30000);
-    return()=>clearInterval(t);
-  },[site.id]);
+  // All GPS work entries for this site across all workers
+  const allEntries=useMemo(()=>{
+    const entries=[];
+    liveWorkers.forEach(w=>{
+      (w.attendanceLogs||[])
+        .filter(l=>(l.siteId===site.id||l.siteName===site.name)&&l.signIn)
+        .forEach(l=>{
+          const hrs=l.signOut
+            ?Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100
+            :Math.round(((new Date()-new Date(l.signIn))/3600000)*100)/100;
+          const otThr=site.otThreshold||site.stdHours||9;
+          entries.push({
+            ...l,
+            workerName:w.name,workerId:w.id,workerInitials:(w.name||"?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(),
+            rate:w.agreedRate||0,
+            hrs,
+            std:Math.min(hrs,otThr),
+            ot:Math.max(0,Math.round((hrs-otThr)*100)/100),
+            labourCost:Math.round(hrs*(w.agreedRate||0)*100)/100,
+            active:!l.signOut,
+          });
+        });
+    });
+    return entries.sort((a,b)=>new Date(b.signIn)-new Date(a.signIn));
+  },[liveWorkers,site]);
 
-  // ── FIX: include workers currently ON SITE (signIn exists, signOut may not yet) ──
-  const confirmedWorkers=useMemo(()=>{
-    return liveWorkers
-      .map(w=>{
-        // Include logs that have signIn — regardless of whether signOut exists yet
-        const logs=(w.attendanceLogs||[]).filter(l=>
-          (l.siteId===site.id||l.siteName===site.name)&&l.signIn
-        );
-        if(logs.length===0)return null;
-        // Hours: for active sessions (no signOut), calculate up to now
-        const totalHrs=logs.reduce((a,l)=>{
-          const end=l.signOut?new Date(l.signOut):new Date();
-          return a+Math.max(0,Math.round(((end-new Date(l.signIn))/3600000)*100)/100);
-        },0);
-        const activeLog=logs.find(l=>l.signIn&&!l.signOut); // currently on site
-        return{...w,confirmedLogs:logs,confirmedHours:totalHrs,
-               labourCost:totalHrs*(w.agreedRate||0),activeLog};
-      })
-      .filter(Boolean);
-  },[liveWorkers,site.id,site.name]);
-
-  // Forecast workers (in schedule but not yet signed in to this site)
-  const forecastWorkers=useMemo(()=>{
-    const confirmedIds=new Set(confirmedWorkers.map(w=>w.id));
-    return liveWorkers.filter(w=>
-      !confirmedIds.has(w.id)&&
-      Object.values(w.days||{}).some(d=>(d||"").includes(site.name))
-    );
-  },[liveWorkers,confirmedWorkers,site.name]);
-
-  // Cost per scope (from confirmed hours)
+  // Cost per scope from entry-level allocations
   const costPerScope=useMemo(()=>{
     const m={};
-    confirmedWorkers.forEach(w=>{
-      const sid=scopeAlloc[w.id]||"unassigned";
-      m[sid]=(m[sid]||0)+w.labourCost;
+    allEntries.forEach(e=>{
+      const sid=entryScopes[e.id]||"unassigned";
+      m[sid]=(m[sid]||0)+e.labourCost;
     });
     return m;
-  },[confirmedWorkers,scopeAlloc]);
+  },[allEntries,entryScopes]);
 
-  const totalLabour=confirmedWorkers.reduce((a,w)=>a+w.labourCost,0);
-  const currentlyOnSite=confirmedWorkers.filter(w=>w.activeLog).length;
-  const fmtH=h=>h>0?h.toFixed(1)+"h":"—";
-  const fmtM=v=>"£"+v.toFixed(2);
+  const totalLabour=allEntries.reduce((a,e)=>a+e.labourCost,0);
+  const onSite=allEntries.filter(e=>e.active).length;
+  const unallocated=allEntries.filter(e=>!entryScopes[e.id]).length;
+
+  const fmtT=iso=>iso?new Date(iso).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—";
+  const fmtD=iso=>iso?new Date(iso).toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"}):"—";
+
+  const SCOPE_OPTIONS=[
+    ...( scopes||[]).map(s=>({id:s.id,label:s.description,type:"scope"})),
+    ...(site.variations||[]).map(v=>({id:v.id,label:v.description||v.ref,type:"variation"})),
+  ];
+
+  const INP={background:"#0d1117",border:"1px solid #1e2535",borderRadius:6,padding:"4px 8px",color:"#f1f5f9",fontSize:11,outline:"none",cursor:"pointer",width:"100%"};
 
   return <div>
-    {/* Header with refresh button */}
+    {reportEntry&&<WorkReportModal entry={reportEntry} worker={liveWorkers.find(w=>w.id===reportEntry.workerId)||{name:reportEntry.workerName}} onSave={e=>{setReportEntry(null);}} onClose={()=>setReportEntry(null)}/>}
+
+    {/* Header */}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
       <div style={{fontSize:11,color:"#64748b"}}>
-        {fetching?"⟳ Refreshing…":lastFetch?`Last updated: ${lastFetch.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}`:""}
+        {fetching?"⟳ Refreshing…":lastFetch?`Updated ${lastFetch.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}`:""}{" "}
+        {unallocated>0&&<span style={{color:"#fbbf24",fontWeight:700}}>· {unallocated} entries unallocated</span>}
       </div>
       <button onClick={refreshFromDB} disabled={fetching}
-        style={{padding:"5px 13px",background:"#1e2535",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6,opacity:fetching?0.6:1}}>
-        <span style={{fontSize:13,display:"inline-block",animation:fetching?"spin 1s linear infinite":""}}>{fetching?"⟳":"↻"}</span>
-        Refresh Sign-ins
+        style={{padding:"5px 12px",background:"#1e2535",border:"1px solid #3b82f644",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:600,opacity:fetching?0.6:1}}>
+        ↻ Refresh
       </button>
     </div>
-    <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
-    {/* Summary bar */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+    {/* KPI strip */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
       {[
-        ["Currently On Site",currentlyOnSite+" workers","#34d399"],
-        ["Forecast Only",forecastWorkers.length+" workers","#fbbf24"],
-        ["Total Confirmed Hrs",confirmedWorkers.reduce((a,w)=>a+w.confirmedHours,0).toFixed(1)+"h","#60a5fa"],
-        ["Total Labour Cost","£"+totalLabour.toFixed(2),"#f87171"],
-      ].map(([l,v,c])=><div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:9,padding:"10px 13px"}}>
+        ["On site now",onSite,"#34d399"],
+        ["Total entries",allEntries.length,"#60a5fa"],
+        ["Total hours",allEntries.reduce((a,e)=>a+e.hrs,0).toFixed(1)+"h","#a78bfa"],
+        ["Labour cost","£"+totalLabour.toFixed(2),"#f87171"],
+      ].map(([l,v,c])=><div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:9,padding:"9px 12px"}}>
         <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
-        <div style={{fontSize:16,fontWeight:800,color:c,marginTop:3}}>{v}</div>
+        <div style={{fontSize:15,fontWeight:800,color:c,marginTop:2}}>{v}</div>
       </div>)}
     </div>
 
-    {/* Cost per scope */}
-    {scopes.length>0&&<div style={{marginBottom:16,background:"#0f1421",borderRadius:10,padding:"12px 14px",border:"1px solid #1e2535"}}>
-      <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>Labour Cost per Scope</div>
-      {scopes.map(sc=>{
-        const cost=costPerScope[sc.id]||0;
-        const agreed=(Number(sc.qty)||0)*(Number(sc.rate)||0);
-        const pct=agreed>0?Math.min(100,(cost/agreed*100)):0;
-        return <div key={sc.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:7}}>
-          <div style={{fontSize:11,color:"#94a3b8",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={sc.description}>{sc.description||"—"}</div>
-          <div style={{flex:1,height:5,background:"#1e2535",borderRadius:3,overflow:"hidden"}}>
-            <div style={{height:"100%",background:pct>80?"#f87171":pct>50?"#fbbf24":"#34d399",width:pct+"%",borderRadius:3}}/>
+    {/* Sub-tabs */}
+    <div style={{display:"flex",gap:0,background:"#0d1117",borderRadius:8,padding:3,marginBottom:14}}>
+      {[["entries","📋 Work Entries"],["scopes","💷 Labour per Scope"]].map(([v,l])=>(
+        <button key={v} onClick={()=>setSubtab(v)}
+          style={{flex:1,padding:"7px 10px",borderRadius:6,border:`1px solid ${subtab===v?"#3b82f6":"transparent"}`,
+            background:subtab===v?"#1e3a5f":"transparent",color:subtab===v?"#60a5fa":"#64748b",
+            cursor:"pointer",fontSize:12,fontWeight:subtab===v?700:400}}>
+          {l}
+        </button>
+      ))}
+    </div>
+
+    {/* ── WORK ENTRIES TAB ── */}
+    {subtab==="entries"&&<div>
+      {allEntries.length===0
+        ?<div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
+            <div style={{fontSize:32,marginBottom:10}}>📍</div>
+            No GPS sign-ins for this site yet.
           </div>
-          <div style={{fontSize:11,fontWeight:700,color:"#f87171",minWidth:65,textAlign:"right"}}>£{cost.toFixed(2)}</div>
-          <div style={{fontSize:10,color:"#64748b",minWidth:38,textAlign:"right"}}>{pct.toFixed(0)}%</div>
-        </div>;
-      })}
-      {(costPerScope["unassigned"]||0)>0&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:"1px solid #1e2535",fontSize:11,color:"#64748b"}}>
-        <span>Unassigned labour</span><span style={{color:"#64748b",fontWeight:700}}>£{(costPerScope["unassigned"]||0).toFixed(2)}</span>
-      </div>}
-      <div style={{display:"flex",justifyContent:"space-between",paddingTop:7,borderTop:"1px solid #1e2535",marginTop:4}}>
-        <span style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>Total</span>
-        <span style={{fontSize:14,fontWeight:900,color:"#f87171"}}>£{totalLabour.toFixed(2)}</span>
-      </div>
-    </div>}
-
-
-    {/* GPS-confirmed workers */}
-    {confirmedWorkers.length>0&&<div style={{marginBottom:14}}>
-      <div style={{fontSize:10,color:"#34d399",fontWeight:700,textTransform:"uppercase",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <span style={{width:8,height:8,borderRadius:"50%",background:"#34d399",display:"inline-block"}}/>
-          On Site / GPS Confirmed ({confirmedWorkers.length})
-        </div>
-        {confirmedWorkers.filter(w=>w.activeLog).length>0&&
-          <span style={{fontSize:10,color:"#34d399",background:"#0d221844",padding:"2px 9px",borderRadius:20,border:"1px solid #34d39944"}}>
-            🟢 {confirmedWorkers.filter(w=>w.activeLog).length} currently on site
-          </span>}
-      </div>
-      <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden",overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:640}}>
-          <thead><tr>
-            <th style={{...DS.th,textAlign:"left"}}>Worker</th>
-            <th style={{...DS.th,textAlign:"center"}}>Status</th>
-            <th style={{...DS.th,textAlign:"center"}}>Sessions</th>
-            <th style={{...DS.th,textAlign:"right"}}>Hours</th>
-            <th style={{...DS.th,textAlign:"right"}}>Cost</th>
-            <th style={{...DS.th,textAlign:"left",minWidth:190}}>Scope Allocation</th>
-          </tr></thead>
-          <tbody>
-            {confirmedWorkers.map((w,i)=>(
-              <tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421",cursor:"pointer",
-                borderLeft:w.activeLog?"3px solid #34d399":"3px solid transparent"}}
-                onClick={e=>{if(e.target.tagName==="SELECT")return;setDetailId(w.id);setPage("worker_detail");}}>
-                <td style={DS.td}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <div style={{width:30,height:30,borderRadius:7,
-                      background:w.activeLog?"#34d39922":"#3b82f622",
-                      border:`2px solid ${w.activeLog?"#34d399":"#3b82f644"}`,
-                      display:"flex",alignItems:"center",justifyContent:"center",
-                      fontSize:12,fontWeight:700,color:w.activeLog?"#34d399":"#60a5fa",
-                      position:"relative"}}>
-                      {(w.name||"?")[0]}
-                      {w.activeLog&&<span style={{position:"absolute",top:-3,right:-3,width:8,height:8,
-                        borderRadius:"50%",background:"#34d399",
-                        boxShadow:"0 0 5px #34d399"}}/>}
-                    </div>
-                    <div>
-                      <div style={{fontWeight:600,color:"#f1f5f9",fontSize:12}}>{w.name}</div>
-                      <div style={{fontSize:10,color:"#64748b"}}>{w.position}</div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{...DS.td,textAlign:"center"}}>
-                  {w.activeLog
-                    ?<span style={{padding:"3px 9px",borderRadius:20,fontSize:10,fontWeight:700,
-                        background:"#0d221844",color:"#34d399",border:"1px solid #34d39944",
-                        display:"inline-flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
-                        <span style={{width:5,height:5,borderRadius:"50%",background:"#34d399",display:"inline-block"}}/>
-                        On Site Now
-                      </span>
-                    :<span style={{padding:"3px 9px",borderRadius:20,fontSize:10,fontWeight:600,
-                        background:"#1e253544",color:"#64748b",border:"1px solid #2d355544",whiteSpace:"nowrap"}}>
-                        Signed Out
-                      </span>}
-                </td>
-                <td style={{...DS.td,textAlign:"center",color:"#60a5fa",fontWeight:600}}>{w.confirmedLogs.length}</td>
-                <td style={{...DS.td,textAlign:"right",fontWeight:700,
-                  color:w.activeLog?"#fbbf24":"#60a5fa"}}>
-                  {fmtH(w.confirmedHours)}
-                  {w.activeLog&&<div style={{fontSize:9,color:"#fbbf24"}}>in progress</div>}
-                </td>
-                <td style={{...DS.td,textAlign:"right",color:"#f87171",fontWeight:700}}>
-                  {w.labourCost>0?fmtM(w.labourCost):"—"}
-                  {w.activeLog&&<div style={{fontSize:9,color:"#fbbf24"}}>running</div>}
-                </td>
-                <td style={{...DS.td,minWidth:190}} onClick={e=>e.stopPropagation()}>
-                  {scopes.length>0
-                    ?<select value={scopeAlloc[w.id]||""} onChange={e=>setScopeAlloc(a=>({...a,[w.id]:e.target.value}))}
-                        style={{width:"100%",background:scopeAlloc[w.id]?"#0d1e0d":"#0f1421",
-                          border:`1px solid ${scopeAlloc[w.id]?"#34d399":"#2d3555"}`,
-                          borderRadius:7,padding:"6px 9px",
-                          color:scopeAlloc[w.id]?"#34d399":"#64748b",
-                          fontSize:11,outline:"none",cursor:"pointer",fontWeight:scopeAlloc[w.id]?600:400}}>
-                        <option value="">— Select scope —</option>
-                        {scopes.map(sc=><option key={sc.id} value={sc.id}>{sc.description||"Scope item"}</option>)}
-                      </select>
-                    :<span style={{color:"#374151",fontSize:11,fontStyle:"italic"}}>No scopes on this site</span>}
-                </td>
-              </tr>
+        :<div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"100px 1fr 70px 70px 55px 55px 1fr 90px",padding:"7px 12px",background:"#0d1117",borderBottom:"1px solid #1e2535",gap:8}}>
+            {["Date","Worker","Sign in","Sign out","Std h","OT h","Scope / Variation",""].map(h=>(
+              <div key={h} style={{fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".04em"}}>{h}</div>
             ))}
-          </tbody>
-        </table>
-      </div>
-      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+          </div>
+          {allEntries.map((e,i)=>{
+            const hasScopeOptions=SCOPE_OPTIONS.length>0;
+            const rep=e.workReport;
+            return <div key={e.id||i} style={{display:"grid",gridTemplateColumns:"100px 1fr 70px 70px 55px 55px 1fr 90px",padding:"9px 12px",borderBottom:"1px solid #1e2535",background:e.active?"#0d1e2a":i%2===0?"#111827":"#0f1421",alignItems:"center",gap:8}}>
+              <div style={{fontSize:11,color:"#94a3b8"}}>{fmtD(e.signIn)}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:"#1e3a5f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#60a5fa",flexShrink:0}}>{e.workerInitials}</div>
+                <div style={{fontSize:11,color:"#f1f5f9",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.workerName}</div>
+              </div>
+              <div style={{fontSize:11,color:"#34d399",fontWeight:600}}>{fmtT(e.signIn)}</div>
+              <div style={{fontSize:11,color:e.active?"#fbbf24":"#f87171",fontWeight:600}}>{e.active?"On site":fmtT(e.signOut)}</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#f1f5f9"}}>{e.std.toFixed(1)}</div>
+              <div style={{fontSize:11,color:e.ot>0?"#fbbf24":"#374151",fontWeight:e.ot>0?700:400}}>{e.ot>0?"+"+e.ot.toFixed(1):"—"}</div>
+              <div>
+                {hasScopeOptions
+                  ?<select value={entryScopes[e.id]||""} onChange={ev=>setEntryScopes(m=>({...m,[e.id]:ev.target.value||undefined}))} style={INP}>
+                      <option value="">— Select scope —</option>
+                      {scopes.length>0&&<optgroup label="Scopes">
+                        {scopes.map(s=><option key={s.id} value={s.id}>{s.description}</option>)}
+                      </optgroup>}
+                      {(site.variations||[]).length>0&&<optgroup label="Variations">
+                        {(site.variations||[]).map(v=><option key={v.id} value={v.id}>{v.description||v.ref}</option>)}
+                      </optgroup>}
+                    </select>
+                  :<span style={{fontSize:11,color:"#374151",fontStyle:"italic"}}>No scopes defined</span>}
+              </div>
+              <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                {rep&&<span style={{fontSize:12,color:rep.type==="positive"?"#34d399":"#f87171"}}>{rep.type==="positive"?"✓":"⚠"}</span>}
+                <button onClick={()=>setReportEntry(e)}
+                  style={{padding:"3px 8px",fontSize:10,fontWeight:700,borderRadius:5,border:`1px solid ${rep?"#3b82f6":"#1e2535"}`,background:rep?"#1e3a5f":"#0d1117",color:rep?"#60a5fa":"#64748b",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  {rep?"Edit":"+ Report"}
+                </button>
+              </div>
+            </div>;
+          })}
+        </div>}
     </div>}
 
-    {/* Forecast workers (not yet signed in) */}
-    {forecastWorkers.length>0&&<div>
-      <div style={{fontSize:10,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
-        <span style={{width:8,height:8,borderRadius:"50%",background:"#fbbf24",display:"inline-block"}}/>
-        Forecast — Allocated but not yet GPS-confirmed ({forecastWorkers.length})
+    {/* ── LABOUR PER SCOPE TAB ── */}
+    {subtab==="scopes"&&<div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+        {[["Total labour","£"+totalLabour.toFixed(2),"#f87171"],
+          ["Allocated","£"+(totalLabour-(costPerScope["unassigned"]||0)).toFixed(2),"#34d399"],
+          ["Unallocated","£"+(costPerScope["unassigned"]||0).toFixed(2),"#fbbf24"]].map(([l,v,c])=>(
+          <div key={l} style={{background:"#0f1421",border:`1px solid ${c}33`,borderRadius:9,padding:"9px 12px"}}>
+            <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+            <div style={{fontSize:16,fontWeight:800,color:c,marginTop:2}}>{v}</div>
+          </div>
+        ))}
       </div>
-      <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr>
-            <th style={{...DS.th,textAlign:"left"}}>Worker</th>
-            <th style={{...DS.th,textAlign:"left"}}>Position</th>
-            <th style={{...DS.th,textAlign:"left"}}>Allocated days</th>
-          </tr></thead>
-          <tbody>
-            {forecastWorkers.map((w,i)=>{
-              const allocDays=Object.entries(w.days||{}).filter(([,v])=>(v||"").includes(site.name)).map(([d])=>d);
-              return <tr key={w.id} style={{background:i%2===0?"#111827":"#0f1421",cursor:"pointer"}} onClick={()=>{setDetailId(w.id);setPage("worker_detail");}}>
-                <td style={DS.td}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <div style={{width:28,height:28,borderRadius:7,background:"#fbbf2422",border:"1px solid #fbbf2444",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#fbbf24"}}>{(w.name||"?")[0]}</div>
-                    <div><div style={{fontWeight:600,color:"#e2e8f0",fontSize:12}}>{w.name}</div><div style={{fontSize:10,color:"#64748b"}}>{w.company}</div></div>
-                  </div>
-                </td>
-                <td style={{...DS.td,color:"#94a3b8"}}>{w.position||"—"}</td>
-                <td style={{...DS.td}}>
-                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                    {allocDays.map(d=><span key={d} style={{padding:"2px 7px",borderRadius:5,background:"#fbbf2422",color:"#fbbf24",fontSize:10,fontWeight:600,border:"1px solid #fbbf2444"}}>{d}</span>)}
-                  </div>
-                </td>
-              </tr>;
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div style={{fontSize:11,color:"#64748b",marginTop:7,fontStyle:"italic"}}>
-        📋 These workers are in the forecast but have not GPS-signed in to this site. They will move to "GPS Confirmed" once they sign in via the Worker Portal.
-      </div>
-    </div>}
 
-    {confirmedWorkers.length===0&&forecastWorkers.length===0&&<div style={{textAlign:"center",padding:36,color:"#374151",fontSize:12}}>
-      <div style={{fontSize:32,marginBottom:10}}>👷</div>
-      No workers allocated or GPS-confirmed on this site yet.
+      {SCOPE_OPTIONS.length===0
+        ?<div style={{textAlign:"center",padding:32,color:"#374151",border:"1px dashed #1e2535",borderRadius:10}}>
+            No scopes defined for this site. Add scopes first.
+          </div>
+        :SCOPE_OPTIONS.map(opt=>{
+          const cost=costPerScope[opt.id]||0;
+          const scope=scopes.find(s=>s.id===opt.id);
+          const budget=scope?(Number(scope.qty)||0)*(Number(scope.rate)||0):0;
+          const pct=budget>0?Math.min(100,Math.round(cost/budget*100)):0;
+          const entries=allEntries.filter(e=>entryScopes[e.id]===opt.id);
+          if(cost===0&&entries.length===0) return null;
+          return <div key={opt.id} style={{background:"#111827",border:"1px solid #1e2535",borderRadius:10,padding:14,marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:"#f1f5f9"}}>{opt.label}</div>
+                <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{opt.type==="variation"?"Variation":"Scope"} · {entries.length} entr{entries.length===1?"y":"ies"}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:15,fontWeight:800,color:"#f87171"}}>£{cost.toFixed(2)}</div>
+                {budget>0&&<div style={{fontSize:10,color:"#64748b",marginTop:1}}>of £{budget.toFixed(2)} budget</div>}
+              </div>
+            </div>
+            {budget>0&&<div>
+              <div style={{background:"#1e2535",borderRadius:4,height:6,overflow:"hidden",marginBottom:5}}>
+                <div style={{height:"100%",background:pct>80?"#f87171":pct>50?"#fbbf24":"#34d399",width:pct+"%",borderRadius:4,transition:"width .3s"}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#64748b"}}>
+                <span>{pct}% of budget used</span>
+                <span style={{color:budget-cost>=0?"#34d399":"#f87171",fontWeight:700}}>
+                  {budget-cost>=0?"£"+(budget-cost).toFixed(2)+" remaining":"£"+(cost-budget).toFixed(2)+" over budget"}
+                </span>
+              </div>
+            </div>}
+            {entries.length>0&&<div style={{marginTop:10,borderTop:"1px solid #1e2535",paddingTop:8}}>
+              {entries.map((e,i)=>(
+                <div key={e.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderBottom:i<entries.length-1?"1px solid #1e2535":"none",fontSize:11}}>
+                  <span style={{color:"#64748b",minWidth:80}}>{fmtD(e.signIn)}</span>
+                  <span style={{color:"#94a3b8",flex:1}}>{e.workerName}</span>
+                  <span style={{color:"#60a5fa"}}>{e.hrs.toFixed(1)}h</span>
+                  <span style={{color:"#f87171",fontWeight:700}}>£{e.labourCost.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>}
+          </div>;
+        }).filter(Boolean)}
+
+      {(costPerScope["unassigned"]||0)>0&&<div style={{background:"#1a1500",border:"1px solid #fbbf2444",borderRadius:10,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#fbbf24"}}>Unallocated</div>
+          <div style={{fontSize:15,fontWeight:800,color:"#fbbf24"}}>£{(costPerScope["unassigned"]||0).toFixed(2)}</div>
+        </div>
+        <div style={{fontSize:11,color:"#64748b"}}>Allocate these entries to a scope in the Work Entries tab.</div>
+      </div>}
     </div>}
   </div>;
 }
+
 
 function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoices,payApplications,setPage,setDetailId,setModal,weekLabel}){
   const site=allSites.find(s=>s.id===siteId);
@@ -4475,7 +4446,7 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Tab bar */}
       <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:18,width:"fit-content",flexWrap:"wrap"}}>
-        {[["scopes","📋 Scopes ("+(sc.length)+")"],["variations","⚡ Variations ("+(vr.length)+")"],["workers","👷 Workers ("+(siteWorkers.length)+")"],["costs","💷 Full Costs"],["invoices","🧾 Invoices ("+(siteInvs.length)+")"],["docs","📁 Documents"]].map(([v,l])=>(
+        {[["scopes","📋 Scopes ("+(sc.length)+")"],["variations","⚡ Variations ("+(vr.length)+")"],["workers","👷 Workers ("+(siteWorkers.length)+")"],["timesheets","⏱ Timesheets"],["costs","💷 Full Costs"],["invoices","🧾 Invoices ("+(siteInvs.length)+")"],["docs","📁 Documents"]].map(([v,l])=>(
           <button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",background:tab===v?"#1e3a5f":"transparent",border:tab===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:tab===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:tab===v?700:400}}>{l}</button>
         ))}
       </div>
@@ -4621,6 +4592,61 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Workers */}
       {tab==="workers"&&<SiteWorkersPanel site={site} allWorkers={workers} weekLabel={weekLabel} scopes={sc} setDetailId={setDetailId} setPage={setPage}/>}
+
+      {tab==="timesheets"&&(()=>{
+        // All workers who have GPS entries for this site
+        const siteEntries=workers.flatMap(w=>
+          (w.attendanceLogs||[])
+            .filter(l=>(l.siteId===site.id||l.siteName===site.name)&&l.signIn&&l.signOut)
+            .map(l=>({...l,workerName:w.name,workerId:w.id,rate:w.agreedRate||0}))
+        );
+        // Group by week
+        const weeks=[...new Set(siteEntries.map(l=>l.weekLabel))].filter(Boolean).sort((a,b)=>new Date(b)-new Date(a));
+        const fmtT=iso=>new Date(iso).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+        const fmtD=iso=>new Date(iso).toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"});
+        if(siteEntries.length===0) return <div style={{textAlign:"center",padding:48,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
+          <div style={{fontSize:32,marginBottom:10}}>⏱</div>
+          <div style={{fontWeight:600,marginBottom:4}}>No GPS sign-ins for this site yet</div>
+          <div style={{fontSize:11}}>Auto-populated when workers sign in via the Worker Portal.</div>
+        </div>;
+        return <div>
+          {weeks.map(wk=>{
+            const wkEntries=siteEntries.filter(l=>l.weekLabel===wk);
+            const totalHrs=wkEntries.reduce((a,l)=>a+Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100,0);
+            const totalCost=wkEntries.reduce((a,l)=>{const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;return a+hrs*(l.rate||0);},0);
+            const workerNames=[...new Set(wkEntries.map(l=>l.workerName))];
+            return <div key={wk} style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,overflow:"hidden",marginBottom:12}}>
+              <div style={{padding:"11px 14px",background:"#0d1117",borderBottom:"1px solid #1e2535",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>WC {wk}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{workerNames.length} worker{workerNames.length!==1?"s":""} · {wkEntries.length} entries</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:15,fontWeight:700,color:"#60a5fa"}}>{totalHrs.toFixed(1)}h</div>
+                  <div style={{fontSize:11,color:"#f87171",marginTop:1}}>£{totalCost.toFixed(2)} labour</div>
+                </div>
+              </div>
+              <div style={{border:"none"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1.2fr 70px 70px 60px 60px",padding:"6px 12px",background:"#0a0f1a",gap:8}}>
+                  {["Date","Worker","Sign in","Sign out","Hrs","Labour"].map(h=><div key={h} style={{fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".04em"}}>{h}</div>)}
+                </div>
+                {wkEntries.map((l,i)=>{
+                  const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;
+                  const cost=Math.round(hrs*(l.rate||0)*100)/100;
+                  return <div key={l.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1.2fr 70px 70px 60px 60px",padding:"9px 12px",borderTop:"1px solid #1e2535",background:i%2===0?"#111827":"#0f1421",gap:8,alignItems:"center"}}>
+                    <div style={{fontSize:11,color:"#94a3b8"}}>{fmtD(l.signIn)}</div>
+                    <div style={{fontSize:11,color:"#f1f5f9",fontWeight:600}}>{l.workerName}</div>
+                    <div style={{fontSize:11,color:"#34d399",fontWeight:600}}>{fmtT(l.signIn)}</div>
+                    <div style={{fontSize:11,color:"#f87171",fontWeight:600}}>{fmtT(l.signOut)}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#60a5fa"}}>{hrs.toFixed(1)}h</div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#f87171"}}>£{cost.toFixed(2)}</div>
+                  </div>;
+                })}
+              </div>
+            </div>;
+          })}
+        </div>;
+      })()}
 
       {/* Full Costs */}
       {tab==="costs"&&<div>
