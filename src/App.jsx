@@ -2782,14 +2782,154 @@ function DHome({workers,allSites,clients,invoices,scopeData,activeDays,siteHours
 }
 
 // ── Dashboard Workers Page ────────────────────────────────────────────────────
-function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDetailId,setModal}){
+// ─── Invite Worker Modal ──────────────────────────────────────────────────────
+function InviteWorkerModal({onClose,allSites}){
+  const [name,setName]=useState("");
+  const [email,setEmail]=useState("");
+  const [role,setRole]=useState("worker");
+  const [site,setSite]=useState("");
+  const [sent,setSent]=useState(false);
+  const [link,setLink]=useState("");
+  const [copying,setCopying]=useState(false);
+
+  const APP_URL=window.location.origin||"https://labour-schedule1.netlify.app";
+  const ROLE_LABELS={admin:"Admin — full access",director:"Director — full access",accountant:"Accountant — full access",manager:"Manager — their sites only",worker:"Worker — own data only",logistics:"Logistics — asset management"};
+  const ROLE_C={admin:"#34d399",director:"#a78bfa",accountant:"#fbbf24",manager:"#60a5fa",worker:"#94a3b8",logistics:"#f97316"};
+
+  const generateInvite=async()=>{
+    if(!name.trim()||!email.trim()){alert("Name and email are required.");return;}
+    // Create invite token
+    const token=btoa(JSON.stringify({name:name.trim(),email:email.trim(),role,site,createdAt:Date.now()})).replace(/=/g,"");
+    const inviteUrl=`${APP_URL}?invite=${token}`;
+    setLink(inviteUrl);
+
+    // Try to save invite to Supabase
+    try{
+      await sbUpsert("invites",[{id:"inv_"+Date.now(),data:{name:name.trim(),email:email.trim(),role,site,token,inviteUrl,createdAt:new Date().toISOString(),status:"pending"}}]);
+    }catch(_){}
+
+    // Try to send email via Supabase Edge Function
+    try{
+      const body=`Hi ${name.trim()},\n\nYou have been invited to join Bright Metalwork's construction management platform as: ${ROLE_LABELS[role]||role}.\n\nClick the link below to complete your registration:\n${inviteUrl}\n\nThe link is pre-filled with your details. You just need to set your password and fill in any remaining information.\n\nBright Metalwork Ltd\n+44 (0)771 078 3500\nlucian@bright-group.org`;
+      await fetch(`${SB_URL}/functions/v1/send-email`,{
+        method:"POST",headers:{...SB_H,"Content-Type":"application/json"},
+        body:JSON.stringify({to:email.trim(),subject:`Invitation to Bright Metalwork Portal — ${name.trim()}`,text:body})
+      });
+    }catch(_){}
+
+    setSent(true);
+  };
+
+  const copyLink=()=>{
+    navigator.clipboard.writeText(link).then(()=>{setCopying(true);setTimeout(()=>setCopying(false),2000);});
+  };
+
+  const OL={width:"100%",background:"#0d1117",border:"1px solid #1e2535",borderRadius:8,padding:"9px 12px",color:"#f1f5f9",fontSize:13,outline:"none",boxSizing:"border-box",marginTop:5};
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16}}>
+    <div style={{background:"#111827",borderRadius:16,padding:24,width:"100%",maxWidth:480,border:"1px solid #1e2535",boxShadow:"0 24px 64px rgba(0,0,0,.6)"}}>
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div>
+          <div style={{fontSize:16,fontWeight:800,color:"#f1f5f9"}}>✉ Invite New Worker</div>
+          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>An invitation link will be generated and optionally emailed</div>
+        </div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
+      </div>
+
+      {!sent?<div>
+        {/* Name */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Full Name *</label>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. John Smith" style={OL}/>
+        </div>
+        {/* Email */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Email Address *</label>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="john@example.com" style={OL}/>
+        </div>
+        {/* Role */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Access Level</label>
+          <select value={role} onChange={e=>setRole(e.target.value)}
+            style={{...OL,color:ROLE_C[role]||"#f1f5f9",fontWeight:700,border:`1px solid ${ROLE_C[role]||"#1e2535"}44`,cursor:"pointer"}}>
+            <option value="worker">👷 Worker — own data only</option>
+            <option value="manager">🏗 Manager — their sites only</option>
+            <option value="admin">🔑 Admin — full access</option>
+            <option value="director">👔 Director — full access</option>
+            <option value="accountant">📊 Accountant — full access</option>
+            <option value="logistics">🚛 Logistics — asset management</option>
+          </select>
+        </div>
+        {/* Site (for managers) */}
+        {role==="manager"&&<div style={{marginBottom:12}}>
+          <label style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Assigned Site</label>
+          <select value={site} onChange={e=>setSite(e.target.value)} style={{...OL,cursor:"pointer"}}>
+            <option value="">— All sites (set later) —</option>
+            {allSites.filter(s=>!s.builtin).map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
+          </select>
+        </div>}
+        {/* Info box */}
+        <div style={{background:"#0d1117",borderRadius:8,padding:"10px 13px",marginBottom:16,fontSize:11,color:"#64748b",lineHeight:1.6}}>
+          <div style={{fontWeight:700,color:ROLE_C[role],marginBottom:4}}>
+            {role==="worker"?"👷 Worker"
+             :role==="manager"?"🏗 Manager"
+             :"🔑 Admin/Director"} access
+          </div>
+          {role==="worker"&&"They will see their own schedule, timesheets, payslips and certificates. Cannot edit or delete anything."}
+          {role==="manager"&&"They will see the Site Manager app — their assigned sites, workers, expenses, variations and payment applications."}
+          {["admin","director","accountant"].includes(role)&&"Full access to all features, all workers, financials and settings."}
+        </div>
+        <div style={{display:"flex",gap:9}}>
+          <button onClick={onClose} style={{flex:1,padding:"10px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:8,color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}}>Cancel</button>
+          <button onClick={generateInvite} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>Generate Invitation Link</button>
+        </div>
+      </div>:<div>
+        {/* Success state */}
+        <div style={{background:"#0d2218",border:"1px solid #34d39944",borderRadius:10,padding:16,marginBottom:16}}>
+          <div style={{fontSize:14,fontWeight:800,color:"#34d399",marginBottom:4}}>✓ Invitation created for {name}</div>
+          <div style={{fontSize:11,color:"#64748b"}}>An email was attempted to {email}. Whether it arrived depends on your Supabase email setup. Share the link below directly to be sure.</div>
+        </div>
+        {/* Link */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:5}}>Invitation Link</div>
+          <div style={{background:"#0d1117",borderRadius:8,padding:"10px 12px",border:"1px solid #1e2535",fontSize:11,color:"#60a5fa",wordBreak:"break-all",marginBottom:8,fontFamily:"monospace"}}>{link}</div>
+          <button onClick={copyLink}
+            style={{width:"100%",padding:"9px",background:copying?"#0d2218":"#1e2535",border:`1px solid ${copying?"#34d399":"#2d3555"}`,borderRadius:7,color:copying?"#34d399":"#94a3b8",cursor:"pointer",fontSize:12,fontWeight:600,transition:"all .2s"}}>
+            {copying?"✓ Copied!":"📋 Copy Link"}
+          </button>
+        </div>
+        <div style={{fontSize:11,color:"#64748b",background:"#0d1117",borderRadius:8,padding:"10px 12px",border:"1px solid #1e2535",marginBottom:14,lineHeight:1.6}}>
+          When {name} opens the link they will see a pre-filled registration form with their name, email and <b style={{color:ROLE_C[role]}}>{role}</b> access already set. They just need to fill in their details and set a password.
+        </div>
+        <div style={{display:"flex",gap:9}}>
+          <button onClick={()=>{setSent(false);setName("");setEmail("");setRole("worker");setSite("");setLink("");}}
+            style={{flex:1,padding:"9px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:8,color:"#94a3b8",cursor:"pointer",fontSize:12,fontWeight:600}}>
+            + Another Invite
+          </button>
+          <button onClick={onClose}
+            style={{flex:1,padding:"9px",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+            Done
+          </button>
+        </div>
+      </div>}
+    </div>
+  </div>;
+}
+
+function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDetailId,setModal}){\
   const[search,setSearch]=useState("");
+  const[showInvite,setShowInvite]=useState(false);
   const shown=workers.filter(w=>!search||w.name.toLowerCase().includes(search.toLowerCase())||w.position.toLowerCase().includes(search.toLowerCase()));
   const {gross}=useMemo(()=>workers.reduce((a,w)=>{const r=calcPay(w,activeDays,siteHours);return{gross:a.gross+r.gross};},{gross:0}),[workers,activeDays,siteHours]);
 
   return <div>
     <DPageHdr title="👷 Workers" sub={`${workers.length} operatives · £${gross.toFixed(0)} gross this week`}
-      actions={<button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{padding:"7px 14px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ Add Worker</button>}/>
+      actions={<div style={{display:"flex",gap:7}}>
+        <button onClick={()=>setShowInvite(true)} style={{padding:"7px 14px",background:"#0d1a2e",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700}}>✉ Invite</button>
+        <button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{padding:"7px 14px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ Add Worker</button>
+      </div>}/>
+    {showInvite&&<InviteWorkerModal onClose={()=>setShowInvite(false)} allSites={allSites}/>}
     <div style={DS.body}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name or position…"
         style={{...{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"7px 10px",color:"#e2e8f0",fontSize:13,outline:"none",boxSizing:"border-box"},maxWidth:320,marginBottom:16}}/>
@@ -2928,97 +3068,70 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
       </div>
 
       {/* ══ PROFILE TAB ══════════════════════════════════════════════════════ */}
-      {tab==="profile"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        {/* Left — personal */}
-        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
-          <div style={{fontSize:11,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Personal Details</div>
-          {[["Full Name",w.name],["Position",w.position],["Company",w.company],["Nationality",w.nationality||"—"],["Date of Birth",w.dob?fmtD(w.dob):"—"],["Contact",w.contact||"—"],["Email",w.email||"—"],["Address",w.address||"—"],["Next of Kin",w.nextOfKin?(w.nextOfKin+(w.nextOfKinPhone?" · "+w.nextOfKinPhone:"")):"—"]].map(([l,v])=>(
-            <div key={l} style={{display:"flex",gap:8,padding:"6px 0",borderBottom:"1px solid #1e2535"}}>
-              <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:90,textTransform:"uppercase",flexShrink:0}}>{l}</span>
-              <span style={{fontSize:12,color:"#e2e8f0",wordBreak:"break-word"}}>{v}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Right — pay summary + certs widget */}
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {/* Pay summary */}
+      {tab==="profile"&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+          {/* Left — personal */}
           <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
-            <div style={{fontSize:11,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Pay Details</div>
-            {[["Hourly Rate",w.agreedRate?"£"+w.agreedRate+"/hr":"Not set"],["CIS Tax",Math.round((w.taxRate||0)*100)+"%"],["OT Rate",w.customOTRate?"£"+w.customOTRate+"/hr":"×"+(w.overtimeMultiplier||1.5)+" standard"],["NINO",w.nino||"—"],["UTR",w.utr||"—"],["Bank",w.bankName?(w.bankName+" · "+(w.bankAccount||"")+" · "+(w.bankSort||"")):"—"]].map(([l,v])=>(
-              <div key={l} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid #1e2535"}}>
-                <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:80,textTransform:"uppercase",flexShrink:0}}>{l}</span>
-                <span style={{fontSize:12,color:"#e2e8f0"}}>{v}</span>
+            <div style={{fontSize:11,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Personal Details</div>
+            {[["Full Name",w.name],["Position",w.position],["Company",w.company],["Nationality",w.nationality||"—"],["Date of Birth",w.dob?fmtD(w.dob):"—"],["Contact",w.contact||"—"],["Email",w.email||"—"],["Address",w.address||"—"],["Next of Kin",w.nextOfKin?(w.nextOfKin+(w.nextOfKinPhone?" · "+w.nextOfKinPhone:"")):"—"]].map(([l,v])=>(
+              <div key={l} style={{display:"flex",gap:8,padding:"6px 0",borderBottom:"1px solid #1e2535"}}>
+                <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:90,textTransform:"uppercase",flexShrink:0}}>{l}</span>
+                <span style={{fontSize:12,color:"#e2e8f0",wordBreak:"break-word"}}>{v||"—"}</span>
               </div>
             ))}
           </div>
-
-          {/* Certificates widget — held certs only */}
-          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={{fontSize:11,color:"#a78bfa",fontWeight:700,textTransform:"uppercase"}}>🏅 Certifications</div>
-              <button onClick={()=>setTab("certs")} style={{fontSize:10,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontWeight:600}}>View all →</button>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+              <div style={{fontSize:11,color:"#fbbf24",fontWeight:700,textTransform:"uppercase",marginBottom:12}}>Pay Details</div>
+              {[["Hourly Rate",w.agreedRate?"£"+w.agreedRate+"/hr":"Not set"],["CIS Tax",Math.round((w.taxRate||0)*100)+"%"],["OT Rate",w.customOTRate?"£"+w.customOTRate+"/hr":"×"+(w.overtimeMultiplier||1.5)+" standard"],["NINO",w.nino||"—"],["UTR",w.utr||"—"],["Bank",w.bankName?(w.bankName+" · "+(w.bankAccount||"")+" · "+(w.bankSort||"")):"—"]].map(([l,v])=>(
+                <div key={l} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid #1e2535"}}>
+                  <span style={{fontSize:10,color:"#64748b",fontWeight:700,minWidth:80,textTransform:"uppercase",flexShrink:0}}>{l}</span>
+                  <span style={{fontSize:12,color:"#e2e8f0"}}>{v}</span>
+                </div>
+              ))}
             </div>
-            {heldCerts.length===0
-              ?<div style={{fontSize:12,color:"#374151",fontStyle:"italic"}}>No certifications recorded.</div>
-              :<div style={{display:"flex",flexDirection:"column",gap:4}}>
-                {heldCerts.map(cert=>{
-                  const s=cSt(cert,w);
-                  const val=w.certs[cert.key];
-                  return <div key={cert.key} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 7px",background:"#0f1421",borderRadius:6,border:`1px solid ${CERT_STATUS_C[s]}33`}}>
-                    <div style={{width:6,height:6,borderRadius:"50%",background:CERT_STATUS_C[s],flexShrink:0}}/>
-                    <span style={{fontSize:11,color:"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cert.label}</span>
-                    {cert.hasExpiry&&val?.expiry&&<span style={{fontSize:10,color:CERT_STATUS_C[s],fontWeight:600,flexShrink:0}}>{fmtD(val.expiry)}</span>}
-                    <span style={{fontSize:9,color:CERT_STATUS_C[s],fontWeight:700,textTransform:"uppercase",flexShrink:0}}>{s}</span>
-                  </div>;
-                })}
-              </div>}
+            <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{fontSize:11,color:"#a78bfa",fontWeight:700,textTransform:"uppercase"}}>🏅 Certifications</div>
+                <button onClick={()=>setTab("certs")} style={{fontSize:10,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontWeight:600}}>View all →</button>
+              </div>
+              {heldCerts.length===0
+                ?<div style={{fontSize:12,color:"#374151",fontStyle:"italic"}}>No certifications recorded.</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {heldCerts.map(cert=>{const s=cSt(cert,w);const val=w.certs[cert.key];
+                    return <div key={cert.key} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 7px",background:"#0f1421",borderRadius:6,border:`1px solid ${CERT_STATUS_C[s]}33`}}>
+                      <div style={{width:6,height:6,borderRadius:"50%",background:CERT_STATUS_C[s],flexShrink:0}}/>
+                      <span style={{fontSize:11,color:"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cert.label}</span>
+                      {cert.hasExpiry&&val?.expiry&&<span style={{fontSize:10,color:CERT_STATUS_C[s],fontWeight:600,flexShrink:0}}>{fmtD(val.expiry)}</span>}
+                      <span style={{fontSize:9,color:CERT_STATUS_C[s],fontWeight:700,textTransform:"uppercase",flexShrink:0}}>{s}</span>
+                    </div>;})}
+                </div>}
+            </div>
           </div>
         </div>
-          {/* ── WEEK FORECAST WIDGET ── */}
-          <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16,marginTop:0}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div style={{fontSize:11,color:"#3b82f6",fontWeight:700,textTransform:"uppercase"}}>📅 Week Forecast — WC {weekLabel||"—"}</div>
-              <span style={{fontSize:10,color:"#374151",fontStyle:"italic"}}>Route only — confirmed by GPS sign-in</span>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
-              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>{
-                const site=w.days?.[d];
-                const off=!site||isOff(site);
-                const confirmed=thisWeekLogs.some(l=>l.day===d);
-                const activeNow=thisWeekLogs.some(l=>l.day===d&&l.signIn&&!l.signOut);
-                const siteObj=allSites.find(s=>site&&(site.includes(s.name)||s.name.includes((site||"").split("-")[0]?.trim())));
-                const col=siteObj?.color||"#3b82f6";
-                const isToday=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()]===d;
-                return <div key={d} style={{
-                  textAlign:"center",
-                  background:confirmed?"#0d2218":activeNow?"#0d1e2a":isToday?"#1a1f2e":"#0f1421",
-                  borderRadius:9,
-                  padding:"8px 4px",
-                  border:`2px solid ${activeNow?"#fbbf24":confirmed?"#34d399":isToday?col+"88":"#1e2535"}`,
-                  transition:"all 0.2s"
-                }}>
-                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:4,
-                    color:activeNow?"#fbbf24":confirmed?"#34d399":isToday?col:"#64748b"}}>
-                    {d}
-                  </div>
-                  {activeNow&&<div style={{fontSize:9,color:"#fbbf24",marginBottom:3}}>● Live</div>}
-                  {!activeNow&&confirmed&&<div style={{fontSize:11,marginBottom:3}}>✅</div>}
-                  {!off
-                    ?<div style={{fontSize:9,color:off?"#374151":col,fontWeight:600,lineHeight:1.3,
-                        overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",
-                        wordBreak:"break-word",minHeight:28}}>
-                        {site.trim()}
-                      </div>
-                    :<div style={{fontSize:9,color:"#374151",fontStyle:"italic"}}>Off</div>}
-                </div>;
-              })}
-            </div>
-            <div style={{display:"flex",gap:14,marginTop:8,fontSize:10,color:"#374151"}}>
-              <span>✅ GPS confirmed</span>
-              <span style={{color:"#fbbf24"}}>● On site now</span>
-              <span>📋 Forecast only</span>
-            </div>
+        {/* ── Bottom: Week Forecast — full width ── */}
+        <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{fontSize:11,color:"#3b82f6",fontWeight:700,textTransform:"uppercase"}}>📅 Week Forecast — WC {weekLabel||"—"}</div>
+            <span style={{fontSize:10,color:"#374151",fontStyle:"italic"}}>Route only · ✅ = GPS confirmed</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
+            {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>{
+              const site=w.days?.[d];const off=!site||isOff(site);
+              const confirmed=thisWeekLogs.some(l=>l.day===d);
+              const activeNow=thisWeekLogs.some(l=>l.day===d&&l.signIn&&!l.signOut);
+              const siteObj=allSites.find(s=>site&&(site.includes(s.name)||s.name.includes((site||"").split("-")[0]?.trim())));
+              const col=siteObj?.color||"#3b82f6";
+              const isToday=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()]===d;
+              return <div key={d} style={{textAlign:"center",background:confirmed?"#0d2218":activeNow?"#0d1e2a":isToday?"#1a1f2e":"#0f1421",borderRadius:9,padding:"9px 4px",border:`2px solid ${activeNow?"#fbbf24":confirmed?"#34d399":isToday?col+"88":"#1e2535"}`,transition:"all 0.2s"}}>
+                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:4,color:activeNow?"#fbbf24":confirmed?"#34d399":isToday?col:"#64748b"}}>{d}</div>
+                {activeNow&&<div style={{fontSize:9,color:"#fbbf24",marginBottom:2}}>● Live</div>}
+                {!activeNow&&confirmed&&<div style={{fontSize:11,marginBottom:2}}>✅</div>}
+                <div style={{fontSize:9,color:off?"#374151":col,fontWeight:off?400:600,lineHeight:1.3,wordBreak:"break-word",minHeight:24}}>{off?"Off":(site||"").trim()}</div>
+              </div>;})}
+          </div>
+          <div style={{display:"flex",gap:16,marginTop:8,fontSize:10,color:"#374151"}}>
+            <span>✅ GPS confirmed</span><span style={{color:"#fbbf24"}}>● On site now</span><span>📋 Forecast only</span>
           </div>
         </div>
       </div>}
@@ -3118,64 +3231,90 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
 
       {/* ══ TIMESHEETS TAB ════════════════════════════════════════════════════ */}
       {tab==="timesheets"&&<div>
-        <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>
-          Timesheets are created automatically on first GPS sign-in of the week and close at week end ready for admin review.
+        <div style={{fontSize:11,color:"#64748b",marginBottom:12,lineHeight:1.6}}>
+          Timesheets are created automatically from GPS sign-ins. Each sign-in/sign-out creates a work entry. Normal and overtime hours are calculated per the site's threshold.
         </div>
         {wTimesheets.length===0
-          ?<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}>
-              <div style={{fontSize:32,marginBottom:10}}>⏱</div>No timesheets yet. Auto-created on first sign-in of each week.
+          ?<div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
+              <div style={{fontSize:32,marginBottom:10}}>⏱</div>
+              <div style={{fontWeight:600,marginBottom:4}}>No timesheets yet</div>
+              <div style={{fontSize:11}}>Auto-created on first GPS sign-in each week.</div>
             </div>
           :wTimesheets.map(ts=>{
-            const tsLogs=wLogs.filter(l=>l.weekLabel===ts.weekLabel);
-            const days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-            const dayTotals={};
+            const tsLogs=(ts.workEntries||wLogs.filter(l=>l.weekLabel===ts.weekLabel));
+            const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+            const dayMap={};
             tsLogs.forEach(l=>{
               const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;
-              dayTotals[l.day]=(dayTotals[l.day]||0)+hrs;
+              const site=allSites.find(s=>s.id===l.siteId||s.name===l.siteName);
+              const otThr=site?.otThreshold||site?.stdHours||9;
+              if(!dayMap[l.day]) dayMap[l.day]={total:0,std:0,ot:0};
+              dayMap[l.day].total=Math.round((dayMap[l.day].total+hrs)*100)/100;
+              dayMap[l.day].std=Math.min(dayMap[l.day].total,otThr);
+              dayMap[l.day].ot=Math.max(0,Math.round((dayMap[l.day].total-otThr)*100)/100);
             });
-            const totalHrs=Object.values(dayTotals).reduce((a,v)=>a+v,0);
-            const site0=allSites.find(s=>tsLogs[0]&&(s.id===tsLogs[0].siteId||s.name===tsLogs[0].siteName));
-            const otThreshold=site0?.otThreshold||9;
-            const otHrs=Math.max(0,totalHrs-otThreshold*Object.keys(dayTotals).length);
-            const stdHrs=totalHrs-otHrs;
-            const isOpen=ts.status==="open";
-            return <div key={ts.id} style={{background:"#111827",border:`1px solid ${isOpen?"#3b82f644":"#34d39944"}`,borderRadius:11,padding:16,marginBottom:12}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+            const totalHrs=Object.values(dayMap).reduce((a,d)=>a+d.total,0);
+            const stdHrs=ts.stdHours||Object.values(dayMap).reduce((a,d)=>a+d.std,0);
+            const otHrs=ts.otHours||Object.values(dayMap).reduce((a,d)=>a+d.ot,0);
+            const statusColor={open:"#3b82f6",pending:"#fbbf24",approved:"#34d399"}[ts.status]||"#64748b";
+            return <div key={ts.id} style={{background:"#111827",border:`1px solid ${statusColor}44`,borderRadius:11,padding:16,marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                 <div>
-                  <div style={{fontSize:13,fontWeight:800,color:"#f1f5f9"}}>WC {ts.weekLabel}</div>
-                  <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{w.name} · {tsLogs.length} entries</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#f1f5f9"}}>WC {ts.weekLabel}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{w.name} · {tsLogs.length} work entr{tsLogs.length===1?"y":"ies"}</div>
                 </div>
-                <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,
-                  background:ts.status==="approved"?"#34d39922":ts.status==="open"?"#3b82f622":"#fbbf2422",
-                  color:ts.status==="approved"?"#34d399":ts.status==="open"?"#60a5fa":"#fbbf24",
-                  border:`1px solid ${ts.status==="approved"?"#34d39944":ts.status==="open"?"#3b82f644":"#fbbf2444"}`}}>
-                  {ts.status==="approved"?"✓ Approved":ts.status==="open"?"● Open":"⏳ Pending Review"}
+                <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:statusColor+"22",color:statusColor,border:`1px solid ${statusColor}44`}}>
+                  {{open:"● Open",pending:"⏳ Pending",approved:"✓ Approved"}[ts.status]||ts.status}
                 </span>
               </div>
-              {/* Day grid */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:5,marginBottom:10}}>
-                {days.map(d=>{
-                  const hrs=dayTotals[d]||0;
-                  return <div key={d} style={{textAlign:"center",background:"#0f1421",borderRadius:6,padding:"6px 4px",border:`1px solid ${hrs>0?"#3b82f633":"#1e2535"}`}}>
-                    <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{d}</div>
-                    <div style={{fontSize:12,fontWeight:700,color:hrs>0?"#60a5fa":"#374151",marginTop:2}}>{hrs>0?hrs.toFixed(1)+"h":"—"}</div>
+              {/* Work entries table */}
+              <div style={{border:"1px solid #1e2535",borderRadius:8,overflow:"hidden",marginBottom:12}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px 80px 70px 60px 60px",background:"#0d1117",padding:"6px 10px",fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",gap:6}}>
+                  <span>Date</span><span>Site</span><span>Sign In</span><span>Sign Out</span><span style={{textAlign:"right"}}>Hours</span><span style={{textAlign:"right"}}>Normal</span><span style={{textAlign:"right"}}>OT</span>
+                </div>
+                {tsLogs.map((l,i)=>{
+                  const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;
+                  const site=allSites.find(s=>s.id===l.siteId||s.name===l.siteName);
+                  const otThr=site?.otThreshold||9;
+                  const std=Math.min(hrs,otThr);const ot=Math.max(0,Math.round((hrs-otThr)*100)/100);
+                  const dateStr=l.signIn?new Date(l.signIn).toLocaleDateString("en-GB",{day:"2-digit",month:"short",weekday:"short"}):"—";
+                  const tIn=l.signIn?new Date(l.signIn).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—";
+                  const tOut=l.signOut?new Date(l.signOut).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—";
+                  return <div key={l.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px 80px 70px 60px 60px",padding:"8px 10px",borderTop:"1px solid #1e2535",background:i%2===0?"#111827":"#0f1421",fontSize:11,gap:6,alignItems:"center"}}>
+                    <span style={{color:"#94a3b8"}}>{dateStr}</span>
+                    <span style={{color:"#f1f5f9",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.siteName||"—"}</span>
+                    <span style={{color:"#34d399",fontWeight:600}}>{tIn}</span>
+                    <span style={{color:"#f87171",fontWeight:600}}>{tOut}</span>
+                    <span style={{textAlign:"right",color:"#60a5fa",fontWeight:700}}>{hrs.toFixed(2)}h</span>
+                    <span style={{textAlign:"right",color:"#60a5fa"}}>{std.toFixed(2)}h</span>
+                    <span style={{textAlign:"right",color:ot>0?"#fbbf24":"#374151",fontWeight:ot>0?700:400}}>{ot>0?"+"+ot.toFixed(2):"—"}</span>
                   </div>;
                 })}
               </div>
-              {/* Totals */}
-              <div style={{display:"flex",gap:12,padding:"8px 10px",background:"#0d1117",borderRadius:7}}>
-                <div><span style={{fontSize:10,color:"#64748b"}}>Std Hours: </span><span style={{fontSize:12,fontWeight:700,color:"#60a5fa"}}>{stdHrs.toFixed(1)}h</span></div>
-                <div><span style={{fontSize:10,color:"#64748b"}}>OT Hours: </span><span style={{fontSize:12,fontWeight:700,color:"#fbbf24"}}>{otHrs.toFixed(1)}h</span></div>
-                <div><span style={{fontSize:10,color:"#64748b"}}>Total: </span><span style={{fontSize:14,fontWeight:900,color:"#34d399"}}>{totalHrs.toFixed(1)}h</span></div>
-                <div style={{marginLeft:"auto",fontSize:10,color:"#374151",fontStyle:"italic"}}>Pay calculated in payslip — not here</div>
+              {/* Day grid */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:5,marginBottom:12}}>
+                {DAYS.map(d=><div key={d} style={{textAlign:"center",background:"#0f1421",borderRadius:6,padding:"6px 3px",border:`1px solid ${dayMap[d]?"#3b82f633":"#1e2535"}`}}>
+                  <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{d}</div>
+                  {dayMap[d]?<>
+                    <div style={{fontSize:11,fontWeight:700,color:"#60a5fa"}}>{dayMap[d].total.toFixed(1)}h</div>
+                    {dayMap[d].ot>0&&<div style={{fontSize:9,color:"#fbbf24"}}>+{dayMap[d].ot.toFixed(1)}OT</div>}
+                  </>:<div style={{fontSize:11,color:"#374151"}}>—</div>}
+                </div>)}
               </div>
+              {/* Totals */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:10}}>
+                {[["Total Hours",totalHrs.toFixed(2)+"h","#f1f5f9"],["Normal Hours",stdHrs.toFixed(2)+"h","#60a5fa"],["Overtime Hours",otHrs.toFixed(2)+"h","#fbbf24"],["Source",ts.source==="gps"?"📍 GPS":"📋 Schedule","#64748b"]].map(([l,v,c])=>(
+                  <div key={l} style={{background:"#0d1117",borderRadius:7,padding:"8px 10px"}}>
+                    <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{l}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:c}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{fontSize:10,color:"#374151",fontStyle:"italic",marginBottom:ts.status!=="approved"?10:0}}>Pay amounts are not calculated here — see the Payslips tab</div>
               {ts.status!=="approved"&&<button
-                onClick={()=>{
-                  const updated=timesheetRecords.map(t=>t.id===ts.id?{...t,status:"approved",approvedAt:new Date().toISOString()}:t);
-                  setTimesheetRecords(updated);
-                }}
-                style={{marginTop:10,width:"100%",padding:"8px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                ✓ Approve Timesheet
+                onClick={()=>{const updated=timesheetRecords.map(t=>t.id===ts.id?{...t,status:"approved",approvedAt:new Date().toISOString(),approvedBy:"Admin"}:t);setTimesheetRecords(updated);}}
+                style={{width:"100%",padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                ✓ Approve Timesheet — WC {ts.weekLabel}
               </button>}
             </div>;
           })}
@@ -8751,62 +8890,83 @@ async function loadSamples(){
   );
 }
 // ─── LOGIN GATE ───────────────────────────────────────────────────────────────
+// ─── Hardcoded credentials (work without Supabase — for preview & first login)
+const HARDCODED_USERS=[
+  {email:"lucian@bright-group.org", password:"BrightAdmin2025", role:"admin",  name:"Lucian Ciocoiu",    note:"Director"},
+  {email:"admin@bright-group.org",  password:"BrightAdmin2025", role:"admin",  name:"Admin",             note:"Admin"},
+  {email:"demo@bright.app",         password:"demo1234",         role:"admin",  name:"Demo Admin",        note:"Preview / Demo"},
+  {email:"manager@bright.app",      password:"manager1234",      role:"manager",name:"Demo Manager",      note:"Manager preview"},
+  {email:"worker@bright.app",       password:"worker1234",       role:"worker", name:"Demo Worker",       note:"Worker preview"},
+];
+
 function LoginGate({onLogin}){
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
   const [showPw,setShowPw]=useState(false);
-
-  const ADMIN_EMAILS=["lucian@bright-group.org"];
+  const [showCreds,setShowCreds]=useState(false);
 
   const handleLogin=async(e)=>{
     e&&e.preventDefault();
     if(!email||!password){setError("Please enter email and password.");return;}
     setLoading(true);setError("");
     try{
-      // Try Supabase Auth first (for workers registered via portal)
+      // ── Step 1: Check hardcoded credentials first (always works, no Supabase needed)
+      const hardcoded=HARDCODED_USERS.find(
+        u=>u.email.toLowerCase()===email.toLowerCase().trim()&&u.password===password
+      );
+      if(hardcoded){
+        // Try to fetch real worker data from Supabase if available
+        let worker=null;
+        try{
+          const rows=await sbGet("workers",`select=id,data&data->>email=eq.${encodeURIComponent(hardcoded.email)}`);
+          if(rows.length>0) worker={...mkW(),...rows[0].data,id:rows[0].id};
+        }catch(_){}
+        // If no Supabase worker record, create minimal profile from hardcoded data
+        if(!worker) worker={...mkW(),name:hardcoded.name,email:hardcoded.email,userRole:hardcoded.role,id:"local_"+hardcoded.email};
+        onLogin({worker,role:hardcoded.role,email:hardcoded.email});
+        return;
+      }
+
+      // ── Step 2: Try Supabase Auth for real registered users
       let authToken=null;
       try{
         const authRes=await fetch(`${SB_URL}/auth/v1/token?grant_type=password`,{
           method:"POST",
           headers:{"apikey":SB_KEY,"Content-Type":"application/json"},
-          body:JSON.stringify({email,password})
+          body:JSON.stringify({email:email.trim(),password})
         });
         const authData=await authRes.json();
         if(!authData.error) authToken=authData.access_token;
       }catch(_){}
 
-      // Look up worker record by email
-      const rows=await sbGet("workers",`select=id,data&data->>email=eq.${encodeURIComponent(email)}`);
-      let worker=rows.length>0?{...mkW(),...rows[0].data,id:rows[0].id}:null;
+      // ── Step 3: Look up worker in Supabase by email
+      let worker=null;
+      try{
+        const rows=await sbGet("workers",`select=id,data&data->>email=eq.${encodeURIComponent(email.trim())}`);
+        if(rows.length>0) worker={...mkW(),...rows[0].data,id:rows[0].id};
+        if(!worker){
+          const rows2=await sbGet("workers",`select=id,data&data->>authEmail=eq.${encodeURIComponent(email.trim())}`);
+          if(rows2.length>0) worker={...mkW(),...rows2[0].data,id:rows2[0].id};
+        }
+      }catch(_){}
 
-      // Admin override — if email is in admin list, grant full access
-      const isAdminEmail=ADMIN_EMAILS.includes(email.toLowerCase());
-
-      if(!worker&&!isAdminEmail){
-        // Try matching by authEmail field
-        const rows2=await sbGet("workers",`select=id,data&data->>authEmail=eq.${encodeURIComponent(email)}`);
-        if(rows2.length>0) worker={...mkW(),...rows2[0].data,id:rows2[0].id};
-      }
-
-      if(!worker&&!isAdminEmail&&!authToken){
-        setError("No account found for this email. Please contact your administrator.");
+      if(!worker&&!authToken){
+        setError("No account found. Check your email and password, or use the credentials shown below.");
+        setShowCreds(true);
         setLoading(false);return;
       }
 
-      // Determine role
-      let role=worker?.userRole||"worker";
-      if(isAdminEmail) role="admin";
-
-      onLogin({worker,role,email});
+      const role=worker?.userRole||"worker";
+      onLogin({worker,role,email:email.trim()});
     }catch(e){
-      setError("Login failed: "+e.message);
+      setError("Login error: "+e.message);
     }
     setLoading(false);
   };
 
-  const ROLE_COLORS={admin:"#34d399",director:"#a78bfa",accountant:"#fbbf24",manager:"#60a5fa",worker:"#94a3b8",logistics:"#f97316"};
+  const fillCreds=(u)=>{setEmail(u.email);setPassword(u.password);setShowCreds(false);};
 
   return(
     <div style={{minHeight:"100vh",background:"#0a0e1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif",padding:16}}>
@@ -8849,14 +9009,34 @@ function LoginGate({onLogin}){
             {loading?"Signing in…":"Sign In"}
           </button>
 
-          <div style={{marginTop:16,padding:"10px 13px",background:"#0d1117",borderRadius:8,border:"1px solid #1e2535"}}>
-            <div style={{fontSize:10,color:"#374151",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Access levels</div>
-            {[["🔑 Admin / Director / Accountant","Full access to everything","#34d399"],["🏗 Manager","Their sites, workers, costs, variations","#60a5fa"],["👷 Worker","Their own schedule, timesheets, payslips","#94a3b8"]].map(([l,d,c])=>(
-              <div key={l} style={{display:"flex",gap:8,padding:"4px 0",fontSize:11}}>
-                <span style={{color:c,minWidth:6,marginTop:2}}>●</span>
-                <div><span style={{color:"#94a3b8",fontWeight:600}}>{l}</span><span style={{color:"#374151",marginLeft:6}}>{d}</span></div>
-              </div>
-            ))}
+          {/* ── Quick credentials panel ── */}
+          <div style={{marginTop:14,background:"#0d1117",borderRadius:9,border:"1px solid #1e2535",overflow:"hidden"}}>
+            <button type="button" onClick={()=>setShowCreds(s=>!s)}
+              style={{width:"100%",padding:"9px 13px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:11,color:"#64748b",fontWeight:600}}>🔑 Login credentials</span>
+              <span style={{fontSize:10,color:"#374151"}}>{showCreds?"▲ Hide":"▼ Show"}</span>
+            </button>
+            {showCreds&&<div style={{padding:"0 13px 12px"}}>
+              {HARDCODED_USERS.map(u=>(
+                <button type="button" key={u.email} onClick={()=>fillCreds(u)}
+                  style={{width:"100%",textAlign:"left",padding:"8px 10px",marginBottom:5,background:"#111827",border:"1px solid #1e2535",borderRadius:7,cursor:"pointer",transition:"border-color .15s"}}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor="#3b82f6"}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor="#1e2535"}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:700,color:"#f1f5f9"}}>{u.name} <span style={{fontSize:10,color:"#64748b",fontWeight:400}}>— {u.note}</span></div>
+                      <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{u.email} · <span style={{color:"#374151",fontFamily:"monospace"}}>{u.password}</span></div>
+                    </div>
+                    <span style={{fontSize:10,padding:"2px 7px",borderRadius:20,fontWeight:700,
+                      background:{admin:"#34d39922",manager:"#60a5fa22",worker:"#94a3b822"}[u.role],
+                      color:{admin:"#34d399",manager:"#60a5fa",worker:"#94a3b8"}[u.role]}}>
+                      {u.role}
+                    </span>
+                  </div>
+                </button>
+              ))}
+              <div style={{fontSize:10,color:"#374151",marginTop:4,fontStyle:"italic"}}>Click any row to fill in the credentials automatically</div>
+            </div>}
           </div>
         </form>
       </div>
@@ -9254,9 +9434,42 @@ lucian@bright-group.org`;
   };
   // Generate timesheets for current week from worker data
   // generateTimesheets — kept for backward compat but DTimesheets now builds its own
+  const buildTimesheetFromLogs=(worker,wkLabel)=>{
+    const wkLogs=(worker.attendanceLogs||[]).filter(l=>l.weekLabel===wkLabel&&l.signIn&&l.signOut);
+    if(wkLogs.length===0) return null;
+    const dayMap={};
+    wkLogs.forEach(l=>{
+      const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;
+      const site=allSites.find(s=>s.name===l.siteName||s.id===l.siteId);
+      const otThr=site?.otThreshold||site?.stdHours||9;
+      if(!dayMap[l.day]) dayMap[l.day]={total:0,std:0,ot:0,site:l.siteName};
+      dayMap[l.day].total=Math.round((dayMap[l.day].total+hrs)*100)/100;
+      dayMap[l.day].std=Math.min(dayMap[l.day].total,otThr);
+      dayMap[l.day].ot=Math.max(0,Math.round((dayMap[l.day].total-otThr)*100)/100);
+    });
+    const totalStd=Object.values(dayMap).reduce((a,d)=>a+d.std,0);
+    const totalOT=Object.values(dayMap).reduce((a,d)=>a+d.ot,0);
+    const rate=worker.agreedRate||0;
+    const otRate=worker.customOTRate||rate*(worker.overtimeMultiplier||1.5);
+    const gross=Math.round((totalStd*rate+totalOT*otRate)*100)/100;
+    const tax=Math.round(gross*(worker.taxRate||0)*100)/100;
+    return {
+      id:"ts_"+worker.id+"_"+wkLabel.replace(/\s+/g,""),
+      workerId:worker.id, workerName:worker.name, position:worker.position, company:worker.company||"",
+      weekLabel:wkLabel, workEntries:wkLogs, dayTotals:dayMap,
+      stdHours:Math.round(totalStd*100)/100, otHours:Math.round(totalOT*100)/100,
+      rate, otRate, gross, tax, net:Math.round((gross-tax)*100)/100, taxRate:worker.taxRate||0,
+      status:"open", source:"gps", notes:"",
+      createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
+      approvedAt:null, approvedBy:"",
+    };
+  };
+
   const generateTimesheets=(wkLabel)=>{
     const days=showWeekend?[...BASE_DAYS,...WEEKEND_DAYS]:BASE_DAYS;
     return workers.map(w=>{
+      const gpsTs=buildTimesheetFromLogs(w,wkLabel||weekLabel);
+      if(gpsTs) return gpsTs;
       const {stdH,otH,gross,net,tax}=calcPay(w,days,siteHours);
       return {
         id:"ts_"+w.id+"_"+(wkLabel||weekLabel).replace(/\s+/g,""),
@@ -9264,7 +9477,7 @@ lucian@bright-group.org`;
         weekLabel:wkLabel||weekLabel, stdHours:stdH, otHours:otH,
         days:JSON.parse(JSON.stringify(w.days||{})),
         rate:w.agreedRate||0, gross, net, tax, taxRate:w.taxRate||0,
-        status:"draft", source:"auto", notes:"",
+        status:"draft", source:"schedule", notes:"",
         lockedAt:null, approvedAt:null, approvedBy:"",
         createdAt:new Date().toISOString(),
       };
