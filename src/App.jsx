@@ -4336,14 +4336,147 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
 }
 
 // ── Dashboard Sites Page ──────────────────────────────────────────────────────
+// ── Dedicated full-page form to create one new site with all details ──────────
+function DSiteNew({allSites,clients,workers,setPage,setDetailId,saveSites}){
+  const [f,setF]=useState({
+    name:"", clientId:"", category:"pricework", managerId:"", color:PRESET_COLORS[0],
+    lat:"", lng:"", radius:100, stdHours:9, startTime:"07:30", otThreshold:9,
+    pohPct:0, retentionPct:0, status:"ongoing",
+  });
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const activeWorkers=workers.filter(w=>w.active!==false&&!isOff(w.name));
+  const client=clients.find(c=>c.id===f.clientId);
+
+  const save=()=>{
+    const n=f.name.trim();
+    if(!n){ alert("Enter a site name."); return; }
+    if(allSites.find(s=>s.name.toLowerCase()===n.toLowerCase())){ alert("A site with that name already exists."); return; }
+    const newSite={
+      id:"s"+Date.now(), name:n, color:f.color, clientId:f.clientId||null, builtin:false,
+      lat:f.lat===""?null:Number(f.lat), lng:f.lng===""?null:Number(f.lng), radius:Number(f.radius)||100,
+      stdHours:Number(f.stdHours)||9, startTime:f.startTime||"07:30", otThreshold:Number(f.otThreshold)||9,
+      contractType:f.category==="daywork"?"dayrate":"pricework",
+      category:f.category, status:f.status||"ongoing", managerId:f.managerId||null,
+      pohPct:Number(f.pohPct)||0, retentionPct:Number(f.retentionPct)||0,
+      scopes:[], variations:[],
+    };
+    saveSites([...allSites,newSite]);
+    setDetailId(newSite.id);
+    setPage("site_detail");
+  };
+
+  const Section=({title,children})=><div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:18,marginBottom:16}}>
+    <div style={{fontSize:12,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:14}}>{title}</div>
+    {children}
+  </div>;
+
+  return <div>
+    <DPageHdr title="🏗 New Site" sub="Fill in the details for this site" back="Sites" onBack={()=>setPage("sites")}/>
+    <div style={{...DS.body,maxWidth:760}}>
+
+      <Section title="Basics">
+        <div style={{marginBottom:14}}>
+          <label style={LBL}>Site Name *</label>
+          <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="e.g. JAUK - New Road, London" style={INP} autoFocus/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+          <div>
+            <label style={LBL}>Client</label>
+            <select value={f.clientId} onChange={e=>set("clientId",e.target.value)} style={{...INP,cursor:"pointer"}}>
+              <option value="">No client</option>
+              {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={LBL}>Colour</label>
+            <div style={{paddingTop:4}}><ColorPicker value={f.color} onChange={v=>set("color",v)}/></div>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Type & Management">
+        <div style={{marginBottom:14}}>
+          <label style={LBL}>Category</label>
+          <div style={{display:"flex",gap:8}}>
+            {[["pricework","Price-work","#34d399","Normal scopes (qty × rate − P&OH)"],["daywork","Daywork","#f59e0b","Uses the client's day-rate price list"]].map(([v,l,c,d])=>
+              <button key={v} onClick={()=>set("category",v)} style={{flex:1,padding:"12px",background:f.category===v?c+"22":"#0f1421",border:`1px solid ${f.category===v?c:"#2d3555"}`,borderRadius:9,cursor:"pointer",textAlign:"left"}}>
+                <div style={{fontSize:13,fontWeight:700,color:f.category===v?c:"#94a3b8"}}>{l}</div>
+                <div style={{fontSize:10,color:"#64748b",marginTop:3}}>{d}</div>
+              </button>
+            )}
+          </div>
+        </div>
+        {f.category==="daywork"&&<div style={{background:"#1a1500",border:"1px solid #92400e",borderRadius:8,padding:"9px 13px",marginBottom:14,fontSize:11,color:"#fbbf24",display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:14}}>ℹ️</span>
+          <span>Daywork scope = the day-rate price list of the assigned client{client?` (${client.name})`:""}. Set day rates in Manage Clients.</span>
+        </div>}
+        <div>
+          <label style={LBL}>Site Manager — controls the Site Manager app for this site</label>
+          <select value={f.managerId} onChange={e=>set("managerId",e.target.value)} style={{...INP,cursor:"pointer"}}>
+            <option value="">No manager assigned</option>
+            {activeWorkers.map(w=><option key={w.id} value={w.id}>{w.name}{w.position?" — "+w.position:""}</option>)}
+          </select>
+        </div>
+      </Section>
+
+      <Section title="GPS Geofence (for sign-in location check)">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+          <div>
+            <label style={LBL}>Latitude</label>
+            <input value={f.lat} onChange={e=>set("lat",e.target.value)} placeholder="51.2787" style={INP} inputMode="decimal"/>
+          </div>
+          <div>
+            <label style={LBL}>Longitude</label>
+            <input value={f.lng} onChange={e=>set("lng",e.target.value)} placeholder="-0.7759" style={INP} inputMode="decimal"/>
+          </div>
+          <div>
+            <label style={LBL}>Radius (m)</label>
+            <input value={f.radius} onChange={e=>set("radius",e.target.value)} placeholder="100" style={INP} inputMode="numeric"/>
+          </div>
+        </div>
+        <div style={{fontSize:10,color:"#64748b",marginTop:8}}>Leave blank to skip GPS checking for this site. You can set these later from the site's Advanced settings.</div>
+      </Section>
+
+      <Section title="Working Hours">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+          <div>
+            <label style={LBL}>Standard Hours/Day</label>
+            <input value={f.stdHours} onChange={e=>set("stdHours",e.target.value)} style={INP} inputMode="decimal"/>
+          </div>
+          <div>
+            <label style={LBL}>Start Time</label>
+            <input type="time" value={f.startTime} onChange={e=>set("startTime",e.target.value)} style={INP}/>
+          </div>
+          <div>
+            <label style={LBL}>OT Threshold (hrs)</label>
+            <input value={f.otThreshold} onChange={e=>set("otThreshold",e.target.value)} style={INP} inputMode="decimal"/>
+          </div>
+        </div>
+      </Section>
+
+      {f.category==="pricework"&&<Section title="Price-work Financials">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+          <div>
+            <label style={LBL}>P&OH % (deducted from scope)</label>
+            <input value={f.pohPct} onChange={e=>set("pohPct",e.target.value)} placeholder="0" style={INP} inputMode="decimal"/>
+          </div>
+          <div>
+            <label style={LBL}>Retention %</label>
+            <input value={f.retentionPct} onChange={e=>set("retentionPct",e.target.value)} placeholder="0" style={INP} inputMode="decimal"/>
+          </div>
+        </div>
+      </Section>}
+
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8,marginBottom:30}}>
+        <button onClick={()=>setPage("sites")} style={{padding:"11px 22px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:9,color:"#94a3b8",cursor:"pointer",fontSize:14,fontWeight:600}}>Cancel</button>
+        <button onClick={save} style={{padding:"11px 28px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontSize:15,fontWeight:800,boxShadow:"0 2px 8px rgba(16,185,129,0.3)"}}>✓ Create Site</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetailId,setModal,saveSites}){
   const [filter,setFilter]=useState("ongoing"); // all | ongoing | completed
-  const [showAdd,setShowAdd]=useState(false);
-  const [nn,setNn]=useState(""),[nc,setNc]=useState(PRESET_COLORS[0]),[ncl,setNcl]=useState("");
-  const [ncat,setNcat]=useState("pricework"),[nmgr,setNmgr]=useState("");
-
-  // Active workers eligible to be site managers
-  const activeWorkers=workers.filter(w=>w.active!==false&&!isOff(w.name));
 
   const realSites=allSites.filter(s=>!isOff(s.name));
   const counts={
@@ -4356,71 +4489,16 @@ function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetail
     return filter==="all"?true:st===filter;
   });
 
-  const addSite=()=>{
-    const n=nn.trim();
-    if(!n||allSites.find(s=>s.name.toLowerCase()===n.toLowerCase())){alert(n?"A site with that name already exists.":"Enter a site name.");return;}
-    const newSite={id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9,contractType:"dayrate",category:ncat,status:"ongoing",managerId:nmgr||null,pohPct:0,retentionPct:0,scopes:[],variations:[]};
-    saveSites([...allSites,newSite]);
-    setNn("");setNcl("");setNmgr("");setNcat("pricework");setShowAdd(false);
-  };
-
   const CAT_META={daywork:["#f59e0b","Daywork"],pricework:["#34d399","Price-work"]};
   const fmtMoney=n=>"£"+Math.round(n).toLocaleString("en-GB");
 
   return <div>
     <DPageHdr title="🏗 Sites" sub={`${counts.ongoing} ongoing · ${counts.completed} completed`}
-      actions={<button onClick={()=>setShowAdd(v=>!v)} style={{padding:"9px 18px",background:showAdd?"#1e3a5f":"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontSize:14,fontWeight:800,display:"flex",alignItems:"center",gap:7,boxShadow:"0 2px 8px rgba(59,130,246,0.3)"}}>
-        <span style={{fontSize:18}}>{showAdd?"×":"+"}</span> New Site
+      actions={<button onClick={()=>setPage("site_new")} style={{padding:"9px 18px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontSize:14,fontWeight:800,display:"flex",alignItems:"center",gap:7,boxShadow:"0 2px 8px rgba(59,130,246,0.3)"}}>
+        <span style={{fontSize:18}}>+</span> New Site
       </button>}/>
 
     <div style={DS.body}>
-      {/* Inline add form (touch-friendly) */}
-      {showAdd&&<div style={{background:"#111827",border:"1px solid #3b82f6",borderRadius:14,padding:18,marginBottom:18}}>
-        <div style={{fontSize:14,fontWeight:800,color:"#f1f5f9",marginBottom:14}}>Create New Site</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-          <div>
-            <label style={LBL}>Site Name</label>
-            <input value={nn} onChange={e=>setNn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSite()} placeholder="e.g. JAUK - New Road" style={INP} autoFocus/>
-          </div>
-          <div>
-            <label style={LBL}>Client</label>
-            <select value={ncl} onChange={e=>setNcl(e.target.value)} style={{...INP,cursor:"pointer"}}>
-              <option value="">No client</option>
-              {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-          <div>
-            <label style={LBL}>Category</label>
-            <div style={{display:"flex",gap:8}}>
-              {[["pricework","Price-work","#34d399"],["daywork","Daywork","#f59e0b"]].map(([v,l,c])=>
-                <button key={v} onClick={()=>setNcat(v)} style={{flex:1,padding:"9px",background:ncat===v?c+"22":"#0f1421",border:`1px solid ${ncat===v?c:"#2d3555"}`,borderRadius:8,color:ncat===v?c:"#64748b",cursor:"pointer",fontSize:12,fontWeight:700}}>{l}</button>
-              )}
-            </div>
-          </div>
-          <div>
-            <label style={LBL}>Site Manager (controls Site Manager app)</label>
-            <select value={nmgr} onChange={e=>setNmgr(e.target.value)} style={{...INP,cursor:"pointer"}}>
-              <option value="">No manager assigned</option>
-              {activeWorkers.map(w=><option key={w.id} value={w.id}>{w.name}{w.position?" — "+w.position:""}</option>)}
-            </select>
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-          <label style={LBL}>Colour</label>
-          <ColorPicker value={nc} onChange={setNc}/>
-        </div>
-        {ncat==="daywork"&&<div style={{background:"#1a1500",border:"1px solid #92400e",borderRadius:8,padding:"9px 13px",marginBottom:14,fontSize:11,color:"#fbbf24",display:"flex",gap:8,alignItems:"center"}}>
-          <span style={{fontSize:14}}>ℹ️</span>
-          <span>Daywork sites use the client's day-rate price list as their scope of work. Set the day rates in Manage Clients, then assign this site to that client.</span>
-        </div>}
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-          <button onClick={()=>{setShowAdd(false);setNn("");}} style={{padding:"9px 18px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:8,color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}}>Cancel</button>
-          <button onClick={addSite} style={{padding:"9px 22px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:14,fontWeight:800}}>Create Site</button>
-        </div>
-      </div>}
-
       {/* Filter tabs + advanced edit link */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <div style={{display:"flex",gap:7}}>
@@ -5238,6 +5316,21 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
   const profit=contract-labourCost;
   const margin=contract>0?((contract-labourCost)/contract*100):0;
   const [tab,setTab]=useState("scopes");
+  // Assets delivered to this site (from the Asset Register)
+  const [siteAssets,setSiteAssets]=useState(null); // null = loading
+  useEffect(()=>{
+    let live=true;
+    (async()=>{
+      try{
+        const rows=await sbGet("assets","select=id,data");
+        if(!live) return;
+        const mine=rows.map(r=>({...r.data,id:r.id}))
+          .filter(a=>a.site && (a.site===site.name || a.site.toUpperCase().includes(site.name.toUpperCase())));
+        setSiteAssets(mine);
+      }catch(_){ if(live) setSiteAssets([]); }
+    })();
+    return ()=>{live=false;};
+  },[site.id,site.name]);
   // Variation file attachments state — stored locally per session
   const [varFiles,setVarFiles]=useState({});
   const [siteFiles,setSiteFiles]=useState([]);
@@ -5373,7 +5466,7 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Tab bar */}
       <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:18,width:"fit-content",flexWrap:"wrap"}}>
-        {[["scopes","📋 Scopes ("+(sc.length)+")"],["variations","⚡ Variations ("+(vr.length)+")"],["workers","👷 Workers ("+(siteWorkers.length)+")"],["timesheets","⏱ Timesheets"],["costs","💷 Full Costs"],["invoices","🧾 Invoices ("+(siteInvs.length)+")"],["docs","📁 Documents"]].map(([v,l])=>(
+        {[["scopes","📋 Scopes ("+(sc.length)+")"],["variations","⚡ Variations ("+(vr.length)+")"],["workers","👷 Workers ("+(siteWorkers.length)+")"],["assets","🔧 Assets"],["timesheets","⏱ Timesheets"],["costs","💷 Full Costs"],["invoices","🧾 Invoices ("+(siteInvs.length)+")"],["docs","📁 Documents"]].map(([v,l])=>(
           <button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",background:tab===v?"#1e3a5f":"transparent",border:tab===v?"1px solid #3b82f6":"1px solid transparent",borderRadius:6,color:tab===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:tab===v?700:400}}>{l}</button>
         ))}
       </div>
@@ -5550,6 +5643,45 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Workers */}
       {tab==="workers"&&<SiteWorkersPanel site={site} allWorkers={workers} allSites={allSites} clients={clients} weekLabel={weekLabel} scopes={sc} setDetailId={setDetailId} setPage={setPage}/>}
+
+      {/* Assets delivered to this site (from the Asset Register app) */}
+      {tab==="assets"&&<div>
+        <div style={{background:"#0d1117",borderRadius:8,padding:"9px 13px",marginBottom:12,fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:7}}>
+          <span style={{fontSize:14}}>🔧</span>
+          <span>Tools & equipment currently allocated to {site.name}, from the Asset Register. To move an asset, use the Asset Register app.</span>
+        </div>
+        {siteAssets===null
+          ?<div style={{textAlign:"center",padding:40,color:"#374151"}}>Loading assets…</div>
+          :siteAssets.length===0
+            ?<div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
+                <div style={{fontSize:32,marginBottom:10}}>🔧</div>
+                <div style={{fontWeight:600,marginBottom:4,color:"#94a3b8"}}>No assets on this site</div>
+                <div style={{fontSize:12}}>Assets delivered to {site.name} in the Asset Register will appear here.</div>
+              </div>
+            :<div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"40px 1.5fr 1fr 0.8fr 0.9fr",padding:"8px 12px",background:"#0d1117",borderBottom:"1px solid #1e2535",gap:8,fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>
+                  <div></div><div>Asset</div><div>Tag / Serial</div><div>Status</div><div>Received by</div>
+                </div>
+                {siteAssets.map((a,i)=>{
+                  const oos=a.usable===false;
+                  return <div key={a.id||i} style={{display:"grid",gridTemplateColumns:"40px 1.5fr 1fr 0.8fr 0.9fr",padding:"10px 12px",borderBottom:i<siteAssets.length-1?"1px solid #1e2535":"none",background:i%2===0?"#111827":"#0f1421",gap:8,alignItems:"center"}}>
+                    <div style={{width:32,height:32,borderRadius:7,background:a.photo?`url('${a.photo}') center/cover`:"#1a1f2e",border:"1px solid #2d3555",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{a.photo?"":"🔧"}</div>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name||"Unnamed"}</div>
+                      <div style={{fontSize:10,color:"#64748b"}}>{a.category||"Uncategorised"}{a.delivered?" · delivered "+new Date(a.delivered).toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):""}</div>
+                    </div>
+                    <div style={{fontSize:11,color:"#94a3b8",fontFamily:"monospace"}}>{a.tag||"—"}</div>
+                    <div><span style={{fontSize:9,padding:"2px 8px",borderRadius:20,fontWeight:700,background:oos?"#7f1d1d44":"#14532d44",color:oos?"#f87171":"#34d399",border:`1px solid ${oos?"#f8717144":"#34d39944"}`}}>{oos?"NOT USABLE":"USABLE"}</span></div>
+                    <div style={{fontSize:11,color:a.receivedBy?"#e2e8f0":"#374151",display:"flex",alignItems:"center",gap:5}}>{a.receivedBy||"—"}{a.receivedSignature?<span title="Signed" style={{color:"#34d399"}}>✍</span>:null}</div>
+                  </div>;
+                })}
+                <div style={{padding:"8px 12px",background:"#0d1117",fontSize:10,color:"#64748b",display:"flex",gap:14}}>
+                  <span>{siteAssets.length} asset{siteAssets.length!==1?"s":""} on site</span>
+                  <span style={{color:"#34d399"}}>{siteAssets.filter(a=>a.usable!==false).length} usable</span>
+                  {siteAssets.filter(a=>a.usable===false).length>0&&<span style={{color:"#f87171"}}>{siteAssets.filter(a=>a.usable===false).length} out of service</span>}
+                </div>
+              </div>}
+      </div>}
 
       {tab==="timesheets"&&(()=>{
         // All workers who have GPS entries for this site
@@ -5755,10 +5887,155 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 }
 
 // ── Dashboard Clients Page ────────────────────────────────────────────────────
+// ── Reusable day-rate editor (shared by new + detail client pages) ────────────
+function ClientRatesEditor({rates,onChange}){
+  const list=rates||[];
+  const add=()=>onChange([...list,{id:Date.now().toString(36),teamType:"welding",dayRate:0,notes:""}]);
+  const up=(id,k,v)=>onChange(list.map(x=>x.id===id?{...x,[k]:v}:x));
+  const rm=id=>onChange(list.filter(x=>x.id!==id));
+  return <div style={{background:"#1a2035",borderRadius:8,padding:12,border:"1px solid #2d3555"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}>
+      <div style={{fontSize:11,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Agreed Day Rates</div>
+      <button onClick={add} style={{padding:"3px 10px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:700}}>+ Add Rate</button>
+    </div>
+    {list.length===0&&<div style={{color:"#374151",fontSize:11,textAlign:"center",padding:"6px 0"}}>No rates set. Click "+ Add Rate" to start.</div>}
+    {list.map(r=>(
+      <div key={r.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr auto",gap:7,marginBottom:7,alignItems:"flex-end"}}>
+        <div><label style={LBL}>Team / Role Type</label>
+          <select value={r.teamType} onChange={e=>up(r.id,"teamType",e.target.value)} style={{...INP,cursor:"pointer",fontSize:11,padding:"4px 7px"}}>
+            {TEAM_TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
+          </select>
+        </div>
+        <div><label style={LBL}>Day Rate £</label>
+          <input type="number" value={r.dayRate||0} onChange={e=>up(r.id,"dayRate",Number(e.target.value))} style={{...INP,fontSize:11,padding:"4px 7px",textAlign:"right"}}/>
+        </div>
+        <div><label style={LBL}>Notes</label>
+          <input value={r.notes||""} onChange={e=>up(r.id,"notes",e.target.value)} placeholder="Notes…" style={{...INP,fontSize:11,padding:"4px 7px"}}/>
+        </div>
+        <button onClick={()=>rm(r.id)} style={{padding:"5px 9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700,alignSelf:"flex-end"}}>✕</button>
+      </div>
+    ))}
+  </div>;
+}
+
+// ── Dedicated full-page form to create one new client ─────────────────────────
+function DClientNew({clients,setPage,setDetailId,saveClients}){
+  const [f,setF]=useState({name:"",email:"",phone:"",crn:"",address:"",notes:"",color:PRESET_COLORS[2],rates:[]});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const save=()=>{
+    const n=f.name.trim();
+    if(!n){ alert("Enter a client name."); return; }
+    if(clients.find(c=>c.name.toLowerCase()===n.toLowerCase())){ alert("A client with that name already exists."); return; }
+    const nc={id:"c"+Date.now(),name:n,email:f.email,phone:f.phone,crn:f.crn,address:f.address,notes:f.notes,color:f.color,rates:f.rates,dayRates:{}};
+    saveClients([...clients,nc]);
+    setDetailId(nc.id);
+    setPage("client_detail");
+  };
+  const Section=({title,children})=><div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:18,marginBottom:16}}>
+    <div style={{fontSize:12,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:14}}>{title}</div>{children}
+  </div>;
+  return <div>
+    <DPageHdr title="👔 New Client" sub="Fill in the details for this client" back="Clients" onBack={()=>setPage("clients")}/>
+    <div style={{...DS.body,maxWidth:760}}>
+      <Section title="Details">
+        <div style={{marginBottom:14}}>
+          <label style={LBL}>Client Name *</label>
+          <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="e.g. JA Façades UK Ltd" style={INP} autoFocus/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+          <div><label style={LBL}>Email</label><input type="email" value={f.email} onChange={e=>set("email",e.target.value)} style={INP}/></div>
+          <div><label style={LBL}>Phone</label><input value={f.phone} onChange={e=>set("phone",e.target.value)} style={INP}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:14,marginBottom:14}}>
+          <div><label style={LBL}>Company Reg No (CRN)</label><input value={f.crn} onChange={e=>set("crn",e.target.value)} style={INP}/></div>
+          <div><label style={LBL}>Billing Address</label><input value={f.address} onChange={e=>set("address",e.target.value)} style={INP}/></div>
+        </div>
+        <div style={{marginBottom:14}}><label style={LBL}>Notes</label><input value={f.notes} onChange={e=>set("notes",e.target.value)} style={INP}/></div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <label style={LBL}>Colour</label><ColorPicker value={f.color} onChange={v=>set("color",v)}/>
+        </div>
+      </Section>
+      <Section title="Day Rates (used by Daywork sites)">
+        <ClientRatesEditor rates={f.rates} onChange={v=>set("rates",v)}/>
+      </Section>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8,marginBottom:30}}>
+        <button onClick={()=>setPage("clients")} style={{padding:"11px 22px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:9,color:"#94a3b8",cursor:"pointer",fontSize:14,fontWeight:600}}>Cancel</button>
+        <button onClick={save} style={{padding:"11px 28px",background:"linear-gradient(135deg,#7c3aed,#8b5cf6)",border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontSize:15,fontWeight:800,boxShadow:"0 2px 8px rgba(139,92,246,0.3)"}}>✓ Create Client</button>
+      </div>
+    </div>
+  </div>;
+}
+
+// ── Editable single-client detail page (replaces the old placeholder) ─────────
+function DClientDetail({clients,allSites,invoices,workers,activeDays,siteHours,clientId,setPage,setDetailId,saveClients}){
+  const existing=clients.find(c=>c.id===clientId);
+  const [f,setF]=useState(existing?{...existing,rates:existing.rates||[]}:null);
+  const [saved,setSaved]=useState(false);
+  useEffect(()=>{ if(existing) setF({...existing,rates:existing.rates||[]}); },[clientId]);
+  if(!f) return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Client not found. <span onClick={()=>setPage("clients")} style={{color:"#60a5fa",cursor:"pointer"}}>Back to Clients</span></div></div>;
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const clientSites=allSites.filter(s=>s.clientId===f.id);
+  const clientInvs=(invoices||[]).filter(i=>clientSites.find(s=>s.id===i.siteId));
+  const totalInv=clientInvs.reduce((a,i)=>a+(i.amount||0),0);
+  const save=()=>{
+    saveClients(clients.map(c=>c.id===f.id?f:c));
+    setSaved(true); setTimeout(()=>setSaved(false),2500);
+  };
+  const del=()=>{ if(window.confirm("Delete "+f.name+"? This cannot be undone.")){ saveClients(clients.filter(c=>c.id!==f.id)); setPage("clients"); } };
+  const Section=({title,children,extra})=><div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:18,marginBottom:16}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+      <div style={{fontSize:12,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>{title}</div>{extra}
+    </div>{children}
+  </div>;
+  return <div>
+    <DPageHdr title={`👔 ${f.name}`} sub={`${clientSites.length} sites · £${totalInv.toLocaleString()} invoiced`} back="Clients" onBack={()=>setPage("clients")}
+      actions={<div style={{display:"flex",gap:8}}>
+        <button onClick={()=>openClientWindow(f,allSites,invoices,workers,activeDays,siteHours)} style={{padding:"7px 12px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:600}}>🔗 New window</button>
+        <button onClick={save} style={{padding:"7px 16px",background:saved?"#0d2218":"linear-gradient(135deg,#7c3aed,#8b5cf6)",border:saved?"1px solid #10b981":"none",borderRadius:7,color:saved?"#34d399":"#fff",cursor:"pointer",fontSize:13,fontWeight:800}}>{saved?"✓ Saved":"💾 Save"}</button>
+      </div>}/>
+    <div style={{...DS.body,maxWidth:820}}>
+      <Section title="Details">
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:14,marginBottom:14}}>
+          <div><label style={LBL}>Client Name</label><input value={f.name} onChange={e=>set("name",e.target.value)} style={INP}/></div>
+          <div><label style={LBL}>Colour</label><div style={{paddingTop:4}}><ColorPicker value={f.color} onChange={v=>set("color",v)}/></div></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:14}}>
+          <div><label style={LBL}>Email</label><input type="email" value={f.email||""} onChange={e=>set("email",e.target.value)} style={INP}/></div>
+          <div><label style={LBL}>Phone</label><input value={f.phone||""} onChange={e=>set("phone",e.target.value)} style={INP}/></div>
+          <div><label style={LBL}>CRN</label><input value={f.crn||""} onChange={e=>set("crn",e.target.value)} style={INP}/></div>
+        </div>
+        <div style={{marginBottom:14}}><label style={LBL}>Billing Address</label><input value={f.address||""} onChange={e=>set("address",e.target.value)} style={INP}/></div>
+        <div><label style={LBL}>Notes</label><input value={f.notes||""} onChange={e=>set("notes",e.target.value)} style={INP}/></div>
+      </Section>
+      <Section title="Day Rates (used by Daywork sites)">
+        <ClientRatesEditor rates={f.rates} onChange={v=>set("rates",v)}/>
+      </Section>
+      <Section title={`Sites (${clientSites.length})`}>
+        {clientSites.length===0?<div style={{color:"#374151",fontSize:12}}>No sites assigned to this client yet.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {clientSites.map(s=><div key={s.id} onClick={()=>{setDetailId(s.id);setPage("site_detail");}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#0f1421",borderRadius:8,border:"1px solid #1e2535",cursor:"pointer"}}>
+              <span style={{width:9,height:9,borderRadius:"50%",background:s.color,flexShrink:0}}/>
+              <span style={{fontSize:13,fontWeight:600,color:"#f1f5f9",flex:1}}>{s.name}</span>
+              <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,background:s.status==="completed"?"#94a3b822":"#34d39922",color:s.status==="completed"?"#94a3b8":"#34d399",fontWeight:700}}>{s.status==="completed"?"Completed":"Ongoing"}</span>
+              <span style={{color:`${s.color}66`,fontSize:14}}>→</span>
+            </div>)}
+          </div>}
+      </Section>
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:4,marginBottom:30}}>
+        <button onClick={del} style={{padding:"10px 18px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:9,color:"#f87171",cursor:"pointer",fontSize:13,fontWeight:700}}>🗑 Delete Client</button>
+        <button onClick={save} style={{padding:"11px 28px",background:saved?"#0d2218":"linear-gradient(135deg,#7c3aed,#8b5cf6)",border:saved?"1px solid #10b981":"none",borderRadius:9,color:saved?"#34d399":"#fff",cursor:"pointer",fontSize:15,fontWeight:800}}>{saved?"✓ Saved":"💾 Save Changes"}</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function DClients({clients,allSites,invoices,workers,activeDays,siteHours,setPage,setDetailId,setModal}){
   return <div>
     <DPageHdr title="👔 Clients" sub={`${clients.length} accounts`}
-      actions={<button onClick={()=>setModal({type:"clients"})} style={{padding:"7px 14px",background:"#1e2535",border:"1px solid #8b5cf6",borderRadius:7,color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700}}>👔 Manage Clients</button>}/>
+      actions={<div style={{display:"flex",gap:8}}>
+        <button onClick={()=>setModal({type:"clients"})} style={{padding:"7px 13px",background:"#1e2535",border:"1px solid #8b5cf6",borderRadius:7,color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:700}}>⚙ Bulk Edit</button>
+        <button onClick={()=>setPage("client_new")} style={{padding:"7px 16px",background:"linear-gradient(135deg,#7c3aed,#8b5cf6)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:800,display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:15}}>+</span> New Client</button>
+      </div>}/>
     <div style={DS.body}>
       {clients.map(c=>{
         const sites=allSites.filter(s=>s.clientId===c.id);
@@ -7527,6 +7804,7 @@ function DashboardView({workers,allSites,clients,weekLabel,setWeekLabel,activeDa
     workers,allSites,clients,invoices,activeDays,siteHours,weekLabel,setModal,scopeData,
     filter,setFilter,allSiteNames,updateCell,delWorker,showWeekend,setShowWeekend,
     setAllSites,saveSites:(next)=>setAllSites(next),saveWorker,setWeekLabel,
+    setClients,saveClients:(next)=>setClients(next),
     weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,
     bankTransactions,setBankTransactions,
     timesheetRecords,setTimesheetRecords,
@@ -7551,9 +7829,11 @@ function DashboardView({workers,allSites,clients,weekLabel,setWeekLabel,activeDa
       case "weekly_record_detail": return <DWeeklyRecordDetail weeklyRecords={weeklyRecords} recordId={dashDetailId} setPage={setDashPage} allSites={allSites}/>;
       // ── Projects & Finance
       case "sites":         return <DSites {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
+      case "site_new":      return <DSiteNew {...SP} setPage={setDashPage} setDetailId={setDashDetailId}/>;
       case "site_detail":   return <DSiteDetail {...SP} siteId={dashDetailId} setPage={setDashPage} setDetailId={setDashDetailId} invoices={invoices} payApplications={payApplications} weekLabel={weekLabel}/>;
       case "clients":       return <DClients {...SP} setPage={nav} setDetailId={setDashDetailId}/>;
-      case "client_detail": return <DComingSoon icon="👔" title="Client Detail" sub="Select a client from the Clients list"/>;
+      case "client_new":    return <DClientNew {...SP} setPage={setDashPage} setDetailId={setDashDetailId}/>;
+      case "client_detail": return <DClientDetail {...SP} clientId={dashDetailId} setPage={setDashPage} setDetailId={setDashDetailId}/>;
       case "invoices":      return <DInvoices {...SP}/>;
       case "payapps":       return <DPayApps {...SP} setPage={setDashPage} setDetailId={setDashDetailId}/>;
       case "payapp_detail": return <DPayAppDetail payApplications={payApplications} setPayApplications={setPayApplications} payappId={dashDetailId} allSites={allSites} clients={clients} setPage={setDashPage}/>;
@@ -9706,6 +9986,12 @@ function AssetRegisterView(){
   .ph-actions button{width:38px;height:38px;border-radius:10px;background:rgba(31,41,51,.82);color:#fff;display:grid;place-items:center;backdrop-filter:blur(4px)}
   .ph-actions button svg{width:18px;height:18px}
 
+  .sigwrap{border:1.5px dashed var(--line);border-radius:12px;padding:8px;background:var(--card)}
+  .sigpad{width:100%;height:150px;background:#fff;border-radius:8px;touch-action:none;cursor:crosshair;display:block;border:1px solid var(--line)}
+  .sig-actions{display:flex;align-items:center;justify-content:space-between;margin-top:7px;padding:0 2px}
+  .sig-btn{padding:5px 12px;border-radius:8px;background:var(--paper);border:1px solid var(--line);color:var(--ink-soft);font-family:"Barlow Condensed";font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+  .sig-hint{font-size:11px;color:var(--ink-faint)}
+
   .field{margin-bottom:15px}
   .field label{display:block;font-family:"Barlow Condensed";font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px}
   .field .req{color:var(--over)}
@@ -9904,9 +10190,10 @@ const Store = {
 };
 
 /* ---------- state ---------- */
-const state = { assets:[], view:"overview", filterSite:"__all", search:"" };
+const state = { assets:[], activeSites:[], workers:[], view:"overview", filterSite:"__all", search:"" };
 let editingId=null, editFromDetail=false;
 let draftPhoto=null;
+let draftSignature=null;
 let photoSink=null;           // callback for the shared file input
 const CATS=["Power tools","Plant & machinery","Access equipment","Site lighting","Leads & cables","Welfare unit","Survey equipment","Hand tools","Other"];
 
@@ -9976,6 +10263,21 @@ async function loadAll(){
   }
   out.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
   state.assets=out;
+  // Pull the real active sites + workers from the labour schedule backend
+  try{
+    const cfg=await sbGet("app_config","select=key,value&key=eq.all_sites");
+    const allS=(cfg[0]&&cfg[0].value)||[];
+    state.activeSites=allS
+      .filter(s=>s&&s.status!=="completed"&&!/^(off|holiday|sick|leave|absent)$/i.test((s.name||"").trim()))
+      .map(s=>s.name).filter(Boolean)
+      .sort((a,b)=>a.localeCompare(b));
+  }catch(_){ state.activeSites=[]; }
+  try{
+    const wr=await sbGet("workers","select=id,data");
+    state.workers=wr.map(r=>({id:r.id,name:(r.data&&r.data.name)||"",active:!(r.data&&r.data.active===false)}))
+      .filter(w=>w.name&&w.active)
+      .sort((a,b)=>a.name.localeCompare(b.name));
+  }catch(_){ state.workers=[]; }
 }
 function migrate(a){
   if(a.usable===undefined) a.usable=true;
@@ -9993,7 +10295,13 @@ function findAsset(id){ return state.assets.find(x=>x.id===id); }
 function logActivity(a,entry){ entry.id=uid(); entry.ts=entry.ts||Date.now(); a.activity=a.activity||[]; a.activity.unshift(entry); }
 
 /* ---------- sites + filter ---------- */
-function sites(){ return [...new Set(state.assets.map(a=>a.site).filter(Boolean))].sort((a,b)=>a.localeCompare(b)); }
+function sites(){
+  // Active sites from the labour schedule, plus any site already on an asset.
+  const fromAssets=state.assets.map(a=>a.site).filter(Boolean);
+  const merged=[...new Set([...(state.activeSites||[]),...fromAssets])];
+  return merged.sort((a,b)=>a.localeCompare(b));
+}
+function operatives(){ return (state.workers||[]).map(w=>w.name); }
 function filteredAssets(){
   const q=state.search.trim().toLowerCase();
   return state.assets.filter(a=>{
@@ -10156,7 +10464,9 @@ function openDetail(id){
     <div class="det-row"><span class="k">Current site</span><span class="v">\${esc(a.site||"—")}</span></div>
     <div class="det-row"><span class="k">Asset tag</span><span class="v mono">\${esc(a.tag||"—")}</span></div>
     <div class="det-row"><span class="k">Delivered to site</span><span class="v mono">\${a.delivered?fmtD(a.delivered):"—"}</span></div>
+    <div class="det-row"><span class="k">Received by</span><span class="v">\${a.receivedBy?esc(a.receivedBy):"—"}\${a.receivedBy&&a.receivedAt?\` · \${fmtD(isoLocal(new Date(a.receivedAt)))}\`:""}</span></div>
     <div class="det-row"><span class="k">Next PAT due</span><span class="v mono">\${s.due?fmtD(s.due):"—"}</span></div>
+    \${a.receivedSignature?\`<div class="det-row" style="flex-direction:column;align-items:flex-start"><span class="k" style="margin-bottom:6px">Worker signature</span><img src="\${a.receivedSignature}" alt="signature" style="max-width:240px;width:100%;background:#fff;border:1px solid var(--line);border-radius:8px"/></div>\`:""}
     \${a.notes?\`<div class="det-row" style="flex-direction:column;align-items:flex-start"><span class="k" style="margin-bottom:6px">Notes</span><span class="v" style="text-align:left;font-size:14px;color:var(--ink-soft);line-height:1.5">\${esc(a.notes)}</span></div>\`:""}
 
     <div class="sec"><span>PAT tests</span><button class="addlink" id="patAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add test</button></div>
@@ -10202,6 +10512,7 @@ function activityHTML(a){
     else if(e.type==="move"){ dotCls="move"; title="Moved"; sub=\`<span class="move-arrow">\${esc(e.from||"—")} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg> \${esc(e.to||"—")}</span>\${e.text?\`<br>\${esc(e.text)}\`:""}\`; }
     else if(e.type==="condition"){ dotCls=e.usable===false?"oos":"cond"; title="Condition update"; const bits=[]; if(e.usable===true)bits.push("Marked usable"); if(e.usable===false)bits.push("Marked not usable"); if(e.text)bits.push(esc(e.text)); sub=bits.join(" · "); }
     else if(e.type==="pat"){ dotCls=e.result==="fail"?"oos":"pat"; title=\`PAT test — \${e.result==="fail"?"failed":"passed"}\`; sub=e.expiry?\`Expires \${fmtD(e.expiry)}\`:""; }
+    else if(e.type==="received"){ dotCls="cond"; title="Received by operative"; sub=e.by?esc(e.by):(e.text?esc(e.text):""); }
     const date = e.effDate?fmtD(e.effDate):tsDate(e.ts);
     const photo = e.photo?\`<div class="ti-photo" style="background-image:url('\${e.photo}')"></div>\`:"";
     return \`<div class="tl-item"><div class="dot \${dotCls}"></div>
@@ -10218,8 +10529,13 @@ function openSheet(id){
   editingId=id;
   const a=id?findAsset(id):null;
   draftPhoto=a?(a.photo||null):null;
+  draftSignature=a?(a.receivedSignature||null):null;
   formUsable=a?(a.usable!==false):true;
   $("#sheetTitle").textContent=a?"Edit asset":"Add asset";
+  const curSite=a?(a.site||""):"";
+  const siteSelOpts="<option value=\"\">— Select a site —</option>"+sites().map(s=>\`<option value="\${esc(s)}" \${s===curSite?"selected":""}>\${esc(s)}</option>\`).join("");
+  const curRecv=a?(a.receivedBy||""):"";
+  const opSelOpts="<option value=\"\">— Not assigned —</option>"+operatives().map(o=>\`<option value="\${esc(o)}" \${o===curRecv?"selected":""}>\${esc(o)}</option>\`).join("");
   const siteOpts=sites().map(s=>\`<option value="\${esc(s)}">\`).join("");
   const catOpts=CATS.map(c=>\`<option value="\${esc(c)}">\`).join("");
   const todayISO=isoLocal(today0());
@@ -10234,10 +10550,23 @@ function openSheet(id){
       <div class="field"><label for="f_cat">Category</label><input class="inp" id="f_cat" list="catList" placeholder="Choose / type" value="\${a?esc(a.category||""):""}"><datalist id="catList">\${catOpts}</datalist></div>
       <div class="field"><label for="f_tag">Asset tag / serial</label><input class="inp mono" id="f_tag" placeholder="e.g. TRF-0142" value="\${a?esc(a.tag||""):""}"></div>
     </div>
-    <div class="field"><label for="f_site">\${a?"Current site":"Site"} <span class="req">*</span></label><input class="inp" id="f_site" list="siteList" placeholder="e.g. Riverside Plot 4" value="\${a?esc(a.site||""):""}"><datalist id="siteList">\${siteOpts}</datalist>
+    <div class="field"><label for="f_site">\${a?"Current site":"Site"} <span class="req">*</span></label>
+      <select class="inp" id="f_site">\${siteSelOpts}</select>
       \${a?\`<div class="nextline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg><span>To record a relocation with history, use <b>Move</b> instead of editing this field.</span></div>\`:""}
     </div>
     <div class="field"><label for="f_delivered">Delivered to site</label><input class="inp mono" id="f_delivered" type="date" max="\${todayISO}" value="\${a?esc(a.delivered||""):""}"></div>
+    <div class="field"><label for="f_received">Operative who received the asset</label>
+      <select class="inp" id="f_received">\${opSelOpts}</select>
+    </div>
+    <div class="field"><label>Worker signature</label>
+      <div class="sigwrap" id="sigwrap">
+        <canvas id="sigpad" class="sigpad" width="600" height="180"></canvas>
+        <div class="sig-actions">
+          <button type="button" id="sigClear" class="sig-btn">Clear</button>
+          <span class="sig-hint" id="sigHint">\${draftSignature?"Signed ✓":"Sign above with finger or mouse"}</span>
+        </div>
+      </div>
+    </div>
     <div class="field"><label>Serviceability</label>
       <div class="seg use" id="useSel"><button type="button" class="yes" data-u="1">Usable</button><button type="button" class="no" data-u="0">Not usable</button></div>
     </div>
@@ -10263,8 +10592,24 @@ function openSheet(id){
 
   $("#cancelBtn").onclick=()=>{ if(editFromDetail){ editFromDetail=false; openDetail(id); } else closeSheet(); };
   $("#saveBtn").onclick=saveFromForm;
+  initSigPad();
   showSheet();
   setTimeout(()=>{ const n=$("#f_name"); if(n&&!id) n.focus(); },320);
+}
+function initSigPad(){
+  const cv=$("#sigpad"); if(!cv) return;
+  const ctx=cv.getContext("2d");
+  ctx.lineWidth=2.5; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#0f172a";
+  // Repaint an existing signature
+  if(draftSignature){ const img=new Image(); img.onload=()=>ctx.drawImage(img,0,0,cv.width,cv.height); img.src=draftSignature; }
+  let drawing=false,last=null,dirty=!!draftSignature;
+  const pos=(e)=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)*(cv.width/r.width), y:(t.clientY-r.top)*(cv.height/r.height)}; };
+  const start=(e)=>{ e.preventDefault(); drawing=true; last=pos(e); };
+  const move=(e)=>{ if(!drawing) return; e.preventDefault(); const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; dirty=true; const h=$("#sigHint"); if(h) h.textContent="Signed ✓"; };
+  const end=()=>{ if(!drawing) return; drawing=false; if(dirty) draftSignature=cv.toDataURL("image/png"); };
+  cv.addEventListener("mousedown",start); cv.addEventListener("mousemove",move); window.addEventListener("mouseup",end);
+  cv.addEventListener("touchstart",start,{passive:false}); cv.addEventListener("touchmove",move,{passive:false}); cv.addEventListener("touchend",end);
+  const cl=$("#sigClear"); if(cl) cl.onclick=()=>{ ctx.clearRect(0,0,cv.width,cv.height); draftSignature=null; dirty=false; const h=$("#sigHint"); if(h) h.textContent="Sign above with finger or mouse"; };
 }
 function refreshPhotoZone(){
   const z=$("#photozone"); if(!z) return;
@@ -10286,8 +10631,12 @@ async function saveFromForm(){
   a.name=name; a.category=$("#f_cat").value.trim(); a.tag=$("#f_tag").value.trim();
   a.site=site; a.delivered=$("#f_delivered").value||""; a.notes=$("#f_notes").value.trim();
   a.photo=draftPhoto||null; a.usable=formUsable;
-  if(isNew){ logActivity(a,{type:"create",to:site,effDate:a.delivered||isoLocal(today0())}); }
-  else if(prevUsable!==formUsable){ logActivity(a,{type:"condition",usable:formUsable,text:"Updated from edit screen"}); }
+  const recvEl=$("#f_received"); const prevRecv=a.receivedBy||"";
+  a.receivedBy=recvEl?recvEl.value.trim():"";
+  a.receivedSignature=draftSignature||null;
+  if(a.receivedBy&&a.receivedBy!==prevRecv){ a.receivedAt=Date.now(); }
+  if(isNew){ logActivity(a,{type:"create",to:site,effDate:a.delivered||isoLocal(today0())}); if(a.receivedBy) logActivity(a,{type:"received",by:a.receivedBy,text:"Received by "+a.receivedBy}); }
+  else{ if(prevUsable!==formUsable){ logActivity(a,{type:"condition",usable:formUsable,text:"Updated from edit screen"}); } if(a.receivedBy&&a.receivedBy!==prevRecv){ logActivity(a,{type:"received",by:a.receivedBy,text:"Received by "+a.receivedBy}); } }
   await saveAsset(a);
   await loadAll();
   const back=editFromDetail; editFromDetail=false;
@@ -10298,7 +10647,7 @@ async function saveFromForm(){
 
 /* ---------- primary sheet open/close ---------- */
 function showSheet(){ $("#scrim").classList.add("show"); $("#sheet").classList.add("show"); $("#sheet").setAttribute("aria-hidden","false"); document.body.style.overflow="hidden"; }
-function closeSheet(){ $("#scrim").classList.remove("show"); $("#sheet").classList.remove("show"); $("#sheet").setAttribute("aria-hidden","true"); document.body.style.overflow=""; editingId=null; editFromDetail=false; draftPhoto=null; }
+function closeSheet(){ $("#scrim").classList.remove("show"); $("#sheet").classList.remove("show"); $("#sheet").setAttribute("aria-hidden","true"); document.body.style.overflow=""; editingId=null; editFromDetail=false; draftPhoto=null; draftSignature=null; }
 $("#scrim").onclick=closeSheet; $("#sheetClose").onclick=()=>{ if(editFromDetail){ const id=editingId; editFromDetail=false; openDetail(id);} else closeSheet(); };
 
 /* ============================================================
