@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from "react";
 import * as XLSX from "xlsx";
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
@@ -352,6 +352,42 @@ function formatWeekLabel(d){return d.toLocaleDateString("en-GB",{day:"2-digit",m
 function addWeeks(label,n){
   try{const d=new Date(label);if(isNaN(d)){const nd=new Date();nd.setDate(nd.getDate()+n*7);return formatWeekLabel(nd);}
   d.setDate(d.getDate()+n*7);return formatWeekLabel(d);}catch(e){return label;}
+}
+
+// ─── London-time week helpers ─────────────────────────────────────────────────
+// The whole system runs on Europe/London time and the working week starts
+// Monday 00:00. These helpers make sure every app agrees on "what week is it"
+// regardless of the device's own timezone.
+
+// Get the current date/time as it is in London (returns a Date whose local
+// fields read as London wall-clock time).
+function londonNow(){
+  const s=new Date().toLocaleString("en-US",{timeZone:"Europe/London"});
+  return new Date(s);
+}
+// Monday (00:00) of the week containing the given date, in London terms.
+function mondayOfWeek(date){
+  const d=new Date(date);
+  const dow=(d.getDay()+6)%7; // 0=Mon … 6=Sun
+  d.setDate(d.getDate()-dow);
+  d.setHours(0,0,0,0);
+  return d;
+}
+// The week-commencing label for *this* week in London ("15 Jun 2026").
+function currentWeekLabel(){
+  return formatWeekLabel(mondayOfWeek(londonNow()));
+}
+// Today's date in London, short ("Tue 17 Jun").
+function londonTodayLabel(){
+  return londonNow().toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"});
+}
+// Live GMT/London clock string ("06:52 BST"). Includes the zone abbreviation.
+function londonClock(){
+  return new Date().toLocaleTimeString("en-GB",{timeZone:"Europe/London",hour:"2-digit",minute:"2-digit"});
+}
+// Which week-commencing label does an arbitrary ISO timestamp belong to?
+function weekLabelForDate(iso){
+  return formatWeekLabel(mondayOfWeek(new Date(iso)));
 }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
@@ -5612,50 +5648,91 @@ function DFinance({workers,clients,allSites,activeDays,siteHours,scopeData,invoi
 function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetRecords,setTimesheetRecords,generateTimesheets,generatePayslips,payslipRecords,setPayslipRecords,setPage}){
   const [selWeek,setSelWeek]=useState(weekLabel);
   const [editId,setEditId]=useState(null);
+  const [expandedId,setExpandedId]=useState(null);
 
-  // Auto-sync current week timesheets from schedule whenever weekLabel or workers change
+  // Format a timestamp for a work entry (date + time)
+  const fmtStamp=(iso)=>iso?new Date(iso).toLocaleString("en-GB",{weekday:"short",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+  const fmtClock=(iso)=>iso?new Date(iso).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—";
+
+  // Auto-build current-week timesheets from GPS sign-ins. Re-runs whenever a
+  // worker signs in/out (the total attendance-log count changes), so a new
+  // work entry shows up here automatically without pressing anything. Draft
+  // sheets are refreshed; submitted/approved ones are left untouched.
+  const logSignature=useMemo(()=>
+    workers.reduce((n,w)=>n+(w.attendanceLogs||[]).filter(l=>l.weekLabel===weekLabel).length,0),
+    [workers,weekLabel]
+  );
   useEffect(()=>{
     if(!workers||workers.length===0) return;
-    const already=timesheetRecords.some(t=>t.weekLabel===weekLabel&&t.source==="auto");
-    if(already) return; // don't overwrite if already generated
-    const sheets=buildSheets(weekLabel,workers,activeDays,siteHours);
-    if(sheets.length===0) return;
+    const fresh=buildSheets(weekLabel,workers);
+    if(fresh.length===0) return;
     setTimesheetRecords(prev=>{
-      const other=prev.filter(t=>t.weekLabel!==weekLabel);
-      return [...other,...sheets];
+      const otherWeeks=prev.filter(t=>t.weekLabel!==weekLabel);
+      const thisWeek=prev.filter(t=>t.weekLabel===weekLabel);
+      const locked=new Map(thisWeek.filter(t=>t.status==="submitted"||t.status==="approved"||t.status==="payslip_generated").map(t=>[t.workerId,t]));
+      // keep locked sheets as-is; replace everything else with the fresh build
+      const merged=fresh.map(s=>locked.get(s.workerId)||s);
+      // also keep any locked sheet that no longer appears in fresh (e.g. worker removed from schedule but already approved)
+      locked.forEach((t,wid)=>{ if(!merged.some(m=>m.workerId===wid)) merged.push(t); });
+      return [...otherWeeks,...merged];
     });
-  },[weekLabel,workers.length]);
+  },[weekLabel,logSignature,workers.length]);
 
-  function buildSheets(wkLabel,wkrs,days,shrs){
-    return wkrs.map(w=>{
-      const dayBreakdown={};
-      let stdH=0,otH=0,gross=0;
-      (days||BASE_DAYS).forEach(d=>{
-        const site=(w.days?.[d]||"").trim();
-        if(!site||isOff(site)) return;
-        const hrs=shrs?.[site]?.hours||w.hoursPerDay?.[d]||9;
-        const ot=w.overtimeHours?.[d]||0;
-        const rate=w.agreedRate||0;
-        const otM=w.customOTRate||(w.overtimeMultiplier||1.5);
-        const stdPay=hrs*rate, otPay=ot*rate*otM;
-        stdH+=hrs; otH+=ot; gross+=stdPay+otPay;
-        dayBreakdown[d]={site,hours:hrs,ot,stdPay,otPay,total:stdPay+otPay};
-      });
-      const tax=gross*(w.taxRate||0);
-      return {
-        id:"ts_"+w.id+"_"+wkLabel.replace(/\s+/g,""),
-        workerId:w.id, workerName:w.name, position:w.position,
-        company:w.company||"", weekLabel:wkLabel,
-        stdHours:stdH, otHours:otH,
-        rate:w.agreedRate||0, taxRate:w.taxRate||0,
-        gross, tax, net:gross-tax,
-        dayBreakdown, days:JSON.parse(JSON.stringify(w.days||{})),
-        status:"draft",     // draft → submitted → approved → payslip_generated
-        source:"auto", notes:"",
-        lockedAt:null, approvedAt:null, approvedBy:"",
-        createdAt:new Date().toISOString(),
-      };
-    }).filter(t=>t.stdHours>0||t.otHours>0);
+  function buildSheets(wkLabel,wkrs){
+    return wkrs.map(w=>buildOneSheet(w,wkLabel)).filter(Boolean);
+  }
+
+  // Build a single worker's timesheet PURELY from their GPS sign-ins for the
+  // given week. A timesheet exists ONLY if the worker has signed in at least
+  // once. The labour schedule is never consulted here — timesheets are a
+  // record of attendance, not of the plan.
+  function buildOneSheet(w,wkLabel){
+    const wkLogs=(w.attendanceLogs||[])
+      .filter(l=>l.weekLabel===wkLabel&&l.signIn)
+      .sort((a,b)=>new Date(a.signIn)-new Date(b.signIn));
+    if(wkLogs.length===0) return null;   // no sign-in → no timesheet
+
+    const completed=wkLogs.filter(l=>l.signOut);
+    const rate=w.agreedRate||0;
+    const otM=w.customOTRate||(w.overtimeMultiplier||1.5);
+
+    const dayBreakdown={};
+    let stdH=0,otH=0,gross=0;
+    const byDay={};
+    completed.forEach(l=>{
+      const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;
+      (byDay[l.day]=byDay[l.day]||[]).push({...l,hrs});
+    });
+    ALL_DAYS.forEach(d=>{
+      const entries=byDay[d]; if(!entries) return;
+      const site=(entries[0].siteName||"").trim();
+      const siteObj=allSites.find(s=>s.name===site||s.id===entries[0].siteId);
+      const otThr=siteObj?.otThreshold||siteObj?.stdHours||9;
+      const dayTotal=Math.round(entries.reduce((a,e)=>a+e.hrs,0)*100)/100;
+      const dayStd=Math.min(dayTotal,otThr);
+      const dayOt=Math.max(0,Math.round((dayTotal-otThr)*100)/100);
+      const stdPay=dayStd*rate, otPay=dayOt*rate*otM;
+      stdH+=dayStd; otH+=dayOt; gross+=stdPay+otPay;
+      dayBreakdown[d]={site,hours:dayStd,ot:dayOt,stdPay,otPay,total:stdPay+otPay,entryCount:entries.length};
+    });
+    stdH=Math.round(stdH*100)/100; otH=Math.round(otH*100)/100; gross=Math.round(gross*100)/100;
+    const tax=Math.round(gross*(w.taxRate||0)*100)/100;
+    const openEntries=wkLogs.filter(l=>!l.signOut).length;
+    const weekStart=mondayOfWeek(new Date(wkLogs[0].signIn));
+    return {
+      id:"ts_"+w.id+"_"+wkLabel.replace(/\s+/g,""),
+      workerId:w.id, workerName:w.name, position:w.position,
+      company:w.company||"", weekLabel:wkLabel,
+      weekStartISO:weekStart.toISOString(),
+      stdHours:stdH, otHours:otH,
+      rate, taxRate:w.taxRate||0, gross, tax, net:Math.round((gross-tax)*100)/100,
+      dayBreakdown,
+      workEntries:wkLogs,            // every sign-in/out for the week, timestamped
+      entryCount:wkLogs.length, openEntries,
+      status:"draft", source:"gps", notes:"",
+      lockedAt:null, approvedAt:null, approvedBy:"",
+      createdAt:new Date().toISOString(),
+    };
   }
 
   // Recalculate a single timesheet from its day data
@@ -5678,8 +5755,8 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
   }
 
   function regenWeek(){
-    if(!window.confirm("Re-sync WC "+weekLabel+" timesheets from current schedule data?\n\nThis will update DRAFT timesheets only. Approved timesheets are unchanged.")) return;
-    const sheets=buildSheets(weekLabel,workers,activeDays,siteHours);
+    if(!window.confirm("Rebuild WC "+weekLabel+" timesheets now?\n\nThis pulls in the latest GPS sign-ins for each worker (falling back to the schedule forecast for anyone who hasn't signed in). DRAFT timesheets are refreshed; approved ones are unchanged.")) return;
+    const sheets=buildSheets(weekLabel,workers);
     setTimesheetRecords(prev=>{
       const other=prev.filter(t=>t.weekLabel!==weekLabel);
       const approved=prev.filter(t=>t.weekLabel===weekLabel&&t.status==="approved");
@@ -5718,26 +5795,46 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
     }));
   }
 
-  function createPayslips(){
+  async function createPayslips(){
     const approved=shown.filter(t=>t.status==="approved");
     if(approved.length===0){alert("No approved timesheets for this week.");return;}
+    if(!window.confirm("Generate payslips for "+approved.length+" approved timesheet(s)?\n\nEach payslip is created, synced to the worker portal, saved as a PDF, and emailed to the worker.")) return;
     const existing=payslipRecords.filter(p=>p.weekLabel!==selWeek);
+    const issuedAt=new Date().toISOString();
     const newPays=approved.map(t=>({
       id:"ps_"+t.workerId+"_"+selWeek.replace(/\s+/g,""),
       workerId:t.workerId, workerName:t.workerName,
       position:t.position, company:t.company||"",
       weekLabel:t.weekLabel, stdHours:t.stdHours, otHours:t.otHours,
-      rate:t.rate, taxRate:t.taxRate, gross:t.gross, tax:t.tax, net:t.net,
-      dayBreakdown:t.dayBreakdown, days:t.days,
-      status:"pending",   // pending → issued
+      stdH:t.stdHours, otH:t.otHours,
+      rate:t.rate, taxRate:t.taxRate, gross:t.gross, tax:t.tax, taxAmt:t.tax, net:t.net,
+      dayBreakdown:t.dayBreakdown, bd:t.dayBreakdown,
+      status:"issued",
       timesheetId:t.id,
       approvedAt:t.approvedAt, approvedBy:t.approvedBy,
-      issuedAt:null, createdAt:new Date().toISOString(),
+      issuedAt, createdAt:issuedAt,
     }));
     setPayslipRecords([...existing,...newPays]);
-    // Mark timesheets as payslip generated
     setTimesheetRecords(prev=>prev.map(t=>approved.find(a=>a.id===t.id)?{...t,status:"payslip_generated"}:t));
-    alert("✓ "+newPays.length+" payslips created for WC "+selWeek);
+
+    // Full automation per payslip: portal sync + PDF + email
+    let synced=0, emailed=0;
+    for(const ps of newPays){
+      const w=workers.find(x=>x.id===ps.workerId);
+      try{ await pushPayslipToWorker(ps.workerId,ps); synced++; }catch(e){ console.warn("Sync failed:",e.message); }
+      // Generate & save the PDF (opens print dialog / downloads)
+      try{ if(w) exportPayslipPDF(ps,w); }catch(e){ console.warn("PDF failed:",e.message); }
+      const to=w?.email||w?.authEmail;
+      if(to){
+        const ok=await sendBMEmail({
+          to,
+          subject:"Bright Metalwork — Payslip WC "+ps.weekLabel,
+          text:"Hi "+(ps.workerName||"")+",\n\nYour payslip for the week commencing "+ps.weekLabel+" has been issued.\nNet pay: £"+(ps.net||0).toFixed(2)+"\n\nThe payslip is attached / available in your Worker Portal under Records → Payslips.",
+        });
+        if(ok) emailed++;
+      }
+    }
+    alert("✓ "+newPays.length+" payslip(s) generated.\n"+synced+" synced to portal · "+emailed+" emailed.");
     setPage("payslips");
   }
 
@@ -5747,6 +5844,14 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
   const totGross=shown.reduce((a,t)=>a+t.gross,0);
   const totStd=shown.reduce((a,t)=>a+t.stdHours,0);
   const totOT=shown.reduce((a,t)=>a+t.otHours,0);
+
+  // Day columns: show Mon–Fri plus any weekend day that actually has entries
+  // this week (timesheets are GPS-driven, so a worker may have signed in Sat/Sun).
+  const ALL7=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const dayCols=useMemo(()=>{
+    const hasWeekend=shown.some(t=>t.dayBreakdown?.Sat||t.dayBreakdown?.Sun);
+    return hasWeekend?ALL7:["Mon","Tue","Wed","Thu","Fri"];
+  },[shown]);
 
   // Week status
   const wkStatus=shown.length===0?"empty":
@@ -5762,9 +5867,9 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
   };
 
   return <div>
-    <DPageHdr title="⏱ Timesheets" sub="Auto-generated from labour schedule · approve for payroll"
+    <DPageHdr title="⏱ Timesheets" sub="Built automatically from worker GPS sign-ins · approve for payroll"
       actions={<div style={{display:"flex",gap:7,alignItems:"center"}}>
-        {selWeek===weekLabel&&<button onClick={regenWeek} style={{padding:"6px 13px",background:"#1e2535",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700}}>🔄 Re-sync from Schedule</button>}
+        {selWeek===weekLabel&&<button onClick={regenWeek} style={{padding:"6px 13px",background:"#1e2535",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700}}>🔄 Rebuild from Sign-ins</button>}
         {wkStatus==="draft"&&shown.length>0&&<button onClick={lockWeek} style={{padding:"6px 13px",background:"#2d2008",border:"1px solid #f59e0b",borderRadius:7,color:"#fbbf24",cursor:"pointer",fontSize:12,fontWeight:700}}>🔒 Submit for Approval</button>}
         {wkStatus==="submitted"&&<button onClick={approveAll} style={{padding:"6px 13px",background:"#0d2218",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:12,fontWeight:700}}>✓ Approve All</button>}
         {wkStatus==="approved"&&<button onClick={createPayslips} style={{padding:"6px 13px",background:"linear-gradient(135deg,#7c3aed,#8b5cf6)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>💷 Create Payslips →</button>}
@@ -5828,7 +5933,7 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
             <thead><tr>
               <th style={DS.th}>Worker</th>
               <th style={DS.th}>Position</th>
-              {(activeDays||BASE_DAYS).map(d=><th key={d} style={{...DS.th,textAlign:"center",color:d==="Sat"||d==="Sun"?"#fbbf24":"#64748b"}}>{d}</th>)}
+              {(dayCols).map(d=><th key={d} style={{...DS.th,textAlign:"center",color:d==="Sat"||d==="Sun"?"#fbbf24":"#64748b"}}>{d}</th>)}
               <th style={DS.th}>Std h</th>
               <th style={DS.th}>OT h</th>
               <th style={DS.th}>Rate</th>
@@ -5843,15 +5948,27 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
                 const st=STATUS_STYLE[t.status]||STATUS_STYLE.draft;
                 const isEditing=editId===t.id;
                 const canEdit=t.status==="draft";
-                return <tr key={t.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                return <Fragment key={t.id}>
+                <tr style={{background:i%2===0?"#111827":"#0f1421"}}>
                   <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>
-                    {t.workerName}
-                    <div style={{fontSize:9,color:"#64748b"}}>{t.company}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      {t.entryCount>0&&<button onClick={()=>setExpandedId(expandedId===t.id?null:t.id)}
+                        style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0,width:14}} title="Show work entries">{expandedId===t.id?"▼":"▶"}</button>}
+                      <div>
+                        {t.workerName}
+                        <div style={{fontSize:9,color:"#64748b"}}>{t.company}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>{t.position}</td>
-                  {(activeDays||BASE_DAYS).map(d=>{
+                  <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>
+                    {t.position}
+                    {t.source==="gps"
+                      ?<div style={{fontSize:8,color:"#34d399",fontWeight:700,marginTop:2}}>📍 {t.entryCount} {t.entryCount===1?"entry":"entries"}{t.openEntries>0?` · ${t.openEntries} live`:""}</div>
+                      :<div style={{fontSize:8,color:"#64748b",fontWeight:700,marginTop:2}}>📋 Forecast</div>}
+                  </td>
+                  {(dayCols).map(d=>{
                     const bd=t.dayBreakdown?.[d];
-                    const site=t.days?.[d]||"";
+                    const site=bd?.site||t.days?.[d]||"";
                     const sc=getSiteColor(site,allSites);
                     return <td key={d} style={{...DS.td,textAlign:"center",padding:"4px 3px"}}>
                       {bd?<div>
@@ -5885,11 +6002,49 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
                         style={{padding:"3px 6px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10}}>💷</button>
                     </div>
                   </td>
-                </tr>;
+                </tr>
+                {expandedId===t.id&&<tr style={{background:"#0a0e17"}}>
+                  <td colSpan={10+(dayCols).length} style={{padding:"4px 14px 14px 36px"}}>
+                    <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",margin:"8px 0 8px"}}>
+                      Work Entries — WC {t.weekLabel} {t.source==="gps"?"· GPS confirmed":"· Forecast (no sign-ins yet)"}
+                    </div>
+                    {(!t.workEntries||t.workEntries.length===0)
+                      ?<div style={{fontSize:12,color:"#374151",fontStyle:"italic"}}>No GPS sign-ins recorded. Hours above are from the schedule forecast.</div>
+                      :<div style={{border:"1px solid #1e2535",borderRadius:8,overflow:"hidden"}}>
+                        <table style={{width:"100%",borderCollapse:"collapse"}}>
+                          <thead><tr style={{background:"#0d1117"}}>
+                            {["#","Day","Site","Sign In","Sign Out","Hours","Type"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:"1px solid #1e2535"}}>{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {[...t.workEntries].sort((a,b)=>new Date(a.signIn)-new Date(b.signIn)).map((e,ei)=>{
+                              const hrs=e.signOut?Math.round(((new Date(e.signOut)-new Date(e.signIn))/3600000)*100)/100:null;
+                              const sc=getSiteColor(e.siteName,allSites);
+                              return <tr key={e.id||ei} style={{borderBottom:"1px solid #141b2a"}}>
+                                <td style={{padding:"6px 10px",fontSize:11,color:"#64748b"}}>{e.entryNum||ei+1}</td>
+                                <td style={{padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:600}}>{e.day}</td>
+                                <td style={{padding:"6px 10px",fontSize:11}}>
+                                  <span style={{display:"inline-block",padding:"1px 7px",borderRadius:3,fontSize:9,fontWeight:700,color:"#fff",background:sc}}>{(e.siteName||"—").split("-")[0].trim()}</span>
+                                </td>
+                                <td style={{padding:"6px 10px",fontSize:11,color:"#34d399",fontFamily:"ui-monospace,monospace"}} title={fmtStamp(e.signIn)}>{fmtStamp(e.signIn)}</td>
+                                <td style={{padding:"6px 10px",fontSize:11,color:e.signOut?"#f87171":"#fbbf24",fontFamily:"ui-monospace,monospace"}} title={e.signOut?fmtStamp(e.signOut):"Still on site"}>{e.signOut?fmtStamp(e.signOut):"● on site"}</td>
+                                <td style={{padding:"6px 10px",fontSize:11,fontWeight:700,color:"#60a5fa"}}>{hrs!=null?hrs+"h":"—"}{e.otHours>0?<span style={{color:"#fbbf24",fontSize:9,marginLeft:3}}>+{e.otHours}OT</span>:""}</td>
+                                <td style={{padding:"6px 10px",fontSize:10}}>
+                                  {e.signOutOverride||e.override
+                                    ?<span style={{color:"#fbbf24",fontWeight:700}}>⚠ override</span>
+                                    :e.signOut?<span style={{color:"#34d399"}}>✓ GPS</span>:<span style={{color:"#fbbf24"}}>live</span>}
+                                </td>
+                              </tr>;
+                            })}
+                          </tbody>
+                        </table>
+                      </div>}
+                  </td>
+                </tr>}
+                </Fragment>;
               })}
             </tbody>
             <tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
-              <td colSpan={2+(activeDays||BASE_DAYS).length} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTALS — {shown.length} operatives</td>
+              <td colSpan={2+(dayCols).length} style={{...DS.td,fontWeight:700,color:"#94a3b8"}}>TOTALS — {shown.length} operatives</td>
               <td style={{...DS.td,color:"#34d399",fontWeight:800,textAlign:"center"}}>{totStd}h</td>
               <td style={{...DS.td,color:"#fbbf24",fontWeight:800,textAlign:"center"}}>{totOT>0?totOT+"h":"—"}</td>
               <td style={DS.td}/>
@@ -10728,7 +10883,8 @@ export default function App(){
   // ── Auth gate ────────────────────────────────────────────────────────────
   const [authState,setAuthState]=useState(null); // {worker, role, email}
   const [workers,setWorkers]=useState([]);
-  const [weekLabel,setWeekLabel]=useState(formatWeekLabel(new Date()));
+  const [weekLabel,setWeekLabel]=useState(currentWeekLabel());
+  const [nowClock,setNowClock]=useState(()=>({today:londonTodayLabel(),time:londonClock()}));
   const [showWeekend,setShowWeekend]=useState(false);
   const [allSites,setAllSites]=useState(DEFAULT_BUILTIN_SITES);
   const [clients,setClients]=useState(INIT_CLIENTS);
@@ -10749,6 +10905,33 @@ export default function App(){
   const [payApplications,setPayApplications]=useState([]);   // payment applications per site
   const [dashPage,setDashPage]=useState("home");
   const [dashDetailId,setDashDetailId]=useState(null);
+
+  // Live London clock + automatic week rollover. Every 30s we refresh the
+  // displayed time. When London crosses into a new week (Monday 00:00) we
+  // advance the view — but ONLY if the manager is currently sitting on what
+  // was the latest week, so manually browsing past weeks is never disrupted.
+  const lastKnownWeek=useRef(currentWeekLabel());
+  useEffect(()=>{
+    const tick=()=>{
+      setNowClock({today:londonTodayLabel(),time:londonClock()});
+      const wk=currentWeekLabel();
+      if(wk!==lastKnownWeek.current){
+        const closingWeek=lastKnownWeek.current;
+        // Auto-close: any DRAFT timesheet from the week that just ended moves to
+        // "submitted" (saved for verification). Approved/issued sheets untouched.
+        setTimesheetRecords(prev=>prev.map(t=>
+          t.weekLabel===closingWeek&&t.status==="draft"
+            ?{...t,status:"submitted",lockedAt:new Date().toISOString(),autoClosed:true}
+            :t
+        ));
+        setWeekLabel(prev=>prev===closingWeek?wk:prev);
+        lastKnownWeek.current=wk;
+      }
+    };
+    tick();
+    const t=setInterval(tick,30000);
+    return()=>clearInterval(t);
+  },[]);
 
   useEffect(()=>{
     async function loadAll(){
@@ -10777,6 +10960,41 @@ export default function App(){
     }
     loadAll();
   },[]);
+
+  // Live worker sync — re-fetch workers every 30s and merge in fresh GPS
+  // attendance (sign-ins made from phones via the worker portal). We only pull
+  // in fields the portal owns (attendanceLogs, leaveRequests, payslips,
+  // dismissedAnnouncements, timesheets) so we never overwrite admin edits in
+  // progress (rates, schedule, etc.).
+  useEffect(()=>{
+    if(loading) return;
+    let alive=true;
+    const PORTAL_FIELDS=["attendanceLogs","leaveRequests","payslips","dismissedAnnouncements","timesheets"];
+    const syncPortalData=async()=>{
+      try{
+        const rows=await sbGet("workers","select=id,data");
+        if(!alive) return;
+        const byId=new Map(rows.map(r=>[r.id,r.data]));
+        setWorkers(prev=>{
+          let changed=false;
+          const next=prev.map(w=>{
+            const fresh=byId.get(w.id);
+            if(!fresh) return w;
+            // detect whether any portal-owned field differs
+            const diff=PORTAL_FIELDS.some(f=>JSON.stringify(fresh[f]||null)!==JSON.stringify(w[f]||null));
+            if(!diff) return w;
+            changed=true;
+            const merged={...w};
+            PORTAL_FIELDS.forEach(f=>{ if(fresh[f]!==undefined) merged[f]=fresh[f]; });
+            return merged;
+          });
+          return changed?next:prev;
+        });
+      }catch(_){}
+    };
+    const t=setInterval(syncPortalData,30000);
+    return()=>{alive=false;clearInterval(t);};
+  },[loading]);
 
   useEffect(()=>{
     if(loading) return;
@@ -10999,7 +11217,10 @@ lucian@bright-group.org`;
                 <span style={{fontSize:10,color:"#64748b"}}>WC:</span>
                 <input value={weekLabel} onChange={e=>setWeekLabel(e.target.value)} style={{background:"none",border:"none",borderBottom:"1px solid #2d3555",color:"#60a5fa",fontWeight:600,fontSize:11,outline:"none",width:105}}/>
                 <button onClick={()=>setWeekLabel(addWeeks(weekLabel,1))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:4,color:"#94a3b8",cursor:"pointer",fontSize:12,padding:"0 6px",fontWeight:700,lineHeight:1.5}}>›</button>
-                <button onClick={()=>setWeekLabel(formatWeekLabel(new Date()))} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:4,color:"#64748b",cursor:"pointer",fontSize:9,padding:"1px 6px",fontWeight:700}}>Today</button>
+                <button onClick={()=>setWeekLabel(currentWeekLabel())} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:4,color:"#64748b",cursor:"pointer",fontSize:9,padding:"1px 6px",fontWeight:700}}>This week</button>
+                <span style={{fontSize:9,color:"#475569",marginLeft:6,whiteSpace:"nowrap"}}>·</span>
+                <span style={{fontSize:10,color:"#64748b",whiteSpace:"nowrap"}}>Today <span style={{color:"#94a3b8",fontWeight:600}}>{nowClock.today}</span></span>
+                <span style={{fontSize:10,color:"#34d399",fontWeight:700,fontFamily:"ui-monospace,monospace",whiteSpace:"nowrap"}}>{nowClock.time} <span style={{color:"#475569",fontWeight:400}}>GMT</span></span>
               </div>
             </div>
           </div>
