@@ -325,6 +325,7 @@ function emptyHrs(){return Object.fromEntries(ALL_DAYS.map(d=>[d,DEFAULT_HOURS])
 function emptyOT(){return Object.fromEntries(ALL_DAYS.map(d=>[d,0]));}
 function mkW(o={}){
   return {id:String(Date.now()+Math.random()),name:"",company:"",position:"",scope:"",
+    active:true,
     days:emptyDays(),hoursPerDay:emptyHrs(),overtimeHours:emptyOT(),
     agreedRate:null,actualRate:null,taxRate:0,overtimeMultiplier:1.5,customOTRate:null,
     contact:"",email:"",dob:"",address:"",nationality:"",
@@ -977,10 +978,29 @@ ${heldCerts.length>0?`
         <div class="cert-name">${cert.label}</div>
         ${cert.hasExpiry&&val.expiry?`<div class="cert-exp">Expiry: ${fmtDate(val.expiry)}</div>`:""}
         <div class="cert-status" style="color:${sc};margin-top:4px">${status.toUpperCase()}</div>
+        ${val.photoUrl?`<div style="font-size:9px;color:#3b82f6;margin-top:5px">📷 Image attached</div>`:""}
       </div>`;
     }).join("")}
   </div>
 </div>`:""}
+
+${(()=>{const withPhotos=heldCerts.filter(c=>w.certs[c.key]?.photoUrl);
+  if(withPhotos.length===0) return "";
+  return `<div style="margin-top:8px">
+    <div class="card-title" style="margin-bottom:12px">Certificate Images (${withPhotos.length})</div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14">
+      ${withPhotos.map(cert=>{const val=w.certs[cert.key];const status=cSt(cert,w);const sc=SC[status];
+        return `<div style="background:#1a1f2e;border:1px solid #2d3555;border-radius:10px;padding:12px;page-break-inside:avoid">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:12px;font-weight:700;color:#f1f5f9">${cert.label}</span>
+            ${cert.hasExpiry&&val.expiry?`<span style="font-size:10px;color:${sc};font-weight:600">${fmtDate(val.expiry)}</span>`:""}
+          </div>
+          <img src="${val.photoUrl}" alt="${cert.label}" style="width:100%;border-radius:7px;border:1px solid #2d3555;display:block"/>
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
+})()}
 
 <div class="ft">
   <span>Worker Profile — ${w.name}</span>
@@ -1187,7 +1207,7 @@ function doExcel(workers,weekLabel,activeDays,siteHours,clients,allSites){
 function SitesModal({allSites,clients,onSave,onClose,onOpenDetail}){
   const [sites,setSites]=useState(allSites.map(s=>({...s})));
   const [nn,setNn]=useState(""),[nc,setNc]=useState(PRESET_COLORS[0]),[ncl,setNcl]=useState("");
-  const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9,contractType:"dayrate",pohPct:0,retentionPct:0}]);setNn("");};
+  const add=()=>{const n=nn.trim();if(!n||sites.find(s=>s.name.toLowerCase()===n.toLowerCase()))return;setSites(s=>[...s,{id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9,contractType:"dayrate",category:"pricework",status:"ongoing",managerId:null,pohPct:0,retentionPct:0,scopes:[],variations:[]}]);setNn("");};
   const [locating,setLocating]=useState({});
   const useMyLocation=(id)=>{setLocating(l=>({...l,[id]:true}));navigator.geolocation.getCurrentPosition(pos=>{up(id,"lat",+pos.coords.latitude.toFixed(6));up(id,"lng",+pos.coords.longitude.toFixed(6));setLocating(l=>({...l,[id]:false}));},()=>{alert("Could not get location. Please type coordinates manually.");setLocating(l=>({...l,[id]:false}));},{enableHighAccuracy:true,timeout:10000});};
   const GpsFields=({s})=><div style={{marginTop:8,background:"#0a0e1a",borderRadius:7,padding:"8px 10px",border:"1px solid #1e2535"}}><div style={{fontSize:9,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:6}}>📍 GPS — Worker Sign In/Out</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Latitude</div><input type="number" step="0.000001" value={s.lat||""} onChange={e=>up(s.id,"lat",+e.target.value||null)} placeholder="51.509865" style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Longitude</div><input type="number" step="0.000001" value={s.lng||""} onChange={e=>up(s.id,"lng",+e.target.value||null)} placeholder="-0.118092" style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Radius (m)</div><input type="number" min="10" max="2000" step="10" value={s.radius||100} onChange={e=>up(s.id,"radius",+e.target.value||100)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div></div><div style={{marginBottom:8}}><div style={{fontSize:9,color:"#60a5fa",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>⏱ Hours & Overtime</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Start Time</div><input type="time" value={s.startTime||"07:30"} onChange={e=>up(s.id,"startTime",e.target.value)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Std Hours/Day</div><input type="number" min="1" max="24" step="0.5" value={s.stdHours||9} onChange={e=>up(s.id,"stdHours",+e.target.value||9)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div><div><div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>OT After (hrs)</div><input type="number" min="1" max="24" step="0.5" value={s.otThreshold||s.stdHours||9} onChange={e=>up(s.id,"otThreshold",+e.target.value||9)} style={{width:"100%",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:5,padding:"5px 7px",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"}}/></div></div></div><div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={()=>useMyLocation(s.id)} disabled={locating[s.id]} style={{padding:"4px 10px",background:"#0d2218",border:"1px solid #10b981",borderRadius:5,color:"#34d399",cursor:"pointer",fontSize:10,fontWeight:700,opacity:locating[s.id]?0.6:1}}>{locating[s.id]?"Getting…":"📍 Use My Current Location"}</button>{s.lat&&s.lng?<span style={{fontSize:10,color:"#34d399",fontWeight:600}}>✓ GPS set · {s.radius||100}m</span>:<span style={{fontSize:10,color:"#f87171",fontWeight:700}}>🔒 No GPS — workers cannot sign in</span>}</div></div>;
@@ -3638,26 +3658,50 @@ function InviteWorkerModal({onClose,allSites}){
   </div>;
 }
 
-function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDetailId,setModal}){
+function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDetailId,setModal,saveWorker}){
   const[search,setSearch]=useState("");
   const[showInvite,setShowInvite]=useState(false);
-  const shown=workers.filter(w=>!search||w.name.toLowerCase().includes(search.toLowerCase())||w.position.toLowerCase().includes(search.toLowerCase()));
-  const {gross}=useMemo(()=>workers.reduce((a,w)=>{const r=calcPay(w,activeDays,siteHours);return{gross:a.gross+r.gross};},{gross:0}),[workers,activeDays,siteHours]);
+  const[statusFilter,setStatusFilter]=useState("active"); // active | inactive | all
+  const isActive=w=>w.active!==false;
+  const counts={
+    active:workers.filter(isActive).length,
+    inactive:workers.filter(w=>!isActive(w)).length,
+    all:workers.length,
+  };
+  const shown=workers
+    .filter(w=>statusFilter==="all"?true:statusFilter==="active"?isActive(w):!isActive(w))
+    .filter(w=>!search||w.name.toLowerCase().includes(search.toLowerCase())||w.position.toLowerCase().includes(search.toLowerCase()));
+  const {gross}=useMemo(()=>workers.filter(isActive).reduce((a,w)=>{const r=calcPay(w,activeDays,siteHours);return{gross:a.gross+r.gross};},{gross:0}),[workers,activeDays,siteHours]);
+
+  const toggleActive=(w)=>{
+    const next=!isActive(w);
+    if(!next&&!window.confirm("Mark "+w.name+" as inactive?\n\nThey'll be hidden from active lists and won't appear in dropdowns (schedule, site manager, etc). Their records are kept.")) return;
+    if(saveWorker) saveWorker({...w,active:next});
+  };
 
   return <div>
-    <DPageHdr title="👷 Workers" sub={`${workers.length} operatives · £${gross.toFixed(0)} gross this week`}
+    <DPageHdr title="👷 Workers" sub={`${counts.active} active · ${counts.inactive} inactive · £${gross.toFixed(0)} gross this week`}
       actions={<div style={{display:"flex",gap:7}}>
         <button onClick={()=>setShowInvite(true)} style={{padding:"7px 14px",background:"#0d1a2e",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700}}>✉ Invite</button>
         <button onClick={()=>setModal({type:"worker",worker:mkW()})} style={{padding:"7px 14px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>+ Add Worker</button>
       </div>}/>
     {showInvite&&<InviteWorkerModal onClose={()=>setShowInvite(false)} allSites={allSites}/>}
     <div style={DS.body}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name or position…"
-        style={{...{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"7px 10px",color:"#e2e8f0",fontSize:13,outline:"none",boxSizing:"border-box"},maxWidth:320,marginBottom:16}}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,gap:12,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:7}}>
+          {[["active","Active",counts.active],["inactive","Inactive",counts.inactive],["all","All",counts.all]].map(([v,l,n])=>
+            <button key={v} onClick={()=>setStatusFilter(v)} style={{padding:"7px 15px",background:statusFilter===v?"#1e3a5f":"#1a1f2e",border:"1px solid "+(statusFilter===v?"#3b82f6":"#2d3555"),borderRadius:8,color:statusFilter===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:13,fontWeight:statusFilter===v?700:400,display:"flex",alignItems:"center",gap:7}}>
+              {l}<span style={{fontSize:11,padding:"1px 7px",borderRadius:10,background:statusFilter===v?"#3b82f633":"#0d1117",color:statusFilter===v?"#93c5fd":"#475569",fontWeight:700}}>{n}</span>
+            </button>
+          )}
+        </div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name or position…"
+          style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:6,padding:"7px 10px",color:"#e2e8f0",fontSize:13,outline:"none",boxSizing:"border-box",maxWidth:300}}/>
+      </div>
       <DTable cols={[
-        {key:"name",label:"Name",w:200,r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:9}}>
+        {key:"name",label:"Name",w:200,r:(v,r)=><div style={{display:"flex",alignItems:"center",gap:9,opacity:isActive(r)?1:0.55}}>
           <div style={{width:30,height:30,borderRadius:7,background:r.color+"22",border:`1px solid ${r.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:r.color,flexShrink:0}}>{(v||"?")[0]}</div>
-          <div><div style={{fontWeight:600,color:"#f1f5f9"}}>{v||"Unnamed"}</div><div style={{fontSize:10,color:"#64748b"}}>{r.company}</div></div>
+          <div><div style={{fontWeight:600,color:"#f1f5f9",display:"flex",alignItems:"center",gap:6}}>{v||"Unnamed"}{!isActive(r)&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:10,background:"#94a3b822",color:"#94a3b8",fontWeight:700}}>INACTIVE</span>}</div><div style={{fontSize:10,color:"#64748b"}}>{r.company}</div></div>
         </div>},
         {key:"position",label:"Position",r:v=><span style={DS.badge("#60a5fa","#0d1a2e")}>{v||"—"}</span>},
         {key:"agreedRate",label:"Rate",r:v=>v?<span style={{color:"#34d399",fontWeight:600}}>£{v}/hr</span>:<span style={{color:"#374151"}}>—</span>},
@@ -3678,7 +3722,8 @@ function DWorkers({workers,allSites,clients,activeDays,siteHours,setPage,setDeta
           const s=primary&&allSites.find(x=>primary.includes(x.name));
           return s?<span style={DS.pill(s.color)}>{s.name}</span>:<span style={{color:"#374151",fontSize:11}}>—</span>;
         }},
-              {key:"id",label:"",w:80,r:(_,r)=><div style={{display:"flex",gap:4}}>
+              {key:"id",label:"",w:120,r:(_,r)=><div style={{display:"flex",gap:4}}>
+          <button onClick={e=>{e.stopPropagation();toggleActive(r);}} title={isActive(r)?"Mark inactive":"Reactivate"} style={{padding:"3px 8px",background:isActive(r)?"#1a1f2e":"#0d2218",border:`1px solid ${isActive(r)?"#94a3b855":"#10b981"}`,borderRadius:5,color:isActive(r)?"#94a3b8":"#34d399",cursor:"pointer",fontSize:10,fontWeight:700}}>{isActive(r)?"Deactivate":"Reactivate"}</button>
           <button onClick={e=>{e.stopPropagation();openWorkerWindow(r,allSites,formatWeekLabel(new Date()),activeDays,siteHours);}} title="Open in new window" style={{padding:"3px 7px",background:"#1a1f2e",border:"1px solid #60a5fa",borderRadius:5,color:"#60a5fa",cursor:"pointer",fontSize:10}}>🔗</button>
         </div>},
       ]} rows={shown} onRow={r=>{setDetailId(r.id);setPage("worker_detail");}}/>
@@ -4291,31 +4336,143 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
 }
 
 // ── Dashboard Sites Page ──────────────────────────────────────────────────────
-function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetailId,setModal}){
-  const activeSites=allSites.filter(s=>!isOff(s.name));
+function DSites({allSites,clients,workers,activeDays,siteHours,setPage,setDetailId,setModal,saveSites}){
+  const [filter,setFilter]=useState("ongoing"); // all | ongoing | completed
+  const [showAdd,setShowAdd]=useState(false);
+  const [nn,setNn]=useState(""),[nc,setNc]=useState(PRESET_COLORS[0]),[ncl,setNcl]=useState("");
+  const [ncat,setNcat]=useState("pricework"),[nmgr,setNmgr]=useState("");
+
+  // Active workers eligible to be site managers
+  const activeWorkers=workers.filter(w=>w.active!==false&&!isOff(w.name));
+
+  const realSites=allSites.filter(s=>!isOff(s.name));
+  const counts={
+    all:realSites.length,
+    ongoing:realSites.filter(s=>(s.status||"ongoing")==="ongoing").length,
+    completed:realSites.filter(s=>s.status==="completed").length,
+  };
+  const shown=realSites.filter(s=>{
+    const st=s.status||"ongoing";
+    return filter==="all"?true:st===filter;
+  });
+
+  const addSite=()=>{
+    const n=nn.trim();
+    if(!n||allSites.find(s=>s.name.toLowerCase()===n.toLowerCase())){alert(n?"A site with that name already exists.":"Enter a site name.");return;}
+    const newSite={id:"s"+Date.now(),name:n,color:nc,clientId:ncl||null,builtin:false,lat:null,lng:null,radius:100,stdHours:9,startTime:"07:30",otThreshold:9,contractType:"dayrate",category:ncat,status:"ongoing",managerId:nmgr||null,pohPct:0,retentionPct:0,scopes:[],variations:[]};
+    saveSites([...allSites,newSite]);
+    setNn("");setNcl("");setNmgr("");setNcat("pricework");setShowAdd(false);
+  };
+
+  const CAT_META={daywork:["#f59e0b","Daywork"],pricework:["#34d399","Price-work"]};
+  const fmtMoney=n=>"£"+Math.round(n).toLocaleString("en-GB");
+
   return <div>
-    <DPageHdr title="🏗 Sites" sub={`${activeSites.length} sites`}
-      actions={<button onClick={()=>setModal({type:"sites"})} style={{padding:"7px 14px",background:"#1e2535",border:"1px solid #f59e0b",borderRadius:7,color:"#fbbf24",cursor:"pointer",fontSize:12,fontWeight:700}}>🏗 Manage Sites</button>}/>
+    <DPageHdr title="🏗 Sites" sub={`${counts.ongoing} ongoing · ${counts.completed} completed`}
+      actions={<button onClick={()=>setShowAdd(v=>!v)} style={{padding:"9px 18px",background:showAdd?"#1e3a5f":"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontSize:14,fontWeight:800,display:"flex",alignItems:"center",gap:7,boxShadow:"0 2px 8px rgba(59,130,246,0.3)"}}>
+        <span style={{fontSize:18}}>{showAdd?"×":"+"}</span> New Site
+      </button>}/>
+
     <div style={DS.body}>
+      {/* Inline add form (touch-friendly) */}
+      {showAdd&&<div style={{background:"#111827",border:"1px solid #3b82f6",borderRadius:14,padding:18,marginBottom:18}}>
+        <div style={{fontSize:14,fontWeight:800,color:"#f1f5f9",marginBottom:14}}>Create New Site</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+          <div>
+            <label style={LBL}>Site Name</label>
+            <input value={nn} onChange={e=>setNn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSite()} placeholder="e.g. JAUK - New Road" style={INP} autoFocus/>
+          </div>
+          <div>
+            <label style={LBL}>Client</label>
+            <select value={ncl} onChange={e=>setNcl(e.target.value)} style={{...INP,cursor:"pointer"}}>
+              <option value="">No client</option>
+              {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+          <div>
+            <label style={LBL}>Category</label>
+            <div style={{display:"flex",gap:8}}>
+              {[["pricework","Price-work","#34d399"],["daywork","Daywork","#f59e0b"]].map(([v,l,c])=>
+                <button key={v} onClick={()=>setNcat(v)} style={{flex:1,padding:"9px",background:ncat===v?c+"22":"#0f1421",border:`1px solid ${ncat===v?c:"#2d3555"}`,borderRadius:8,color:ncat===v?c:"#64748b",cursor:"pointer",fontSize:12,fontWeight:700}}>{l}</button>
+              )}
+            </div>
+          </div>
+          <div>
+            <label style={LBL}>Site Manager (controls Site Manager app)</label>
+            <select value={nmgr} onChange={e=>setNmgr(e.target.value)} style={{...INP,cursor:"pointer"}}>
+              <option value="">No manager assigned</option>
+              {activeWorkers.map(w=><option key={w.id} value={w.id}>{w.name}{w.position?" — "+w.position:""}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          <label style={LBL}>Colour</label>
+          <ColorPicker value={nc} onChange={setNc}/>
+        </div>
+        {ncat==="daywork"&&<div style={{background:"#1a1500",border:"1px solid #92400e",borderRadius:8,padding:"9px 13px",marginBottom:14,fontSize:11,color:"#fbbf24",display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:14}}>ℹ️</span>
+          <span>Daywork sites use the client's day-rate price list as their scope of work. Set the day rates in Manage Clients, then assign this site to that client.</span>
+        </div>}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={()=>{setShowAdd(false);setNn("");}} style={{padding:"9px 18px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:8,color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}}>Cancel</button>
+          <button onClick={addSite} style={{padding:"9px 22px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:14,fontWeight:800}}>Create Site</button>
+        </div>
+      </div>}
+
+      {/* Filter tabs + advanced edit link */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{display:"flex",gap:7}}>
+          {[["ongoing","Ongoing",counts.ongoing],["completed","Completed",counts.completed],["all","All",counts.all]].map(([v,l,n])=>
+            <button key={v} onClick={()=>setFilter(v)} style={{padding:"7px 15px",background:filter===v?"#1e3a5f":"#1a1f2e",border:"1px solid "+(filter===v?"#3b82f6":"#2d3555"),borderRadius:8,color:filter===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:13,fontWeight:filter===v?700:400,display:"flex",alignItems:"center",gap:7}}>
+              {l}<span style={{fontSize:11,padding:"1px 7px",borderRadius:10,background:filter===v?"#3b82f633":"#0d1117",color:filter===v?"#93c5fd":"#475569",fontWeight:700}}>{n}</span>
+            </button>
+          )}
+        </div>
+        <button onClick={()=>setModal({type:"sites"})} style={{padding:"6px 13px",background:"#1e2535",border:"1px solid #f59e0b",borderRadius:7,color:"#fbbf24",cursor:"pointer",fontSize:12,fontWeight:700}}>⚙ Advanced (GPS, hours)</button>
+      </div>
+
+      {shown.length===0&&<div style={{textAlign:"center",padding:48,color:"#374151",border:"1px dashed #1e2535",borderRadius:12}}>
+        <div style={{fontSize:32,marginBottom:10}}>🏗</div>
+        <div style={{fontWeight:600,marginBottom:4,color:"#94a3b8"}}>No {filter==="all"?"":filter} sites</div>
+        <div style={{fontSize:12}}>{filter==="completed"?"Completed sites will appear here.":"Tap + New Site to create one."}</div>
+      </div>}
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
-        {activeSites.map(site=>{
+        {shown.map(site=>{
           const wk=workers.filter(w=>BASE_DAYS.some(d=>(w.days[d]||"").includes(site.name)));
           const client=clients.find(c=>c.id===site.clientId);
+          const mgr=workers.find(w=>w.id===site.managerId);
           const sc=site.scopes||[],vr=site.variations||[];
           const scopeT=sc.reduce((a,s)=>a+(s.qty*s.rate),0);
           const varT=vr.reduce((a,v)=>a+(v.type==="addition"?v.value:-v.value),0);
+          const [catC,catL]=CAT_META[site.category||"pricework"];
+          const isCompleted=site.status==="completed";
+          const isDaywork=site.category==="daywork";
+          const dayRates=client?.dayRates||{};
+          const dayRateCount=Object.keys(dayRates).filter(k=>dayRates[k]).length;
           return <div key={site.id} onClick={()=>{setDetailId(site.id);setPage("site_detail");}}
-            style={{...DS.card(site.color),borderColor:`${site.color}33`}}
+            style={{...DS.card(site.color),borderColor:`${site.color}33`,opacity:isCompleted?0.75:1,position:"relative"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=site.color;e.currentTarget.style.transform="translateY(-2px)";}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=`${site.color}33`;e.currentTarget.style.transform="";}}>
             <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:site.color}}/>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <span style={{width:11,height:11,borderRadius:"50%",background:site.color,flexShrink:0}}/>
               <span style={{fontSize:15,fontWeight:800,color:"#f1f5f9",flex:1}}>{site.name}</span>
               {client&&<span style={DS.pill(client.color)}>{client.name}</span>}
             </div>
+            {/* Badges: category + status + manager */}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+              <span style={{fontSize:10,padding:"2px 9px",borderRadius:20,background:catC+"22",color:catC,border:`1px solid ${catC}44`,fontWeight:700}}>{catL}</span>
+              <span style={{fontSize:10,padding:"2px 9px",borderRadius:20,background:isCompleted?"#94a3b822":"#34d39922",color:isCompleted?"#94a3b8":"#34d399",border:`1px solid ${isCompleted?"#94a3b844":"#34d39944"}`,fontWeight:700}}>{isCompleted?"✓ Completed":"● Ongoing"}</span>
+              {mgr&&<span style={{fontSize:10,padding:"2px 9px",borderRadius:20,background:"#60a5fa22",color:"#60a5fa",border:"1px solid #60a5fa44",fontWeight:700}}>🏗 {mgr.name.split(" ")[0]}</span>}
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-              {[["Contract","£"+(scopeT+varT).toLocaleString(),"#60a5fa"],["Scope","£"+scopeT.toLocaleString(),"#34d399"],["Workers",wk.length,"#a78bfa"],["Variations",vr.length,"#fbbf24"]].map(([l,v,c])=>(
+              {(isDaywork
+                ?[["Type","Daywork",catC],["Day rates",dayRateCount||"—","#fbbf24"],["Workers",wk.length,"#a78bfa"],["Variations",vr.length,"#fbbf24"]]
+                :[["Contract",fmtMoney(scopeT+varT),"#60a5fa"],["Scope",fmtMoney(scopeT),"#34d399"],["Workers",wk.length,"#a78bfa"],["Variations",vr.length,"#fbbf24"]]
+              ).map(([l,v,c])=>(
                 <div key={l} style={{background:"#0a0e17",borderRadius:6,padding:"6px 8px"}}>
                   <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{l}</div>
                   <div style={{fontSize:13,fontWeight:800,color:c,marginTop:2}}>{v}</div>
@@ -4716,8 +4873,9 @@ function WorkerDocsAdminView(){
   </div>;
 }
 
-function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}){
+function SiteWorkersPanel({site,allWorkers,allSites,clients,weekLabel,scopes,setDetailId,setPage}){
   const [subtab,setSubtab]=useState("entries");
+  const [selectedForMatrix,setSelectedForMatrix]=useState({}); // {workerId: true}
   const [entryScopes,setEntryScopes]=useState({}); // {entryId: scopeId}
   const [reportEntry,setReportEntry]=useState(null);
   const [liveWorkers,setLiveWorkers]=useState(allWorkers);
@@ -4915,27 +5073,45 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
 
     {/* ── LOOK-AHEAD TAB — planned workers from the schedule forecast ── */}
     {subtab==="lookahead"&&<div>
-      <div style={{background:"#0d1117",borderRadius:8,padding:"9px 13px",marginBottom:12,fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:7}}>
-        <span style={{fontSize:14}}>📅</span>
-        <span>Who is planned for {site.name} this week (from the labour schedule). This is the forecast — actual attendance is confirmed by GPS sign-in.</span>
-      </div>
       {(()=>{
         // Workers planned for this site on any day this week
         const planned=liveWorkers.filter(w=>Object.values(w.days||{}).some(d=>(d||"").includes(site.name)));
-        if(planned.length===0) return <div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
-          <div style={{fontSize:32,marginBottom:10}}>📅</div>No workers planned for this site this week.
-        </div>;
+        const selectedWorkers=planned.filter(w=>selectedForMatrix[w.id]);
+        const allSelected=planned.length>0&&planned.every(w=>selectedForMatrix[w.id]);
+        const doExport=()=>{
+          const list=selectedWorkers.length>0?selectedWorkers:planned;
+          if(typeof exportTrainingMatrix==="function"){
+            exportTrainingMatrix(list,weekLabel||currentWeekLabel(),allSites||[],null,site.name,clients||[]);
+          }
+        };
+        return <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+            <div style={{background:"#0d1117",borderRadius:8,padding:"9px 13px",fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:7,flex:1,minWidth:200}}>
+              <span style={{fontSize:14}}>📅</span>
+              <span>Planned for {site.name} this week (forecast). Tick workers and export their training matrix.</span>
+            </div>
+            {planned.length>0&&<button onClick={doExport} style={{padding:"8px 15px",background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
+              🛡 Training Matrix ({selectedWorkers.length>0?selectedWorkers.length:planned.length})
+            </button>}
+          </div>
+          {planned.length===0?<div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
+            <div style={{fontSize:32,marginBottom:10}}>📅</div>No workers planned for this site this week.
+          </div>:(()=>{
         const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
         const hasWeekend=planned.some(w=>["Sat","Sun"].some(d=>(w.days?.[d]||"").includes(site.name)));
         const cols=hasWeekend?DAYS:DAYS.slice(0,5);
         return <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
-          <div style={{display:"grid",gridTemplateColumns:`1.6fr repeat(${cols.length},1fr)`,padding:"8px 12px",background:"#0d1117",borderBottom:"1px solid #1e2535",gap:6}}>
+          <div style={{display:"grid",gridTemplateColumns:`28px 1.6fr repeat(${cols.length},1fr)`,padding:"8px 12px",background:"#0d1117",borderBottom:"1px solid #1e2535",gap:6,alignItems:"center"}}>
+            <input type="checkbox" checked={allSelected} onChange={e=>{
+              const next={};if(e.target.checked)planned.forEach(w=>next[w.id]=true);setSelectedForMatrix(next);
+            }} style={{accentColor:"#3b82f6",cursor:"pointer"}}/>
             <div style={{fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>Worker</div>
             {cols.map(d=><div key={d} style={{fontSize:9,fontWeight:700,color:d==="Sat"||d==="Sun"?"#fbbf24":"#64748b",textTransform:"uppercase",textAlign:"center"}}>{d}</div>)}
           </div>
           {planned.map((w,i)=>{
             const todayCode=londonDayCode?.();
-            return <div key={w.id} style={{display:"grid",gridTemplateColumns:`1.6fr repeat(${cols.length},1fr)`,padding:"9px 12px",borderBottom:"1px solid #1e2535",background:i%2===0?"#111827":"#0f1421",gap:6,alignItems:"center"}}>
+            return <div key={w.id} style={{display:"grid",gridTemplateColumns:`28px 1.6fr repeat(${cols.length},1fr)`,padding:"9px 12px",borderBottom:"1px solid #1e2535",background:i%2===0?"#111827":"#0f1421",gap:6,alignItems:"center"}}>
+              <input type="checkbox" checked={!!selectedForMatrix[w.id]} onChange={e=>setSelectedForMatrix(m=>({...m,[w.id]:e.target.checked}))} style={{accentColor:"#3b82f6",cursor:"pointer"}}/>
               <div style={{display:"flex",alignItems:"center",gap:7}}>
                 <div style={{width:24,height:24,borderRadius:"50%",background:"#1e3a5f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#60a5fa",flexShrink:0}}>{(w.name||"?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
                 <div style={{minWidth:0}}>
@@ -4959,8 +5135,11 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
             <span><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#34d399",marginRight:4}}/>Signed in today</span>
           </div>
         </div>;
+          })()}
+        </>;
       })()}
     </div>}
+
 
     {/* ── LABOUR PER SCOPE TAB ── */}
     {subtab==="scopes"&&<div>
@@ -5033,13 +5212,15 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
 }
 
 
-function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoices,payApplications,setPage,setDetailId,setModal,weekLabel}){
+function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoices,payApplications,setPage,setDetailId,setModal,weekLabel,setAllSites,saveSites}){
   const site=allSites.find(s=>s.id===siteId);
   if(!site) return <div style={DS.body}><div style={{color:"#374151",textAlign:"center",padding:40}}>Site not found.</div></div>;
   const client=clients.find(c=>c.id===site.clientId);
   const siteWorkers=workers.filter(w=>activeDays.some(d=>(w.days?.[d]||"").includes(site.name)));
   const sc=site.scopes||[], vr=site.variations||[];
-  const isPW=site.contractType==="pricework";
+  // Daywork sites are treated as non-price-work for the financial breakdown.
+  const isDaywork=site.category==="daywork";
+  const isPW=!isDaywork&&(site.category==="pricework"||site.contractType==="pricework");
   const pohPct=Number(site.pohPct)||0;
   const retPct=Number(site.retentionPct)||0;
   const scopeT=sc.reduce((a,s)=>a+(Number(s.qty)||0)*(Number(s.rate)||0),0);
@@ -5121,6 +5302,47 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
         <button onClick={()=>setModal({type:"siteDetail",site})} style={{padding:"6px 12px",background:"#1e3a5f",border:"1px solid #3b82f6",borderRadius:6,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:600}}>✏️ Edit Site</button>
       </div>}/>
 
+    {/* ── Site status / category / manager control strip ── */}
+    {(()=>{
+      const patchSite=(patch)=>{
+        const next=allSites.map(s=>s.id===site.id?{...s,...patch}:s);
+        (saveSites||setAllSites)(next);
+      };
+      const isCompleted=site.status==="completed";
+      const cat=site.category||(site.contractType==="pricework"?"pricework":"daywork");
+      const activeWorkers=workers.filter(w=>w.active!==false&&!isOff(w.name));
+      const mgr=workers.find(w=>w.id===site.managerId);
+      return <div style={{...DS.body,paddingTop:14,paddingBottom:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#111827",border:"1px solid #1e2535",borderRadius:11,padding:"11px 15px"}}>
+          {/* Category */}
+          <div style={{display:"flex",alignItems:"center",gap:7}}>
+            <span style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>Type</span>
+            <select value={cat} onChange={e=>patchSite({category:e.target.value})} style={{background:"#0f1421",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:cat==="daywork"?"#fbbf24":"#34d399",fontSize:12,fontWeight:700,outline:"none",cursor:"pointer"}}>
+              <option value="pricework">Price-work</option>
+              <option value="daywork">Daywork</option>
+            </select>
+          </div>
+          {/* Manager */}
+          <div style={{display:"flex",alignItems:"center",gap:7}}>
+            <span style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>Manager</span>
+            <select value={site.managerId||""} onChange={e=>patchSite({managerId:e.target.value||null})} style={{background:"#0f1421",border:"1px solid #2d3555",borderRadius:7,padding:"5px 9px",color:mgr?"#60a5fa":"#64748b",fontSize:12,fontWeight:600,outline:"none",cursor:"pointer",maxWidth:200}}>
+              <option value="">No manager</option>
+              {activeWorkers.map(w=><option key={w.id} value={w.id}>{w.name}{w.position?" — "+w.position:""}</option>)}
+            </select>
+          </div>
+          <div style={{flex:1}}/>
+          {/* Status */}
+          <span style={{fontSize:11,padding:"4px 11px",borderRadius:20,fontWeight:700,background:isCompleted?"#94a3b822":"#34d39922",color:isCompleted?"#94a3b8":"#34d399",border:`1px solid ${isCompleted?"#94a3b844":"#34d39944"}`}}>{isCompleted?"✓ Completed":"● Ongoing"}</span>
+          <button onClick={()=>{
+            if(isCompleted){ patchSite({status:"ongoing"}); }
+            else if(window.confirm("Mark "+site.name+" as completed?\n\nIt will be hidden from active dropdowns (schedule, new entries) but stays fully editable.")){ patchSite({status:"completed",completedAt:new Date().toISOString()}); }
+          }} style={{padding:"5px 13px",background:isCompleted?"#1e3a5f":"#0d2218",border:`1px solid ${isCompleted?"#3b82f6":"#10b981"}`,borderRadius:7,color:isCompleted?"#60a5fa":"#34d399",cursor:"pointer",fontSize:12,fontWeight:700}}>
+            {isCompleted?"↩ Reopen":"✓ Mark Completed"}
+          </button>
+        </div>
+      </div>;
+    })()}
+
     <div style={DS.body}>
       {/* ── CUSTOMIZABLE LAYOUT: financial KPIs + profit bar ── */}
       <CustomizableGrid pageKey="site_detail_header" columns={12} widgets={[
@@ -5158,6 +5380,36 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
 
       {/* Scopes */}
       {tab==="scopes"&&<div>
+        {isDaywork&&(()=>{
+          const dayRates=client?.dayRates||{};
+          const rateRows=Object.entries(dayRates).filter(([,v])=>v!==""&&v!=null&&Number(v)>0);
+          return <div>
+            <div style={{display:"flex",gap:10,marginBottom:12,padding:"9px 14px",background:"#1a1500",borderRadius:8,border:"1px solid #92400e",fontSize:11,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{color:"#fbbf24",fontWeight:700}}>📋 Daywork Site</span>
+              <span style={{color:"#94a3b8"}}>Scope of work is the day-rate price list of {client?<b style={{color:client.color}}>{client.name}</b>:"the assigned client"}.</span>
+              {!client&&<span style={{color:"#f87171",fontWeight:700,marginLeft:"auto"}}>⚠ Assign a client to load day rates</span>}
+            </div>
+            {rateRows.length===0
+              ?<div style={{textAlign:"center",padding:40,border:"1px dashed #1e2535",borderRadius:10,color:"#374151"}}>
+                  {client?<>No day rates set for {client.name}. Add them in <span onClick={()=>setModal({type:"clients"})} style={{color:"#60a5fa",cursor:"pointer",textDecoration:"underline"}}>Manage Clients</span>.</>:"Assign a client to this site to use their day rates."}
+                </div>
+              :<div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr>
+                    <th style={DS.th}>Trade / Position</th>
+                    <th style={{...DS.th,width:140,textAlign:"right",color:"#34d399"}}>Day Rate £</th>
+                  </tr></thead>
+                  <tbody>
+                    {rateRows.map(([pos,rate],i)=><tr key={pos} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                      <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>{pos}</td>
+                      <td style={{...DS.td,textAlign:"right",color:"#34d399",fontWeight:700}}>£{Number(rate).toLocaleString()}/day</td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>}
+          </div>;
+        })()}
+        {!isDaywork&&<>
         {isPW&&(pohPct>0||retPct>0)&&<div style={{display:"flex",gap:14,marginBottom:12,padding:"8px 14px",background:"#0f1421",borderRadius:8,border:"1px solid #1e2535",fontSize:11,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{color:"#64748b",fontWeight:700}}>📐 Price Work</span>
           {pohPct>0&&<span style={{color:"#fbbf24"}}>P&OH deducted: <b>{pohPct}%</b></span>}
@@ -5226,6 +5478,7 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
             </tfoot>
           </table>
         </div>}
+        </>}
       </div>}
 
       {/* Variations — with file attachments + inline add */}
@@ -5296,7 +5549,7 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
       </div>}
 
       {/* Workers */}
-      {tab==="workers"&&<SiteWorkersPanel site={site} allWorkers={workers} weekLabel={weekLabel} scopes={sc} setDetailId={setDetailId} setPage={setPage}/>}
+      {tab==="workers"&&<SiteWorkersPanel site={site} allWorkers={workers} allSites={allSites} clients={clients} weekLabel={weekLabel} scopes={sc} setDetailId={setDetailId} setPage={setPage}/>}
 
       {tab==="timesheets"&&(()=>{
         // All workers who have GPS entries for this site
@@ -7074,7 +7327,7 @@ function DComingSoon({icon,title,sub}){
 // ─── DashboardView — the complete dashboard shell ─────────────────────────────
 
 // ── Embedded Schedule View (full schedule table, inside dashboard) ─────────────
-function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLabel,allSiteNames,filter={},setFilter,showWeekend,setShowWeekend,updateCell,setModal,delWorker,scheduleHistory,saveScheduleSnapshot,weeklyRecords,setWeeklyRecords}){
+function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLabel,setWeekLabel,allSiteNames,filter={},setFilter,showWeekend,setShowWeekend,updateCell,setModal,delWorker,scheduleHistory,saveScheduleSnapshot,weeklyRecords,setWeeklyRecords}){
   // Build siteNames from allSiteNames prop or compute inline
   const siteNames=useMemo(()=>{
     if(allSiteNames&&allSiteNames.length>0) return allSiteNames;
@@ -7136,6 +7389,26 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
         <button onClick={()=>setModal&&setModal({type:"worker",worker:mkW()})}
           style={{padding:"5px 10px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",fontSize:10,fontWeight:700}}>+ Worker</button>
       </div>}/>
+
+    {/* Week planner — step through weeks to plan ahead */}
+    {setWeekLabel&&(()=>{
+      const thisWk=currentWeekLabel();
+      const isCurrent=weekLabel===thisWk;
+      const isFuture=(()=>{ try{ return mondayOfWeek(new Date(weekLabel))>mondayOfWeek(londonNow()); }catch(_){ return false; } })();
+      return <div style={{padding:"9px 20px",background:isFuture?"#0d1a2e":"#0f1421",borderBottom:"1px solid #1e2535",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>Planning week</span>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <button onClick={()=>setWeekLabel(addWeeks(weekLabel,-1))} style={{padding:"5px 11px",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:700}}>‹ Prev</button>
+          <span style={{fontSize:14,fontWeight:800,color:isFuture?"#60a5fa":"#f1f5f9",minWidth:130,textAlign:"center"}}>WC {weekLabel}</span>
+          <button onClick={()=>setWeekLabel(addWeeks(weekLabel,1))} style={{padding:"5px 11px",background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:700}}>Next ›</button>
+        </div>
+        {!isCurrent&&<button onClick={()=>setWeekLabel(thisWk)} style={{padding:"5px 11px",background:"#0d2218",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:12,fontWeight:700}}>↩ Back to this week</button>}
+        {isFuture&&<span style={{fontSize:11,padding:"3px 11px",borderRadius:20,background:"#1e3a5f",color:"#60a5fa",fontWeight:700,border:"1px solid #3b82f644"}}>📅 Planning ahead — future week</span>}
+        {isCurrent&&<span style={{fontSize:11,padding:"3px 11px",borderRadius:20,background:"#0d2218",color:"#34d399",fontWeight:700,border:"1px solid #34d39944"}}>● Current week</span>}
+        <span style={{flex:1}}/>
+        <span style={{fontSize:10,color:"#374151",fontStyle:"italic"}}>Set each worker's sites for the selected week. Workers see it in their portal look-ahead.</span>
+      </div>;
+    })()}
 
     <div style={{padding:"6px 20px",background:"#0f1421",borderBottom:"1px solid #1e2535",fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
       <span style={{color:"#fbbf24",fontWeight:700}}>🗺 This is a Route / Forecast only</span>
@@ -7245,7 +7518,7 @@ function DSiteBySite({workers,allSites,activeDays}){
 }
 
 
-function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,bankTransactions,setBankTransactions,timesheetRecords,setTimesheetRecords,payslipRecords,setPayslipRecords,payApplications,setPayApplications,generateTimesheets,generatePayslips,showWeekend,setShowWeekend,filter,setFilter,allSiteNames,updateCell,dashPage,setDashPage,dashDetailId,setDashDetailId}){
+function DashboardView({workers,allSites,clients,weekLabel,setWeekLabel,activeDays,siteHours,scopeData,invoices,saveWorker,delWorker,setAllSites,setClients,setModal,weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,bankTransactions,setBankTransactions,timesheetRecords,setTimesheetRecords,payslipRecords,setPayslipRecords,payApplications,setPayApplications,generateTimesheets,generatePayslips,showWeekend,setShowWeekend,filter,setFilter,allSiteNames,updateCell,dashPage,setDashPage,dashDetailId,setDashDetailId}){
   const nav=(page,id)=>{setDashPage(page);if(id!==undefined)setDashDetailId(id);};
   const goBack=(page)=>setDashPage(page);
 
@@ -7253,6 +7526,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
   const SP={
     workers,allSites,clients,invoices,activeDays,siteHours,weekLabel,setModal,scopeData,
     filter,setFilter,allSiteNames,updateCell,delWorker,showWeekend,setShowWeekend,
+    setAllSites,saveSites:(next)=>setAllSites(next),saveWorker,setWeekLabel,
     weeklyRecords,setWeeklyRecords,scheduleHistory,saveScheduleSnapshot,
     bankTransactions,setBankTransactions,
     timesheetRecords,setTimesheetRecords,
@@ -10491,18 +10765,20 @@ function ManagerView({authState,onLogout,adminMode=false}){
   const [varForm,setVarForm]=useState({ref:"",description:"",value:"",type:"addition",status:"pending"});
   const [editingVarId,setEditingVarId]=useState(null);
   const [siteDocs,setSiteDocs]=useState([]);
+  const [clients,setClients]=useState([]);
 
   // ── Fetch real data from Supabase ──────────────────────────────────────────
   useEffect(()=>{
     (async()=>{
       try{
         const [cfgRows,wRows,dRows]=await Promise.all([
-          sbGet("app_config","select=key,value&key=eq.all_sites"),
+          sbGet("app_config","select=key,value&key=in.(all_sites,clients)"),
           sbGet("workers","select=id,data&order=data->name"),
           sbGet("site_documents","select=id,data").catch(()=>[]),
         ]);
-        const sites=cfgRows[0]?.value||[];
-        setAllSites(sites);
+        const cfg=Object.fromEntries((cfgRows||[]).map(r=>[r.key,r.value]));
+        setAllSites(cfg.all_sites||[]);
+        setClients(cfg.clients||[]);
         setAllWorkers(wRows.map(r=>({...r.data,id:r.id})));
         setSiteDocs((dRows||[]).map(r=>({...r.data,id:r.id})));
       }catch(e){console.warn("Manager fetch failed:",e.message);}
@@ -10510,12 +10786,19 @@ function ManagerView({authState,onLogout,adminMode=false}){
     })();
   },[]);
 
-  // Only sites this manager is assigned to
+  // Sites this manager controls: either delegated via the site's managerId
+  // field, or listed in the manager's own managedSites array (legacy). Admin
+  // mode sees everything.
   const mgrSites=useMemo(()=>{
+    if(adminMode) return allSites;
     const assigned=mgr?.managedSites||[];
-    if(assigned.length===0) return allSites; // fallback: show all if none assigned yet
-    return allSites.filter(s=>assigned.includes(s.id));
-  },[allSites,mgr]);
+    const byId=allSites.filter(s=>s.managerId&&mgr&&s.managerId===mgr.id);
+    const byList=allSites.filter(s=>assigned.includes(s.id));
+    const merged=[...byId];
+    byList.forEach(s=>{ if(!merged.some(m=>m.id===s.id)) merged.push(s); });
+    // If nothing is assigned at all, fall back to showing all (first-run safety).
+    return merged.length>0?merged:(assigned.length===0&&byId.length===0?allSites:merged);
+  },[allSites,mgr,adminMode]);
 
   // When a site is opened, load its variations into the editable local copy.
   useEffect(()=>{
@@ -10761,7 +11044,7 @@ function ManagerView({authState,onLogout,adminMode=false}){
       </div>}
 
       {/* ── WORKERS ── */}
-      {siteTab==="workers"&&<SiteWorkersPanel site={site} allWorkers={allWorkers} weekLabel={weekLabel} scopes={sc} setDetailId={()=>{}} setPage={()=>{}}/>}
+      {siteTab==="workers"&&<SiteWorkersPanel site={site} allWorkers={allWorkers} allSites={allSites} clients={clients} weekLabel={weekLabel} scopes={sc} setDetailId={()=>{}} setPage={()=>{}}/>}
 
       {/* ── DOCUMENTS — real site documents from the Site Documents tool ── */}
       {siteTab==="docs"&&(()=>{
@@ -11331,7 +11614,11 @@ lucian@bright-group.org`;
 
   const activeDays=useMemo(()=>showWeekend?ALL_DAYS:BASE_DAYS,[showWeekend]);
   const allSiteNames=useMemo(()=>{
-    const s=new Set(allSites.map(x=>x.name));
+    // Active (non-completed, non-OFF) sites are selectable in dropdowns.
+    const s=new Set(allSites.filter(x=>x.status!=="completed"&&!isOff(x.name)).map(x=>x.name));
+    // Keep OFF/holiday markers available (they aren't "completed sites").
+    allSites.filter(x=>isOff(x.name)).forEach(x=>s.add(x.name));
+    // Also keep any site a worker is already assigned to, so existing rows render.
     workers.forEach(w=>ALL_DAYS.forEach(d=>{if(w.days[d])s.add(w.days[d].trim());}));
     return Array.from(s).filter(Boolean).sort();
   },[allSites,workers]);
@@ -11455,7 +11742,7 @@ lucian@bright-group.org`;
         <div style={{flex:1,overflowY:"auto",minWidth:0}}>
           <DashboardView
             workers={workers} allSites={allSites} clients={clients}
-            weekLabel={weekLabel} activeDays={activeDays} siteHours={siteHours}
+            weekLabel={weekLabel} setWeekLabel={setWeekLabel} activeDays={activeDays} siteHours={siteHours}
             scopeData={scopeData} invoices={invoices}
             saveWorker={saveWorker} delWorker={delWorker}
             setAllSites={setAllSites} setClients={setClients} setModal={setModal}
