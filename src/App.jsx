@@ -11007,7 +11007,28 @@ async function loadSamples(){
 }
 
 /* ---------- boot ---------- */
-(async function init(){ await loadAll(); render(); })();
+(async function init(){
+  try{
+    await loadAll();
+    render();
+  }catch(err){
+    // Never leave the user with a blank screen — surface what went wrong.
+    try{
+      var v=document.getElementById("view");
+      if(v){
+        v.innerHTML='<div style="padding:40px 20px;max-width:520px;margin:0 auto;text-align:center;font-family:-apple-system,Segoe UI,Roboto,sans-serif">'
+          +'<div style="font-size:40px;margin-bottom:12px">⚠️</div>'
+          +'<div style="font-size:17px;font-weight:800;color:#1f2933;margin-bottom:8px">Asset Register couldn\'t load</div>'
+          +'<div style="font-size:13px;color:#52606d;line-height:1.5;margin-bottom:16px">There was a problem starting the app. This is usually a temporary connection issue — pull to refresh or reopen. If it keeps happening, send this message to the office:</div>'
+          +'<div style="font-size:12px;font-family:monospace;color:#a32525;background:#fbe6e6;border:1px solid #f0c0c0;border-radius:8px;padding:12px;word-break:break-word">'+(err&&err.message?String(err.message):String(err))+'</div>'
+          +'<button onclick="location.reload()" style="margin-top:16px;padding:11px 22px;background:#1f2933;color:#fff;border:none;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer">↻ Reload</button>'
+          +'</div>';
+      }
+    }catch(_){}
+    // Still attempt a render so the shell/nav is usable even after an error.
+    try{ render(); }catch(_){}
+  }
+})();
 </script>
 </body>
 </html>
