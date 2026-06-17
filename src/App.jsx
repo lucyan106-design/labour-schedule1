@@ -381,6 +381,10 @@ function currentWeekLabel(){
 function londonTodayLabel(){
   return londonNow().toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"});
 }
+// London day-of-week short code ("Mon".."Sun").
+function londonDayCode(){
+  return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][londonNow().getDay()];
+}
 // Live GMT/London clock string ("06:52 BST"). Includes the zone abbreviation.
 function londonClock(){
   return new Date().toLocaleTimeString("en-GB",{timeZone:"Europe/London",hour:"2-digit",minute:"2-digit"});
@@ -4719,17 +4723,44 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
   const [liveWorkers,setLiveWorkers]=useState(allWorkers);
   const [fetching,setFetching]=useState(false);
   const [lastFetch,setLastFetch]=useState(null);
+  const [savingScope,setSavingScope]=useState(null);
 
   const refreshFromDB=async()=>{
     setFetching(true);
     try{
       const rows=await sbGet("workers","select=id,data&order=data->name");
-      if(rows.length>0) setLiveWorkers(rows.map(r=>({...r.data,id:r.id})));
+      if(rows.length>0){
+        const ws=rows.map(r=>({...r.data,id:r.id}));
+        setLiveWorkers(ws);
+        // seed scope allocations from whatever is already stored on each log
+        const seed={};
+        ws.forEach(w=>(w.attendanceLogs||[]).forEach(l=>{ if(l.scopeId) seed[l.id]=l.scopeId; }));
+        setEntryScopes(prev=>({...seed,...prev}));
+      }
     }catch(e){console.warn("Workers refresh failed:",e.message);}
     setFetching(false);
     setLastFetch(new Date());
   };
   useEffect(()=>{refreshFromDB();const t=setInterval(refreshFromDB,30000);return()=>clearInterval(t);},[site.id]);
+
+  // Allocate a scope/variation to a work entry — writes scopeId + a human
+  // scopeLabel onto the worker's attendanceLog so the worker sees it in their
+  // portal timesheet, and the allocation survives refreshes.
+  const allocateScope=async(entry,scopeId)=>{
+    setEntryScopes(m=>({...m,[entry.id]:scopeId||undefined}));
+    setSavingScope(entry.id);
+    try{
+      const opt=SCOPE_OPTIONS.find(o=>o.id===scopeId);
+      const scopeLabel=opt?opt.label:"";
+      const w=liveWorkers.find(x=>x.id===entry.workerId);
+      if(w){
+        const logs=(w.attendanceLogs||[]).map(l=>l.id===entry.id?{...l,scopeId:scopeId||null,scopeLabel}:l);
+        await patchWorkerRow(w.id,row=>({...row,attendanceLogs:logs}));
+        setLiveWorkers(ws=>ws.map(x=>x.id===w.id?{...x,attendanceLogs:logs}:x));
+      }
+    }catch(e){console.warn("Scope allocation failed:",e.message);}
+    setSavingScope(null);
+  };
 
   // All GPS work entries for this site across all workers
   const allEntries=useMemo(()=>{
@@ -4782,7 +4813,17 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
   const INP={background:"#0d1117",border:"1px solid #1e2535",borderRadius:6,padding:"4px 8px",color:"#f1f5f9",fontSize:11,outline:"none",cursor:"pointer",width:"100%"};
 
   return <div>
-    {reportEntry&&<WorkReportModal entry={reportEntry} worker={liveWorkers.find(w=>w.id===reportEntry.workerId)||{name:reportEntry.workerName}} onSave={e=>{setReportEntry(null);}} onClose={()=>setReportEntry(null)}/>}
+    {reportEntry&&<WorkReportModal entry={reportEntry} worker={liveWorkers.find(w=>w.id===reportEntry.workerId)||{name:reportEntry.workerName}} onSave={async(updatedEntry)=>{
+      try{
+        const w=liveWorkers.find(x=>x.id===updatedEntry.workerId);
+        if(w){
+          const logs=(w.attendanceLogs||[]).map(l=>l.id===updatedEntry.id?{...l,workReport:updatedEntry.workReport}:l);
+          await patchWorkerRow(w.id,row=>({...row,attendanceLogs:logs}));
+          setLiveWorkers(ws=>ws.map(x=>x.id===w.id?{...x,attendanceLogs:logs}:x));
+        }
+      }catch(e){console.warn("Report save failed:",e.message);}
+      setReportEntry(null);
+    }} onClose={()=>setReportEntry(null)}/>}
 
     {/* Header */}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -4811,7 +4852,7 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
 
     {/* Sub-tabs */}
     <div style={{display:"flex",gap:0,background:"#0d1117",borderRadius:8,padding:3,marginBottom:14}}>
-      {[["entries","📋 Work Entries"],["scopes","💷 Labour per Scope"]].map(([v,l])=>(
+      {[["entries","📋 Work Entries"],["lookahead","📅 Look-ahead"],["scopes","💷 Labour per Scope"]].map(([v,l])=>(
         <button key={v} onClick={()=>setSubtab(v)}
           style={{flex:1,padding:"7px 10px",borderRadius:6,border:`1px solid ${subtab===v?"#3b82f6":"transparent"}`,
             background:subtab===v?"#1e3a5f":"transparent",color:subtab===v?"#60a5fa":"#64748b",
@@ -4849,7 +4890,7 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
               <div style={{fontSize:11,color:e.ot>0?"#fbbf24":"#374151",fontWeight:e.ot>0?700:400}}>{e.ot>0?"+"+e.ot.toFixed(1):"—"}</div>
               <div>
                 {hasScopeOptions
-                  ?<select value={entryScopes[e.id]||""} onChange={ev=>setEntryScopes(m=>({...m,[e.id]:ev.target.value||undefined}))} style={INP}>
+                  ?<select value={entryScopes[e.id]||""} onChange={ev=>allocateScope(e,ev.target.value)} disabled={savingScope===e.id} style={{...INP,opacity:savingScope===e.id?0.5:1}}>
                       <option value="">— Select scope —</option>
                       {scopes.length>0&&<optgroup label="Scopes">
                         {scopes.map(s=><option key={s.id} value={s.id}>{s.description}</option>)}
@@ -4870,6 +4911,55 @@ function SiteWorkersPanel({site,allWorkers,weekLabel,scopes,setDetailId,setPage}
             </div>;
           })}
         </div>}
+    </div>}
+
+    {/* ── LOOK-AHEAD TAB — planned workers from the schedule forecast ── */}
+    {subtab==="lookahead"&&<div>
+      <div style={{background:"#0d1117",borderRadius:8,padding:"9px 13px",marginBottom:12,fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:7}}>
+        <span style={{fontSize:14}}>📅</span>
+        <span>Who is planned for {site.name} this week (from the labour schedule). This is the forecast — actual attendance is confirmed by GPS sign-in.</span>
+      </div>
+      {(()=>{
+        // Workers planned for this site on any day this week
+        const planned=liveWorkers.filter(w=>Object.values(w.days||{}).some(d=>(d||"").includes(site.name)));
+        if(planned.length===0) return <div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
+          <div style={{fontSize:32,marginBottom:10}}>📅</div>No workers planned for this site this week.
+        </div>;
+        const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+        const hasWeekend=planned.some(w=>["Sat","Sun"].some(d=>(w.days?.[d]||"").includes(site.name)));
+        const cols=hasWeekend?DAYS:DAYS.slice(0,5);
+        return <div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:`1.6fr repeat(${cols.length},1fr)`,padding:"8px 12px",background:"#0d1117",borderBottom:"1px solid #1e2535",gap:6}}>
+            <div style={{fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>Worker</div>
+            {cols.map(d=><div key={d} style={{fontSize:9,fontWeight:700,color:d==="Sat"||d==="Sun"?"#fbbf24":"#64748b",textTransform:"uppercase",textAlign:"center"}}>{d}</div>)}
+          </div>
+          {planned.map((w,i)=>{
+            const todayCode=londonDayCode?.();
+            return <div key={w.id} style={{display:"grid",gridTemplateColumns:`1.6fr repeat(${cols.length},1fr)`,padding:"9px 12px",borderBottom:"1px solid #1e2535",background:i%2===0?"#111827":"#0f1421",gap:6,alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:7}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:"#1e3a5f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#60a5fa",flexShrink:0}}>{(w.name||"?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:11,fontWeight:600,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{w.name}</div>
+                  <div style={{fontSize:9,color:"#64748b"}}>{w.position||"—"}</div>
+                </div>
+              </div>
+              {cols.map(d=>{
+                const here=(w.days?.[d]||"").includes(site.name);
+                const signedToday=here&&d===todayCode&&(w.attendanceLogs||[]).some(l=>(l.siteName===site.name||l.siteId===site.id)&&l.day===d&&l.weekLabel===weekLabel&&l.signIn);
+                return <div key={d} style={{textAlign:"center"}}>
+                  {here
+                    ?<span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",background:signedToday?"#34d399":"#3b82f6"}} title={signedToday?"Planned · signed in":"Planned"}/>
+                    :<span style={{color:"#2d3555",fontSize:11}}>·</span>}
+                </div>;
+              })}
+            </div>;
+          })}
+          <div style={{display:"flex",gap:14,padding:"8px 12px",background:"#0d1117",fontSize:10,color:"#64748b"}}>
+            <span><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#3b82f6",marginRight:4}}/>Planned</span>
+            <span><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#34d399",marginRight:4}}/>Signed in today</span>
+          </div>
+        </div>;
+      })()}
     </div>}
 
     {/* ── LABOUR PER SCOPE TAB ── */}
@@ -7204,7 +7294,7 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "leave_requests":return <WorkerLeaveView/>;
       case "announcements": return <AnnouncementsAdminView/>;
       case "worker_docs":   return <WorkerDocsAdminView/>;
-      case "app_sitemanager":  return <SiteManagerView/>;
+      case "app_sitemanager":  return <ManagerView authState={{worker:{name:"Admin (all sites)",managedSites:[]},role:"admin",email:""}} onLogout={()=>setDashPage("home")} adminMode={true}/>;
       case "app_sitedocs":    return <SiteDocGeneratorView/>;
       case "app_assets":      return <AssetRegisterView/>;
       default:              return <DHome {...SP} weeklyRecords={weeklyRecords} setPage={setDashPage}/>;
@@ -8171,18 +8261,24 @@ function initFd(dt, site) {
 
 async function loadDocs() {
   try {
-    const raw = localStorage.getItem("bm_site_documents");
-    if (raw) return JSON.parse(raw);
-  } catch (_) {}
-  return [];
+    const rows = await sbGet("site_documents","select=id,data&order=data->>generatedAt.desc");
+    return rows.map(r=>({...r.data, id:r.id}));
+  } catch (_) {
+    try { const raw = localStorage.getItem("bm_site_documents"); if (raw) return JSON.parse(raw); } catch(_){}
+    return [];
+  }
 }
 
 async function saveDoc(doc, existing) {
   try {
-    const updated = [...(existing || []).filter(d => d.id !== doc.id), doc];
-    localStorage.setItem("bm_site_documents", JSON.stringify(updated));
-    return updated;
-  } catch (_) { return existing || []; }
+    await sbUpsert("site_documents",[{id:doc.id, data:doc}]);
+    return [doc, ...(existing || []).filter(d => d.id !== doc.id)];
+  } catch (_) { return [doc, ...(existing || []).filter(d => d.id !== doc.id)]; }
+}
+
+async function deleteDoc(id, existing) {
+  try { await sbDelete("site_documents",`id=eq.${encodeURIComponent(id)}`); } catch(_){}
+  return (existing || []).filter(d => d.id !== id);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -8322,8 +8418,12 @@ return function SiteDocGeneratorView() {
   const [activeCat, setActiveCat] = useState("safety");
 
   const sync = useCallback(async () => {
-    // Sites data comes from the labour schedule app via props
-    // Falls back to built-in demo sites when no live data available
+    // Pull the real sites from the labour schedule (app_config.all_sites).
+    try {
+      const rows = await sbGet("app_config","select=value&key=eq.all_sites");
+      const sites = rows[0]?.value || [];
+      if (sites.length > 0) { setSites(sites); setSyncSt("live"); return; }
+    } catch (_) {}
     setSites(DEMO_SITES); setSyncSt("demo");
   }, []);
 
@@ -9486,26 +9586,45 @@ function AssetRegisterView(){
    condition updates, serviceability and certificate output.
    ============================================================ */
 
+/* ---------- Supabase (this runs inside an isolated iframe, so the
+   client must be defined here, not inherited from the parent app) ---------- */
+const SB_URL = "https://xljglqiifogyxefhszwa.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsamdscWlpZm9neXhlZmhzendhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMTY2MTQsImV4cCI6MjA5NjU5MjYxNH0.asql85bUrgL5JuzqYoU0ZtizIWJ1yU6NYTt3yMUW5us";
+const SB_H = { "Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY };
+async function sbGet(t,f){ const r=await fetch(SB_URL+"/rest/v1/"+t+"?"+(f||""),{headers:SB_H}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+async function sbUpsert(t,d){ const r=await fetch(SB_URL+"/rest/v1/"+t,{method:"POST",headers:Object.assign({},SB_H,{"Prefer":"resolution=merge-duplicates"}),body:JSON.stringify(d)}); if(!r.ok) throw new Error(await r.text()); }
+async function sbDelete(t,f){ const r=await fetch(SB_URL+"/rest/v1/"+t+"?"+f,{method:"DELETE",headers:SB_H}); if(!r.ok) throw new Error(await r.text()); }
+
 /* ---------- storage ---------- */
-// Storage: localStorage with in-memory fallback
+// Storage: Supabase assets table with in-memory fallback
 const mem = new Map();
 const Store = {
   async list(){
     try{
-      const keys=Object.keys(localStorage).filter(k=>k.startsWith("bm_asset:"));
-      return keys.map(k=>k.replace(/^bm_/,""));
-    }catch(e){ return [...mem.keys()].filter(k=>k.startsWith("asset:")); }
+      const rows=await sbGet("assets","select=id");
+      return rows.map(r=>"asset:"+r.id);
+    }catch(e){
+      // offline fallback to in-memory
+      return [...mem.keys()].filter(k=>k.startsWith("asset:"));
+    }
   },
   async get(k){
-    try{ const v=localStorage.getItem("bm_"+k); return v||null; }
-    catch(e){ return mem.get(k)||null; }
+    const id=String(k).replace(/^asset:/,"");
+    try{
+      const rows=await sbGet("assets","select=data&id=eq."+encodeURIComponent(id));
+      return rows[0]&&rows[0].data?JSON.stringify(rows[0].data):null;
+    }catch(e){ return mem.get(k)||null; }
   },
   async set(k,v){
-    try{ localStorage.setItem("bm_"+k,v); }
-    catch(e){ mem.set(k,v); }
+    const id=String(k).replace(/^asset:/,"");
+    try{
+      let data; try{ data=JSON.parse(v); }catch(_){ data=v; }
+      await sbUpsert("assets",[{id:id,data:data}]);
+    }catch(e){ mem.set(k,v); }
   },
   async del(k){
-    try{ localStorage.removeItem("bm_"+k); }
+    const id=String(k).replace(/^asset:/,"");
+    try{ await sbDelete("assets","id=eq."+encodeURIComponent(id)); }
     catch(e){ mem.delete(k); }
   }
 };
@@ -9568,12 +9687,18 @@ function attention(a){
 
 /* ---------- load + migrate ---------- */
 async function loadAll(){
-  const keys=await Store.list();
-  const out=[];
-  for(const raw of keys){
-    const k=String(raw).startsWith("asset:")?String(raw):"asset:"+raw;
-    const v=await Store.get(k);
-    if(v){ try{ out.push(migrate(JSON.parse(v))); }catch(e){} }
+  let out=[];
+  try{
+    const rows=await sbGet("assets","select=id,data");
+    out=rows.map(r=>migrate({...r.data,id:r.id}));
+  }catch(e){
+    // offline fallback: pull from in-memory store
+    const keys=await Store.list();
+    for(const raw of keys){
+      const k=String(raw).startsWith("asset:")?String(raw):"asset:"+raw;
+      const v=await Store.get(k);
+      if(v){ try{ out.push(migrate(JSON.parse(v))); }catch(_){} }
+    }
   }
   out.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
   state.assets=out;
@@ -10352,24 +10477,34 @@ function LoginGate({onLogin}){
 
 // ─── MANAGER VIEW ─────────────────────────────────────────────────────────────
 // ─── Manager View — real sites from Supabase, filtered to assigned sites ──────
-function ManagerView({authState,onLogout}){
+function ManagerView({authState,onLogout,adminMode=false}){
   const mgr=authState.worker;
   const [allSites,setAllSites]=useState([]);
   const [allWorkers,setAllWorkers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [openSiteId,setOpenSiteId]=useState(null);
   const [varModal,setVarModal]=useState(null); // {siteId, variation|null}
+  // Site-detail hooks MUST live here (before any early return) so the hook
+  // count is identical on every render — opening a site must not change it.
+  const [siteTab,setSiteTab]=useState("scopes");
+  const [localVars,setLocalVars]=useState([]);
+  const [varForm,setVarForm]=useState({ref:"",description:"",value:"",type:"addition",status:"pending"});
+  const [editingVarId,setEditingVarId]=useState(null);
+  const [siteDocs,setSiteDocs]=useState([]);
 
   // ── Fetch real data from Supabase ──────────────────────────────────────────
   useEffect(()=>{
     (async()=>{
       try{
-        const [sRows,wRows]=await Promise.all([
-          sbGet("sites","select=id,data&order=data->name"),
+        const [cfgRows,wRows,dRows]=await Promise.all([
+          sbGet("app_config","select=key,value&key=eq.all_sites"),
           sbGet("workers","select=id,data&order=data->name"),
+          sbGet("site_documents","select=id,data").catch(()=>[]),
         ]);
-        setAllSites(sRows.map(r=>({...r.data,id:r.id})));
+        const sites=cfgRows[0]?.value||[];
+        setAllSites(sites);
         setAllWorkers(wRows.map(r=>({...r.data,id:r.id})));
+        setSiteDocs((dRows||[]).map(r=>({...r.data,id:r.id})));
       }catch(e){console.warn("Manager fetch failed:",e.message);}
       setLoading(false);
     })();
@@ -10381,6 +10516,14 @@ function ManagerView({authState,onLogout}){
     if(assigned.length===0) return allSites; // fallback: show all if none assigned yet
     return allSites.filter(s=>assigned.includes(s.id));
   },[allSites,mgr]);
+
+  // When a site is opened, load its variations into the editable local copy.
+  useEffect(()=>{
+    if(!openSiteId){ setLocalVars([]); return; }
+    const s=allSites.find(x=>x.id===openSiteId);
+    setLocalVars(s?.variations||[]);
+    setSiteTab("scopes");
+  },[openSiteId,allSites]);
 
   const site=mgrSites.find(s=>s.id===openSiteId);
 
@@ -10412,8 +10555,8 @@ function ManagerView({authState,onLogout}){
       </div>
     </div>
     <div style={{display:"flex",alignItems:"center",gap:8}}>
-      <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,background:"#60a5fa22",color:"#60a5fa",border:"1px solid #60a5fa44",fontWeight:700}}>🏗 Manager</span>
-      <button onClick={onLogout} style={{padding:"5px 12px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:11,fontWeight:600}}>Sign Out</button>
+      <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,background:"#60a5fa22",color:"#60a5fa",border:"1px solid #60a5fa44",fontWeight:700}}>🏗 {adminMode?"All Sites":"Manager"}</span>
+      <button onClick={onLogout} style={{padding:"5px 12px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#94a3b8",cursor:"pointer",fontSize:11,fontWeight:600}}>{adminMode?"← Back":"Sign Out"}</button>
     </div>
   </div>;
 
@@ -10474,18 +10617,12 @@ function ManagerView({authState,onLogout}){
   </div>;
 
   // ── SITE DETAIL (manager view) ─────────────────────────────────────────────
-  const [siteTab,setSiteTab]=useState("scopes");
   const sc=site.scopes||[];
   const vr=site.variations||[];
-  const weekLabel=formatWeekLabel?.(new Date())||new Date().toISOString().slice(0,10);
+  const weekLabel=currentWeekLabel();
 
   // Workers on this site (from schedule)
   const siteWorkers=allWorkers.filter(w=>Object.values(w.days||{}).some(d=>(d||"").includes(site.name)));
-
-  // Variation modal state (stored here so it persists across re-renders)
-  const [localVars,setLocalVars]=useState(vr);
-  const [varForm,setVarForm]=useState({ref:"",description:"",value:"",type:"addition",status:"pending"});
-  const [editingVarId,setEditingVarId]=useState(null);
 
   const saveVar=()=>{
     if(!varForm.description) return;
@@ -10557,6 +10694,8 @@ function ManagerView({authState,onLogout}){
         </div>
         {sc.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>No scopes defined yet.</div>}
         {sc.map((s,i)=>{
+          const poh=Number(site.pohPct)||0;
+          const rateAfter=Math.round((Number(s.rate)||0)*(1-poh/100)*100)/100; // unit rate after P&OH discount
           const budget=scopeNetToBM(s,site);
           const done=Number(s.completed)||0;
           const earned=Math.round(budget*done/100*100)/100;
@@ -10564,12 +10703,20 @@ function ManagerView({authState,onLogout}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
               <div style={{flex:1,marginRight:10}}>
                 <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>{s.description||s.name}</div>
-                {s.unit&&<div style={{fontSize:11,color:"#64748b",marginTop:1}}>{Number(s.qty)||0} {s.unit}</div>}
               </div>
               <div style={{textAlign:"right"}}>
                 <div style={{fontSize:15,fontWeight:800,color:"#60a5fa"}}>{fmt(budget)}</div>
                 <div style={{fontSize:10,color:"#64748b",marginTop:1}}>your budget</div>
               </div>
+            </div>
+            {/* The five fields a manager is allowed to see */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:7,marginBottom:10}}>
+              {[["Qty",(Number(s.qty)||0).toString()],["Unit",s.unit||"—"],["Rate (net)",fmt(rateAfter)]].map(([l,v])=>
+                <div key={l} style={{background:"#0d1117",borderRadius:7,padding:"6px 9px"}}>
+                  <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",marginTop:1}}>{v}</div>
+                </div>
+              )}
             </div>
             <div style={{background:"#1e2535",borderRadius:4,height:6,overflow:"hidden",marginBottom:6}}>
               <div style={{height:"100%",background:done===100?"#34d399":done>60?"#3b82f6":"#fbbf24",width:done+"%",borderRadius:4,transition:"width .4s"}}/>
@@ -10616,12 +10763,35 @@ function ManagerView({authState,onLogout}){
       {/* ── WORKERS ── */}
       {siteTab==="workers"&&<SiteWorkersPanel site={site} allWorkers={allWorkers} weekLabel={weekLabel} scopes={sc} setDetailId={()=>{}} setPage={()=>{}}/>}
 
-      {/* ── DOCUMENTS ── */}
-      {siteTab==="docs"&&<div style={{textAlign:"center",padding:48,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
-        <div style={{fontSize:32,marginBottom:10}}>📁</div>
-        <div style={{fontWeight:600,marginBottom:4}}>Site Documents</div>
-        <div style={{fontSize:12}}>Documents for {site.name} will appear here once uploaded by admin or via the Site Documents tool.</div>
-      </div>}
+      {/* ── DOCUMENTS — real site documents from the Site Documents tool ── */}
+      {siteTab==="docs"&&(()=>{
+        const docs=siteDocs.filter(d=>d.siteId===site.id||d.site===site.name)
+          .sort((a,b)=>new Date(b.generatedAt||0)-new Date(a.generatedAt||0));
+        const CAT_IC={rams:"⚠️",inspection:"🔍",quality:"✓",commercial:"💷",records:"📋"};
+        const fmtDoc=iso=>iso?new Date(iso).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—";
+        return <div>
+          <div style={{background:"#0d1117",borderRadius:8,padding:"9px 13px",marginBottom:12,fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:7}}>
+            <span style={{fontSize:14}}>📁</span>
+            <span>Documents generated for {site.name} (RAMS, inspections, quality records). Created via the Site Documents tool.</span>
+          </div>
+          {docs.length===0
+            ?<div style={{textAlign:"center",padding:40,color:"#374151",border:"1px dashed #1e2535",borderRadius:11}}>
+                <div style={{fontSize:32,marginBottom:10}}>📁</div>
+                <div style={{fontWeight:600,marginBottom:4}}>No documents yet</div>
+                <div style={{fontSize:12}}>Documents for this site will appear here once created.</div>
+              </div>
+            :<div style={{border:"1px solid #1e2535",borderRadius:10,overflow:"hidden"}}>
+              {docs.map((d,i)=><div key={d.id||i} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",background:i%2===0?"#111827":"#0f1421",borderBottom:i<docs.length-1?"1px solid #1e2535":"none"}}>
+                <span style={{fontSize:20,flexShrink:0}}>{CAT_IC[d.category]||"📄"}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"#f1f5f9"}}>{d.docLabel||d.docType}</div>
+                  <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{fmtDoc(d.generatedAt)}{d.generatedBy?" · by "+d.generatedBy:""}{d.team?.length?" · "+d.team.length+" attendee"+(d.team.length!==1?"s":""):""}</div>
+                </div>
+                <span style={{fontSize:9,padding:"2px 8px",borderRadius:5,background:"#1e3a5f",color:"#60a5fa",fontWeight:700,textTransform:"uppercase",flexShrink:0}}>{d.category||"doc"}</span>
+              </div>)}
+            </div>}
+        </div>;
+      })()}
 
       {/* ── PAYMENT APPLICATION ── */}
       {siteTab==="application"&&<div>
