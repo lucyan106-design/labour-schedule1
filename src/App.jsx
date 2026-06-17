@@ -394,6 +394,27 @@ function londonClock(){
 function weekLabelForDate(iso){
   return formatWeekLabel(mondayOfWeek(new Date(iso)));
 }
+// Per-week routes. The live (current) week lives on worker.days for backward
+// compatibility (GPS, timesheets and the portal all read worker.days). Other
+// weeks are stored under worker.weekPlans[weekLabel] so planning ahead never
+// overwrites the live week.
+function routesForWeek(worker,wkLabel){
+  if(!worker) return {};
+  if(wkLabel===currentWeekLabel()) return worker.days||{};
+  return (worker.weekPlans&&worker.weekPlans[wkLabel])||{};
+}
+// Actual calendar dates for each day-code of a given week label.
+function datesForWeek(wkLabel){
+  const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  let monday;
+  try{ monday=mondayOfWeek(new Date(wkLabel)); }catch(_){ monday=mondayOfWeek(londonNow()); }
+  const out={};
+  ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].forEach((d,i)=>{
+    const dt=new Date(monday); dt.setDate(monday.getDate()+i);
+    out[d]=dt.getDate()+" "+MN[dt.getMonth()];
+  });
+  return out;
+}
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 const INIT_W=[
@@ -7609,9 +7630,9 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
   const siteNames=useMemo(()=>{
     if(allSiteNames&&allSiteNames.length>0) return allSiteNames;
     const s=new Set((allSites||[]).map(x=>x.name));
-    (workers||[]).forEach(w=>ALL_DAYS.forEach(d=>{if(w.days?.[d])s.add(w.days[d].trim());}));
+    (workers||[]).forEach(w=>{const rw=routesForWeek(w,weekLabel);ALL_DAYS.forEach(d=>{if(rw?.[d])s.add(rw[d].trim());});});
     return Array.from(s).filter(Boolean).sort();
-  },[allSiteNames,allSites,workers]);
+  },[allSiteNames,allSites,workers,weekLabel]);
 
   // Auto-snapshot this week
   useEffect(()=>{
@@ -7624,28 +7645,61 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
   const displayed=useMemo(()=>workers.filter(w=>{
     if(nm&&!w.name?.toLowerCase().includes(nm.toLowerCase())) return false;
     if(pos&&w.position!==pos) return false;
-    if(si&&!Object.values(w.days||{}).some(d=>d&&d.toLowerCase().includes(si.toLowerCase()))) return false;
+    if(si&&!Object.values(routesForWeek(w,weekLabel)||{}).some(d=>d&&d.toLowerCase().includes(si.toLowerCase()))) return false;
     return true;
-  }),[workers,nm,pos,si]);
+  }),[workers,nm,pos,si,weekLabel]);
 
-  // Group by primary site
+  // Group by primary site (for the selected week)
   const groups=useMemo(()=>{
     const g={};
     displayed.forEach(w=>{
+      const rw=routesForWeek(w,weekLabel);
       const cnts={};
-      (activeDays||BASE_DAYS).forEach(d=>{const s=w.days?.[d];if(s&&!isOff(s))cnts[s]=(cnts[s]||0)+1;});
+      (activeDays||BASE_DAYS).forEach(d=>{const s=rw?.[d];if(s&&!isOff(s))cnts[s]=(cnts[s]||0)+1;});
       const primary=Object.entries(cnts).sort((a,b)=>b[1]-a[1])[0]?.[0]||"Unassigned / Off";
       if(!g[primary])g[primary]=[];
       g[primary].push(w);
     });
     return g;
-  },[displayed,activeDays]);
+  },[displayed,activeDays,weekLabel]);
 
-  const siteOrder=Object.keys(groups).sort((a,b)=>{
-    if(a==="Unassigned / Off") return 1;
-    if(b==="Unassigned / Off") return -1;
-    return a.localeCompare(b);
-  });
+  // Custom site arrangement (persisted per device). Sites not in the saved
+  // order fall back to alphabetical after the arranged ones.
+  const ORDER_KEY="bm_site_order_v1";
+  const [siteOrderPref,setSiteOrderPref]=useState(()=>{ try{ return JSON.parse(localStorage.getItem(ORDER_KEY)||"[]"); }catch(_){ return []; } });
+  const [arrangeMode,setArrangeMode]=useState(false);
+  const persistOrder=(arr)=>{ setSiteOrderPref(arr); try{ localStorage.setItem(ORDER_KEY,JSON.stringify(arr)); }catch(_){} };
+
+  const siteOrder=useMemo(()=>{
+    const present=Object.keys(groups);
+    const ordered=[];
+    siteOrderPref.forEach(n=>{ if(present.includes(n)&&!ordered.includes(n)) ordered.push(n); });
+    present.filter(n=>!ordered.includes(n))
+      .sort((a,b)=>{ if(a==="Unassigned / Off")return 1; if(b==="Unassigned / Off")return -1; return a.localeCompare(b); })
+      .forEach(n=>ordered.push(n));
+    // Always push the catch-all group last
+    return ordered.sort((a,b)=>{ if(a==="Unassigned / Off")return 1; if(b==="Unassigned / Off")return -1; return 0; });
+  },[groups,siteOrderPref]);
+
+  const moveSite=(name,dir)=>{
+    const cur=siteOrder.filter(n=>n!=="Unassigned / Off");
+    const idx=cur.indexOf(name);
+    if(idx<0) return;
+    const ni=idx+dir;
+    if(ni<0||ni>=cur.length) return;
+    const next=[...cur]; next.splice(idx,1); next.splice(ni,0,name);
+    persistOrder(next);
+  };
+
+  // Fill the same site forward (to later days) or backward (to earlier days)
+  // for one worker, across the active days of the selected week.
+  const fillFromDay=(workerId,fromDay,value,dir)=>{
+    const days=(activeDays||BASE_DAYS);
+    const start=days.indexOf(fromDay);
+    if(start<0||!value) return;
+    const targets=dir>0?days.slice(start+1):days.slice(0,start);
+    targets.forEach(d=>updateCell&&updateCell(workerId,d,value));
+  };
 
   const TH2={padding:"7px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",borderBottom:"1px solid #1e2535",background:"#0a0e17",whiteSpace:"nowrap"};
   const TD2={padding:"5px 8px",borderBottom:"1px solid #1a2030",verticalAlign:"middle"};
@@ -7658,6 +7712,10 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
         <button onClick={()=>setShowWeekend&&setShowWeekend(s=>!s)}
           style={{padding:"5px 10px",background:showWeekend?"#1a3020":"#1a1f2e",border:`1px solid ${showWeekend?"#10b981":"#2d3555"}`,borderRadius:6,color:showWeekend?"#34d399":"#64748b",cursor:"pointer",fontSize:10,fontWeight:700}}>
           {showWeekend?"✓ Weekend":"+ Weekend"}
+        </button>
+        <button onClick={()=>setArrangeMode(v=>!v)}
+          style={{padding:"5px 10px",background:arrangeMode?"#2a1a3e":"#1a1f2e",border:`1px solid ${arrangeMode?"#a78bfa":"#2d3555"}`,borderRadius:6,color:arrangeMode?"#a78bfa":"#64748b",cursor:"pointer",fontSize:10,fontWeight:700}}>
+          {arrangeMode?"✓ Arranging":"↕ Arrange"}
         </button>
         <button onClick={()=>exportSchedulePDF(displayed,activeDays||BASE_DAYS,weekLabel,allSites)}
           style={{padding:"5px 10px",background:"#1a1f2e",border:"1px solid #ef4444",borderRadius:6,color:"#f87171",cursor:"pointer",fontSize:10,fontWeight:700}}>📄 PDF</button>
@@ -7702,10 +7760,16 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
       {siteOrder.map(siteName=>{
         const siteColor=getSiteColor(siteName,allSites);
         const grpWorkers=groups[siteName]||[];
+        const wkDates=datesForWeek(weekLabel);
+        const canArrange=arrangeMode&&siteName!=="Unassigned / Off";
         return <div key={siteName}>
           <div style={{background:`${siteColor}15`,borderLeft:`4px solid ${siteColor}`,padding:"6px 18px",display:"flex",alignItems:"center",gap:10,borderTop:"1px solid #1e2535",borderBottom:`1px solid ${siteColor}33`}}>
             <span style={{width:9,height:9,borderRadius:"50%",background:siteColor,flexShrink:0}}/>
             <span style={{fontWeight:800,color:siteColor,fontSize:13,flex:1}}>{siteName}</span>
+            {canArrange&&<span style={{display:"flex",gap:4,marginRight:6}}>
+              <button onClick={()=>moveSite(siteName,-1)} title="Move up" style={{width:24,height:24,borderRadius:5,background:"#1a1f2e",border:"1px solid #a78bfa55",color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:800,lineHeight:1}}>↑</button>
+              <button onClick={()=>moveSite(siteName,1)} title="Move down" style={{width:24,height:24,borderRadius:5,background:"#1a1f2e",border:"1px solid #a78bfa55",color:"#a78bfa",cursor:"pointer",fontSize:12,fontWeight:800,lineHeight:1}}>↓</button>
+            </span>}
             <span style={{fontSize:11,color:"#64748b"}}>{grpWorkers.length} operative{grpWorkers.length!==1?"s":""}</span>
           </div>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -7713,7 +7777,10 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
               <th style={{...TH2,minWidth:140,paddingLeft:20}}>Worker</th>
               <th style={TH2}>Co.</th>
               <th style={TH2}>Position</th>
-              {(activeDays||BASE_DAYS).map(d=><th key={d} style={{...TH2,minWidth:130,color:WEEKEND_DAYS.includes(d)?"#fbbf24":"#64748b"}}>{d}{WEEKEND_DAYS.includes(d)?" 🟡":""}</th>)}
+              {(activeDays||BASE_DAYS).map(d=><th key={d} style={{...TH2,minWidth:130,color:WEEKEND_DAYS.includes(d)?"#fbbf24":"#64748b"}}>
+                {d}{WEEKEND_DAYS.includes(d)?" 🟡":""}
+                <div style={{fontSize:9,fontWeight:500,color:"#475569",marginTop:1}}>{wkDates[d]||""}</div>
+              </th>)}
               <th style={TH2}>Rate</th>
               <th style={TH2}>Tax</th>
               <th style={TH2}>Certs</th>
@@ -7730,11 +7797,24 @@ function DScheduleView({workers=[],allSites=[],activeDays=[],siteHours={},weekLa
                   </td>
                   <td style={{...TD2,color:"#94a3b8",fontSize:10}}>{(w.company||"").split(" ")[0]||"—"}</td>
                   <td style={{...TD2,color:"#94a3b8",fontSize:10}}>{w.position||"—"}</td>
-                  {(activeDays||BASE_DAYS).map(d=>(
-                    <td key={d} style={{...TD2,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"3px 6px"}}>
-                      {(()=>{const confirmedLog=w.attendanceLogs?.find(l=>l.day===d&&l.weekLabel===weekLabel&&l.signIn&&l.signOut);return <InlineCell value={w.days?.[d]||""} workerId={w.id} day={d} allSiteNames={siteNames} allSites={allSites} onUpdate={updateCell||((id,day,val)=>{})} confirmed={!!confirmedLog}/>;})()}
-                    </td>
-                  ))}
+                  {(activeDays||BASE_DAYS).map(d=>{
+                    const rw=routesForWeek(w,weekLabel);
+                    const cellVal=rw?.[d]||"";
+                    const confirmedLog=w.attendanceLogs?.find(l=>l.day===d&&l.weekLabel===weekLabel&&l.signIn&&l.signOut);
+                    const days=(activeDays||BASE_DAYS);
+                    const di=days.indexOf(d);
+                    return <td key={d} style={{...TD2,background:WEEKEND_DAYS.includes(d)?"rgba(251,191,36,0.03)":undefined,padding:"3px 6px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:3}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <InlineCell value={cellVal} workerId={w.id} day={d} allSiteNames={siteNames} allSites={allSites} onUpdate={updateCell||((id,day,val)=>{})} confirmed={!!confirmedLog}/>
+                        </div>
+                        {cellVal&&!isOff(cellVal)&&<span style={{display:"flex",flexDirection:"column",gap:1}}>
+                          {di>0&&<button onClick={()=>fillFromDay(w.id,d,cellVal,-1)} title="Copy to earlier days" style={{width:15,height:13,padding:0,background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:3,color:"#64748b",cursor:"pointer",fontSize:8,lineHeight:1}}>←</button>}
+                          {di<days.length-1&&<button onClick={()=>fillFromDay(w.id,d,cellVal,1)} title="Copy to later days" style={{width:15,height:13,padding:0,background:"#1a1f2e",border:"1px solid #2d3555",borderRadius:3,color:"#64748b",cursor:"pointer",fontSize:8,lineHeight:1}}>→</button>}
+                        </span>}
+                      </div>
+                    </td>;
+                  })}
                   <td style={{...TD2,color:"#34d399",fontWeight:600,fontSize:11}}>{w.agreedRate?`£${w.agreedRate}/hr`:"—"}</td>
                   <td style={TD2}><span style={{fontSize:10,fontWeight:700,color:w.taxRate===0.30?"#f87171":w.taxRate===0.20?"#fbbf24":"#34d399"}}>{Math.round((w.taxRate||0)*100)}%</span></td>
                   <td style={TD2}><div style={{display:"flex",gap:3}}>
@@ -11726,6 +11806,24 @@ export default function App(){
             ?{...t,status:"submitted",lockedAt:new Date().toISOString(),autoClosed:true}
             :t
         ));
+        // Promote any plan made for the now-current week into worker.days (the
+        // live week), and archive the closing week's routes under weekPlans so
+        // nothing is lost. If no plan exists for the new week, routes carry over.
+        setWorkers(prev=>{
+          const next=prev.map(w=>{
+            const plans={...(w.weekPlans||{})};
+            // archive the week that just closed
+            plans[closingWeek]={...(w.days||{})};
+            const promoted=plans[wk];
+            const newDays=promoted?{...promoted}:{...(w.days||{})};
+            // the new live week no longer needs a separate plan entry
+            if(plans[wk]) delete plans[wk];
+            return {...w,days:newDays,weekPlans:plans};
+          });
+          // Best-effort persist of the promotion
+          next.forEach(w=>{ sbUpsert("workers",[{id:w.id,data:w}]).catch(()=>{}); });
+          return next;
+        });
         setWeekLabel(prev=>prev===closingWeek?wk:prev);
         lastKnownWeek.current=wk;
       }
@@ -11839,7 +11937,23 @@ export default function App(){
     catch(e){ setSyncStatus("error"); }
   };
   const updateCell=async(wId,day,val)=>{
+    const liveWeek=currentWeekLabel();
+    const isLive=weekLabel===liveWeek;
     const prevWorker=workers.find(w=>w.id===wId);
+    // For future/past weeks we edit worker.weekPlans[weekLabel] and never touch
+    // the live week (worker.days). No route notifications for non-live planning.
+    if(!isLive){
+      const updated=workers.map(w=>{
+        if(w.id!==wId) return w;
+        const plans={...(w.weekPlans||{})};
+        plans[weekLabel]={...(plans[weekLabel]||{}),[day]:val};
+        return {...w,weekPlans:plans};
+      });
+      setWorkers(updated); setSyncStatus("saving");
+      try{ const w=updated.find(x=>x.id===wId); await sbUpsert("workers",[{id:wId,data:w}]); setSyncStatus("saved"); }
+      catch(e){ setSyncStatus("error"); }
+      return;
+    }
     const prevVal=prevWorker?.days?.[day]||"";
     const updated=workers.map(w=>w.id===wId?{...w,days:{...w.days,[day]:val}}:w);
     setWorkers(updated); setSyncStatus("saving");
