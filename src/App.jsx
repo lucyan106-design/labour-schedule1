@@ -7,6 +7,166 @@ const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const SB_H = { "Content-Type":"application/json","apikey":SB_KEY,"Authorization":`Bearer ${SB_KEY}` };
 async function sbGet(t,f=""){const r=await fetch(`${SB_URL}/rest/v1/${t}?${f}`,{headers:SB_H});if(!r.ok)throw new Error(await r.text());return r.json();}
 async function sbUpsert(t,d){const r=await fetch(`${SB_URL}/rest/v1/${t}`,{method:"POST",headers:{...SB_H,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify(d)});if(!r.ok)throw new Error(await r.text());}
+// ═══════════════════════════════════════════════════════════════════════════
+// LIVE LAYOUT ENGINE — customizable widget layouts persisted to Supabase
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Global layout edit mode (shared across the app via a simple event bus)
+const LayoutBus = {
+  editMode: false,
+  listeners: new Set(),
+  setEdit(v){ this.editMode=v; this.listeners.forEach(fn=>fn(v)); },
+  subscribe(fn){ this.listeners.add(fn); return ()=>this.listeners.delete(fn); },
+};
+
+function useLayoutEditMode(){
+  const [edit,setEdit]=useState(LayoutBus.editMode);
+  useEffect(()=>LayoutBus.subscribe(setEdit),[]);
+  return edit;
+}
+
+// Sidebar toggle button — flips global edit mode
+function LayoutEditToggle(){
+  const edit=useLayoutEditMode();
+  return <button onClick={()=>LayoutBus.setEdit(!edit)}
+    style={{width:"100%",padding:"7px 10px",marginBottom:7,background:edit?"#0d2e1a":"#0d1a2e",border:`1px solid ${edit?"#34d399":"#3b82f644"}`,borderRadius:7,color:edit?"#34d399":"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+    <span>🎨</span> {edit?"Done Editing Layout":"Edit Layout"}
+  </button>;
+}
+
+// Load a saved layout for a page key from Supabase (falls back to defaults)
+async function loadLayout(pageKey){
+  try{
+    const rows=await sbGet("app_layouts",`select=data&page_key=eq.${encodeURIComponent(pageKey)}`);
+    if(rows.length>0&&rows[0].data) return rows[0].data;
+  }catch(e){/* table may not exist yet — use defaults */}
+  return null;
+}
+
+async function saveLayout(pageKey,layout){
+  try{
+    await sbUpsert("app_layouts",[{page_key:pageKey,data:layout,updated_at:new Date().toISOString()}]);
+    return true;
+  }catch(e){
+    // Fallback: localStorage so it still persists on this device
+    try{localStorage.setItem("layout_"+pageKey,JSON.stringify(layout));}catch(_){}
+    return false;
+  }
+}
+
+function loadLayoutLocal(pageKey){
+  try{const s=localStorage.getItem("layout_"+pageKey);return s?JSON.parse(s):null;}catch(_){return null;}
+}
+
+// ─── CustomizableGrid ─────────────────────────────────────────────────────────
+// widgets: [{ id, title, defaultSpan, render: ()=>JSX }]
+// Renders widgets in saved order/span/visibility. In edit mode shows drag+resize.
+function CustomizableGrid({pageKey,widgets,columns=12}){
+  const editMode=useLayoutEditMode();
+  const [layout,setLayout]=useState(null);   // [{id,span,visible,order}]
+  const [loaded,setLoaded]=useState(false);
+  const [dragId,setDragId]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [savedFlash,setSavedFlash]=useState(false);
+
+  // Build default layout from widget definitions
+  const defaultLayout=useMemo(()=>widgets.map((w,i)=>({id:w.id,span:w.defaultSpan||12,visible:true,order:i})),[widgets]);
+
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      const remote=await loadLayout(pageKey);
+      const local=loadLayoutLocal(pageKey);
+      const saved=remote||local;
+      if(alive){
+        if(saved&&Array.isArray(saved)){
+          // Merge: keep saved order/span/visible, add any new widgets at end
+          const savedIds=saved.map(s=>s.id);
+          const merged=[...saved.filter(s=>widgets.find(w=>w.id===s.id))];
+          widgets.forEach((w,i)=>{if(!savedIds.includes(w.id)) merged.push({id:w.id,span:w.defaultSpan||12,visible:true,order:merged.length});});
+          setLayout(merged);
+        } else {
+          setLayout(defaultLayout);
+        }
+        setLoaded(true);
+      }
+    })();
+    return ()=>{alive=false;};
+  },[pageKey]);
+
+  if(!loaded||!layout) return <div style={{display:"grid",gridTemplateColumns:`repeat(${columns},1fr)`,gap:10}}>
+    {widgets.map(w=><div key={w.id} style={{gridColumn:`span ${w.defaultSpan||12}`}}>{w.render()}</div>)}
+  </div>;
+
+  const ordered=[...layout].sort((a,b)=>a.order-b.order);
+
+  const persist=async(newLayout)=>{
+    setLayout(newLayout);
+    setSaving(true);
+    await saveLayout(pageKey,newLayout);
+    setSaving(false);
+    setSavedFlash(true);setTimeout(()=>setSavedFlash(false),1500);
+  };
+
+  const setSpan=(id,span)=>{persist(layout.map(l=>l.id===id?{...l,span}:l));};
+  const toggleVis=(id)=>{persist(layout.map(l=>l.id===id?{...l,visible:!l.visible}:l));};
+  const reorder=(fromId,toId)=>{
+    const ord=[...layout].sort((a,b)=>a.order-b.order);
+    const fromIdx=ord.findIndex(l=>l.id===fromId);
+    const toIdx=ord.findIndex(l=>l.id===toId);
+    if(fromIdx<0||toIdx<0) return;
+    const [moved]=ord.splice(fromIdx,1);
+    ord.splice(toIdx,0,moved);
+    persist(ord.map((l,i)=>({...l,order:i})));
+  };
+  const resetLayout=()=>{persist(defaultLayout);};
+
+  const SPANS=[[3,"¼"],[4,"⅓"],[6,"½"],[8,"⅔"],[12,"Full"]];
+
+  return <div>
+    {editMode&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d1a2e",border:"1px solid #3b82f644",borderRadius:9,padding:"8px 13px",marginBottom:12}}>
+      <div style={{fontSize:11,color:"#60a5fa",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>
+        <span style={{fontSize:14}}>🎨</span> Edit mode — drag ⠿ to reorder · resize · hide widgets
+        {saving&&<span style={{color:"#64748b",fontWeight:400}}>· saving…</span>}
+        {savedFlash&&<span style={{color:"#34d399",fontWeight:400}}>· saved ✓</span>}
+      </div>
+      <button onClick={resetLayout} style={{padding:"4px 11px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,color:"#94a3b8",cursor:"pointer",fontSize:11,fontWeight:600}}>↺ Reset</button>
+    </div>}
+
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${columns},1fr)`,gap:10,alignItems:"start"}}>
+      {ordered.map(l=>{
+        const w=widgets.find(x=>x.id===l.id);
+        if(!w) return null;
+        if(!l.visible&&!editMode) return null;
+        return <div key={l.id}
+          style={{gridColumn:`span ${l.span}`,position:"relative",opacity:l.visible?1:0.4,
+            border:editMode?"1px dashed #2d3555":"none",borderRadius:editMode?12:0,
+            transition:"opacity .15s",outline:dragId===l.id?"2px solid #3b82f6":"none"}}
+          onDragOver={e=>{if(editMode&&dragId&&dragId!==l.id)e.preventDefault();}}
+          onDrop={e=>{if(editMode&&dragId)reorder(dragId,l.id);setDragId(null);}}>
+
+          {editMode&&<div style={{display:"flex",alignItems:"center",gap:5,padding:"6px 8px",borderBottom:"1px solid #1e2535",flexWrap:"wrap"}}>
+            <span draggable onDragStart={()=>setDragId(l.id)} onDragEnd={()=>setDragId(null)}
+              style={{cursor:"grab",color:"#3b82f6",fontSize:14,padding:"0 3px"}}>⠿</span>
+            <span style={{fontSize:9,color:"#3b82f6",fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",flex:1}}>{w.title}</span>
+            <div style={{display:"flex",gap:2}}>
+              {SPANS.map(([s,lbl])=><button key={s} onClick={()=>setSpan(l.id,s)}
+                style={{padding:"2px 6px",fontSize:9,fontWeight:700,border:`1px solid ${l.span===s?"#3b82f6":"#1e2535"}`,background:l.span===s?"#1e3a5f":"#0d1117",color:l.span===s?"#60a5fa":"#374151",borderRadius:4,cursor:"pointer"}}>{lbl}</button>)}
+            </div>
+            <button onClick={()=>toggleVis(l.id)}
+              style={{padding:"2px 8px",fontSize:9,fontWeight:700,border:`1px solid ${l.visible?"#1e2535":"#f8717144"}`,background:l.visible?"#0d1117":"#2d1515",color:l.visible?"#64748b":"#f87171",borderRadius:4,cursor:"pointer"}}>
+              {l.visible?"👁 Shown":"🚫 Hidden"}
+            </button>
+          </div>}
+
+          <div style={{padding:editMode?8:0}}>{w.render()}</div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+
 async function sbDelete(t,f){const r=await fetch(`${SB_URL}/rest/v1/${t}?${f}`,{method:"DELETE",headers:SB_H});if(!r.ok)throw new Error(await r.text());}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -3051,6 +3211,7 @@ function DashSidebar({page,setPage,workers,allSites,clients,invoices,bankTransac
             {role==="director"?"👔 Director":role==="accountant"?"📊 Accountant":"🔑 Admin"}
           </span>
         </div>
+        <LayoutEditToggle/>
         <button onClick={()=>setAuthState(null)}
           style={{width:"100%",padding:"7px 10px",background:"#1e2535",border:"1px solid #374151",borderRadius:7,color:"#64748b",cursor:"pointer",fontSize:11,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
           <span>🚪</span> Sign Out
@@ -4435,27 +4596,32 @@ function DSiteDetail({allSites,clients,workers,activeDays,siteHours,siteId,invoi
       </div>}/>
 
     <div style={DS.body}>
-      {/* 6-card financial header */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:20}}>
-        {financials.map(({label,value,color,sub})=>(
-          <div key={label} style={{background:"linear-gradient(145deg,#141924,#1a2035)",border:"1px solid "+color+"33",borderRadius:12,padding:"13px 14px",position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:color}}/>
-            <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>{label}</div>
-            <div style={{fontSize:18,fontWeight:900,color,lineHeight:1,marginBottom:4}}>{value}</div>
-            <div style={{fontSize:10,color:"#374151"}}>{sub}</div>
+      {/* ── CUSTOMIZABLE LAYOUT: financial KPIs + profit bar ── */}
+      <CustomizableGrid pageKey="site_detail_header" columns={12} widgets={[
+        {id:"kpi_cards",title:"Financial KPIs",defaultSpan:12,render:()=>(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10}}>
+            {financials.map(({label,value,color,sub})=>(
+              <div key={label} style={{background:"linear-gradient(145deg,#141924,#1a2035)",border:"1px solid "+color+"33",borderRadius:12,padding:"13px 14px",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:color}}/>
+                <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>{label}</div>
+                <div style={{fontSize:18,fontWeight:900,color,lineHeight:1,marginBottom:4}}>{value}</div>
+                <div style={{fontSize:10,color:"#374151"}}>{sub}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-
-      {/* Profit bar */}
-      {contract>0&&<div style={{background:"#111827",borderRadius:10,padding:"11px 16px",marginBottom:18,border:"1px solid #1e2535",display:"flex",alignItems:"center",gap:14}}>
-        <span style={{fontSize:11,color:"#64748b",fontWeight:700,minWidth:110}}>Cost vs Contract</span>
-        <div style={{flex:1,height:8,background:"#1e2535",borderRadius:4,overflow:"hidden",position:"relative"}}>
-          <div style={{position:"absolute",left:0,top:0,height:"100%",borderRadius:4,background:labourCost>contract?"#ef4444":"linear-gradient(90deg,#34d399,#10b981)",width:Math.min(100,labourCost/contract*100)+"%",transition:"width 0.6s ease"}}/>
-        </div>
-        <span style={{fontSize:12,fontWeight:700,color:labourCost>contract?"#f87171":"#34d399",minWidth:80,textAlign:"right"}}>{Math.round(labourCost/contract*100)}% used</span>
-        <span style={{fontSize:11,color:"#64748b"}}>Labour £{Math.round(labourCost).toLocaleString()} of £{Math.round(contract).toLocaleString()}</span>
-      </div>}
+        )},
+        {id:"profit_bar",title:"Cost vs Contract bar",defaultSpan:12,render:()=>(
+          contract>0?<div style={{background:"#111827",borderRadius:10,padding:"11px 16px",border:"1px solid #1e2535",display:"flex",alignItems:"center",gap:14}}>
+            <span style={{fontSize:11,color:"#64748b",fontWeight:700,minWidth:110}}>Cost vs Contract</span>
+            <div style={{flex:1,height:8,background:"#1e2535",borderRadius:4,overflow:"hidden",position:"relative"}}>
+              <div style={{position:"absolute",left:0,top:0,height:"100%",borderRadius:4,background:labourCost>contract?"#ef4444":"linear-gradient(90deg,#34d399,#10b981)",width:Math.min(100,labourCost/contract*100)+"%",transition:"width 0.6s ease"}}/>
+            </div>
+            <span style={{fontSize:12,fontWeight:700,color:labourCost>contract?"#f87171":"#34d399",minWidth:80,textAlign:"right"}}>{Math.round(labourCost/contract*100)}% used</span>
+            <span style={{fontSize:11,color:"#64748b"}}>Labour £{Math.round(labourCost).toLocaleString()} of £{Math.round(contract).toLocaleString()}</span>
+          </div>:<div/>
+        )},
+      ]}/>
+      <div style={{marginBottom:18}}/>
 
       {/* Tab bar */}
       <div style={{display:"flex",gap:3,background:"#0d1117",borderRadius:8,padding:3,marginBottom:18,width:"fit-content",flexWrap:"wrap"}}>
