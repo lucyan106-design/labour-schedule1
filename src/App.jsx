@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from "react";
 import * as XLSX from "xlsx";
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
@@ -5612,50 +5612,118 @@ function DFinance({workers,clients,allSites,activeDays,siteHours,scopeData,invoi
 function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetRecords,setTimesheetRecords,generateTimesheets,generatePayslips,payslipRecords,setPayslipRecords,setPage}){
   const [selWeek,setSelWeek]=useState(weekLabel);
   const [editId,setEditId]=useState(null);
+  const [expandedId,setExpandedId]=useState(null);
 
-  // Auto-sync current week timesheets from schedule whenever weekLabel or workers change
+  // Format a timestamp for a work entry (date + time)
+  const fmtStamp=(iso)=>iso?new Date(iso).toLocaleString("en-GB",{weekday:"short",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+  const fmtClock=(iso)=>iso?new Date(iso).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—";
+
+  // Auto-build current-week timesheets from GPS sign-ins. Re-runs whenever a
+  // worker signs in/out (the total attendance-log count changes), so a new
+  // work entry shows up here automatically without pressing anything. Draft
+  // sheets are refreshed; submitted/approved ones are left untouched.
+  const logSignature=useMemo(()=>
+    workers.reduce((n,w)=>n+(w.attendanceLogs||[]).filter(l=>l.weekLabel===weekLabel).length,0),
+    [workers,weekLabel]
+  );
   useEffect(()=>{
     if(!workers||workers.length===0) return;
-    const already=timesheetRecords.some(t=>t.weekLabel===weekLabel&&t.source==="auto");
-    if(already) return; // don't overwrite if already generated
-    const sheets=buildSheets(weekLabel,workers,activeDays,siteHours);
-    if(sheets.length===0) return;
+    const fresh=buildSheets(weekLabel,workers,activeDays,siteHours);
+    if(fresh.length===0) return;
     setTimesheetRecords(prev=>{
-      const other=prev.filter(t=>t.weekLabel!==weekLabel);
-      return [...other,...sheets];
+      const otherWeeks=prev.filter(t=>t.weekLabel!==weekLabel);
+      const thisWeek=prev.filter(t=>t.weekLabel===weekLabel);
+      const locked=new Map(thisWeek.filter(t=>t.status==="submitted"||t.status==="approved"||t.status==="payslip_generated").map(t=>[t.workerId,t]));
+      // keep locked sheets as-is; replace everything else with the fresh build
+      const merged=fresh.map(s=>locked.get(s.workerId)||s);
+      // also keep any locked sheet that no longer appears in fresh (e.g. worker removed from schedule but already approved)
+      locked.forEach((t,wid)=>{ if(!merged.some(m=>m.workerId===wid)) merged.push(t); });
+      return [...otherWeeks,...merged];
     });
-  },[weekLabel,workers.length]);
+  },[weekLabel,logSignature,workers.length]);
 
   function buildSheets(wkLabel,wkrs,days,shrs){
-    return wkrs.map(w=>{
+    return wkrs.map(w=>buildOneSheet(w,wkLabel,days,shrs)).filter(Boolean);
+  }
+
+  // Build a single worker's timesheet. GPS-FIRST: if the worker has signed in
+  // on site this week, the timesheet is assembled from their real work entries
+  // (each with a sign-in/sign-out timestamp). Only if they have zero sign-ins
+  // do we fall back to the forecast schedule.
+  function buildOneSheet(w,wkLabel,days,shrs){
+    const wkLogs=(w.attendanceLogs||[])
+      .filter(l=>l.weekLabel===wkLabel&&l.signIn)
+      .sort((a,b)=>new Date(a.signIn)-new Date(b.signIn));
+    const completed=wkLogs.filter(l=>l.signOut);
+    const rate=w.agreedRate||0;
+    const otM=w.customOTRate||(w.overtimeMultiplier||1.5);
+
+    // ── GPS path — real work entries ───────────────────────────────────────
+    if(wkLogs.length>0){
       const dayBreakdown={};
       let stdH=0,otH=0,gross=0;
-      (days||BASE_DAYS).forEach(d=>{
-        const site=(w.days?.[d]||"").trim();
-        if(!site||isOff(site)) return;
-        const hrs=shrs?.[site]?.hours||w.hoursPerDay?.[d]||9;
-        const ot=w.overtimeHours?.[d]||0;
-        const rate=w.agreedRate||0;
-        const otM=w.customOTRate||(w.overtimeMultiplier||1.5);
-        const stdPay=hrs*rate, otPay=ot*rate*otM;
-        stdH+=hrs; otH+=ot; gross+=stdPay+otPay;
-        dayBreakdown[d]={site,hours:hrs,ot,stdPay,otPay,total:stdPay+otPay};
+      // group completed entries by day to compute std/ot per day
+      const byDay={};
+      completed.forEach(l=>{
+        const hrs=Math.round(((new Date(l.signOut)-new Date(l.signIn))/3600000)*100)/100;
+        (byDay[l.day]=byDay[l.day]||[]).push({...l,hrs});
       });
-      const tax=gross*(w.taxRate||0);
+      ALL_DAYS.forEach(d=>{
+        const entries=byDay[d]; if(!entries) return;
+        const site=(entries[0].siteName||"").trim();
+        const siteObj=allSites.find(s=>s.name===site||s.id===entries[0].siteId);
+        const otThr=siteObj?.otThreshold||siteObj?.stdHours||9;
+        const dayTotal=Math.round(entries.reduce((a,e)=>a+e.hrs,0)*100)/100;
+        const dayStd=Math.min(dayTotal,otThr);
+        const dayOt=Math.max(0,Math.round((dayTotal-otThr)*100)/100);
+        const stdPay=dayStd*rate, otPay=dayOt*rate*otM;
+        stdH+=dayStd; otH+=dayOt; gross+=stdPay+otPay;
+        dayBreakdown[d]={site,hours:dayStd,ot:dayOt,stdPay,otPay,total:stdPay+otPay,entryCount:entries.length};
+      });
+      stdH=Math.round(stdH*100)/100; otH=Math.round(otH*100)/100; gross=Math.round(gross*100)/100;
+      const tax=Math.round(gross*(w.taxRate||0)*100)/100;
+      const openEntries=wkLogs.filter(l=>!l.signOut).length;
       return {
         id:"ts_"+w.id+"_"+wkLabel.replace(/\s+/g,""),
         workerId:w.id, workerName:w.name, position:w.position,
         company:w.company||"", weekLabel:wkLabel,
         stdHours:stdH, otHours:otH,
-        rate:w.agreedRate||0, taxRate:w.taxRate||0,
-        gross, tax, net:gross-tax,
+        rate, taxRate:w.taxRate||0, gross, tax, net:Math.round((gross-tax)*100)/100,
         dayBreakdown, days:JSON.parse(JSON.stringify(w.days||{})),
-        status:"draft",     // draft → submitted → approved → payslip_generated
-        source:"auto", notes:"",
+        workEntries:wkLogs,            // ← every sign-in/out for the week, timestamped
+        entryCount:wkLogs.length, openEntries,
+        status:"draft", source:"gps", notes:"",
         lockedAt:null, approvedAt:null, approvedBy:"",
         createdAt:new Date().toISOString(),
       };
-    }).filter(t=>t.stdHours>0||t.otHours>0);
+    }
+
+    // ── Schedule fallback — forecast only, no sign-ins yet ──────────────────
+    const dayBreakdown={};
+    let stdH=0,otH=0,gross=0;
+    (days||BASE_DAYS).forEach(d=>{
+      const site=(w.days?.[d]||"").trim();
+      if(!site||isOff(site)) return;
+      const hrs=shrs?.[site]?.hours||w.hoursPerDay?.[d]||9;
+      const ot=w.overtimeHours?.[d]||0;
+      const stdPay=hrs*rate, otPay=ot*rate*otM;
+      stdH+=hrs; otH+=ot; gross+=stdPay+otPay;
+      dayBreakdown[d]={site,hours:hrs,ot,stdPay,otPay,total:stdPay+otPay};
+    });
+    const tax=gross*(w.taxRate||0);
+    if(stdH===0&&otH===0) return null;
+    return {
+      id:"ts_"+w.id+"_"+wkLabel.replace(/\s+/g,""),
+      workerId:w.id, workerName:w.name, position:w.position,
+      company:w.company||"", weekLabel:wkLabel,
+      stdHours:stdH, otHours:otH,
+      rate, taxRate:w.taxRate||0, gross, tax, net:gross-tax,
+      dayBreakdown, days:JSON.parse(JSON.stringify(w.days||{})),
+      workEntries:[], entryCount:0, openEntries:0,
+      status:"draft", source:"schedule", notes:"",
+      lockedAt:null, approvedAt:null, approvedBy:"",
+      createdAt:new Date().toISOString(),
+    };
   }
 
   // Recalculate a single timesheet from its day data
@@ -5678,7 +5746,7 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
   }
 
   function regenWeek(){
-    if(!window.confirm("Re-sync WC "+weekLabel+" timesheets from current schedule data?\n\nThis will update DRAFT timesheets only. Approved timesheets are unchanged.")) return;
+    if(!window.confirm("Rebuild WC "+weekLabel+" timesheets now?\n\nThis pulls in the latest GPS sign-ins for each worker (falling back to the schedule forecast for anyone who hasn't signed in). DRAFT timesheets are refreshed; approved ones are unchanged.")) return;
     const sheets=buildSheets(weekLabel,workers,activeDays,siteHours);
     setTimesheetRecords(prev=>{
       const other=prev.filter(t=>t.weekLabel!==weekLabel);
@@ -5762,9 +5830,9 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
   };
 
   return <div>
-    <DPageHdr title="⏱ Timesheets" sub="Auto-generated from labour schedule · approve for payroll"
+    <DPageHdr title="⏱ Timesheets" sub="Built automatically from worker GPS sign-ins · approve for payroll"
       actions={<div style={{display:"flex",gap:7,alignItems:"center"}}>
-        {selWeek===weekLabel&&<button onClick={regenWeek} style={{padding:"6px 13px",background:"#1e2535",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700}}>🔄 Re-sync from Schedule</button>}
+        {selWeek===weekLabel&&<button onClick={regenWeek} style={{padding:"6px 13px",background:"#1e2535",border:"1px solid #3b82f6",borderRadius:7,color:"#60a5fa",cursor:"pointer",fontSize:12,fontWeight:700}}>🔄 Rebuild from Sign-ins</button>}
         {wkStatus==="draft"&&shown.length>0&&<button onClick={lockWeek} style={{padding:"6px 13px",background:"#2d2008",border:"1px solid #f59e0b",borderRadius:7,color:"#fbbf24",cursor:"pointer",fontSize:12,fontWeight:700}}>🔒 Submit for Approval</button>}
         {wkStatus==="submitted"&&<button onClick={approveAll} style={{padding:"6px 13px",background:"#0d2218",border:"1px solid #10b981",borderRadius:7,color:"#34d399",cursor:"pointer",fontSize:12,fontWeight:700}}>✓ Approve All</button>}
         {wkStatus==="approved"&&<button onClick={createPayslips} style={{padding:"6px 13px",background:"linear-gradient(135deg,#7c3aed,#8b5cf6)",border:"none",borderRadius:7,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>💷 Create Payslips →</button>}
@@ -5843,12 +5911,24 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
                 const st=STATUS_STYLE[t.status]||STATUS_STYLE.draft;
                 const isEditing=editId===t.id;
                 const canEdit=t.status==="draft";
-                return <tr key={t.id} style={{background:i%2===0?"#111827":"#0f1421"}}>
+                return <Fragment key={t.id}>
+                <tr style={{background:i%2===0?"#111827":"#0f1421"}}>
                   <td style={{...DS.td,fontWeight:600,color:"#f1f5f9"}}>
-                    {t.workerName}
-                    <div style={{fontSize:9,color:"#64748b"}}>{t.company}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      {t.entryCount>0&&<button onClick={()=>setExpandedId(expandedId===t.id?null:t.id)}
+                        style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0,width:14}} title="Show work entries">{expandedId===t.id?"▼":"▶"}</button>}
+                      <div>
+                        {t.workerName}
+                        <div style={{fontSize:9,color:"#64748b"}}>{t.company}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>{t.position}</td>
+                  <td style={{...DS.td,color:"#94a3b8",fontSize:11}}>
+                    {t.position}
+                    {t.source==="gps"
+                      ?<div style={{fontSize:8,color:"#34d399",fontWeight:700,marginTop:2}}>📍 {t.entryCount} {t.entryCount===1?"entry":"entries"}{t.openEntries>0?` · ${t.openEntries} live`:""}</div>
+                      :<div style={{fontSize:8,color:"#64748b",fontWeight:700,marginTop:2}}>📋 Forecast</div>}
+                  </td>
                   {(activeDays||BASE_DAYS).map(d=>{
                     const bd=t.dayBreakdown?.[d];
                     const site=t.days?.[d]||"";
@@ -5885,7 +5965,45 @@ function DTimesheets({workers,allSites,activeDays,siteHours,weekLabel,timesheetR
                         style={{padding:"3px 6px",background:"#0d2218",border:"1px solid #10b981",borderRadius:4,color:"#34d399",cursor:"pointer",fontSize:10}}>💷</button>
                     </div>
                   </td>
-                </tr>;
+                </tr>
+                {expandedId===t.id&&<tr style={{background:"#0a0e17"}}>
+                  <td colSpan={10+(activeDays||BASE_DAYS).length} style={{padding:"4px 14px 14px 36px"}}>
+                    <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",margin:"8px 0 8px"}}>
+                      Work Entries — WC {t.weekLabel} {t.source==="gps"?"· GPS confirmed":"· Forecast (no sign-ins yet)"}
+                    </div>
+                    {(!t.workEntries||t.workEntries.length===0)
+                      ?<div style={{fontSize:12,color:"#374151",fontStyle:"italic"}}>No GPS sign-ins recorded. Hours above are from the schedule forecast.</div>
+                      :<div style={{border:"1px solid #1e2535",borderRadius:8,overflow:"hidden"}}>
+                        <table style={{width:"100%",borderCollapse:"collapse"}}>
+                          <thead><tr style={{background:"#0d1117"}}>
+                            {["#","Day","Site","Sign In","Sign Out","Hours","Type"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:"1px solid #1e2535"}}>{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {[...t.workEntries].sort((a,b)=>new Date(a.signIn)-new Date(b.signIn)).map((e,ei)=>{
+                              const hrs=e.signOut?Math.round(((new Date(e.signOut)-new Date(e.signIn))/3600000)*100)/100:null;
+                              const sc=getSiteColor(e.siteName,allSites);
+                              return <tr key={e.id||ei} style={{borderBottom:"1px solid #141b2a"}}>
+                                <td style={{padding:"6px 10px",fontSize:11,color:"#64748b"}}>{e.entryNum||ei+1}</td>
+                                <td style={{padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:600}}>{e.day}</td>
+                                <td style={{padding:"6px 10px",fontSize:11}}>
+                                  <span style={{display:"inline-block",padding:"1px 7px",borderRadius:3,fontSize:9,fontWeight:700,color:"#fff",background:sc}}>{(e.siteName||"—").split("-")[0].trim()}</span>
+                                </td>
+                                <td style={{padding:"6px 10px",fontSize:11,color:"#34d399",fontFamily:"ui-monospace,monospace"}} title={fmtStamp(e.signIn)}>{fmtStamp(e.signIn)}</td>
+                                <td style={{padding:"6px 10px",fontSize:11,color:e.signOut?"#f87171":"#fbbf24",fontFamily:"ui-monospace,monospace"}} title={e.signOut?fmtStamp(e.signOut):"Still on site"}>{e.signOut?fmtStamp(e.signOut):"● on site"}</td>
+                                <td style={{padding:"6px 10px",fontSize:11,fontWeight:700,color:"#60a5fa"}}>{hrs!=null?hrs+"h":"—"}{e.otHours>0?<span style={{color:"#fbbf24",fontSize:9,marginLeft:3}}>+{e.otHours}OT</span>:""}</td>
+                                <td style={{padding:"6px 10px",fontSize:10}}>
+                                  {e.signOutOverride||e.override
+                                    ?<span style={{color:"#fbbf24",fontWeight:700}}>⚠ override</span>
+                                    :e.signOut?<span style={{color:"#34d399"}}>✓ GPS</span>:<span style={{color:"#fbbf24"}}>live</span>}
+                                </td>
+                              </tr>;
+                            })}
+                          </tbody>
+                        </table>
+                      </div>}
+                  </td>
+                </tr>}
+                </Fragment>;
               })}
             </tbody>
             <tfoot><tr style={{background:"#0d1117",borderTop:"2px solid #2d3555"}}>
@@ -10777,6 +10895,41 @@ export default function App(){
     }
     loadAll();
   },[]);
+
+  // Live worker sync — re-fetch workers every 30s and merge in fresh GPS
+  // attendance (sign-ins made from phones via the worker portal). We only pull
+  // in fields the portal owns (attendanceLogs, leaveRequests, payslips,
+  // dismissedAnnouncements, timesheets) so we never overwrite admin edits in
+  // progress (rates, schedule, etc.).
+  useEffect(()=>{
+    if(loading) return;
+    let alive=true;
+    const PORTAL_FIELDS=["attendanceLogs","leaveRequests","payslips","dismissedAnnouncements","timesheets"];
+    const syncPortalData=async()=>{
+      try{
+        const rows=await sbGet("workers","select=id,data");
+        if(!alive) return;
+        const byId=new Map(rows.map(r=>[r.id,r.data]));
+        setWorkers(prev=>{
+          let changed=false;
+          const next=prev.map(w=>{
+            const fresh=byId.get(w.id);
+            if(!fresh) return w;
+            // detect whether any portal-owned field differs
+            const diff=PORTAL_FIELDS.some(f=>JSON.stringify(fresh[f]||null)!==JSON.stringify(w[f]||null));
+            if(!diff) return w;
+            changed=true;
+            const merged={...w};
+            PORTAL_FIELDS.forEach(f=>{ if(fresh[f]!==undefined) merged[f]=fresh[f]; });
+            return merged;
+          });
+          return changed?next:prev;
+        });
+      }catch(_){}
+    };
+    const t=setInterval(syncPortalData,30000);
+    return()=>{alive=false;clearInterval(t);};
+  },[loading]);
 
   useEffect(()=>{
     if(loading) return;
