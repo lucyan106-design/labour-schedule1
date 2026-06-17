@@ -169,6 +169,75 @@ function CustomizableGrid({pageKey,widgets,columns=12}){
 
 async function sbDelete(t,f){const r=await fetch(`${SB_URL}/rest/v1/${t}?${f}`,{method:"DELETE",headers:SB_H});if(!r.ok)throw new Error(await r.text());}
 
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKER-PORTAL INTEGRATION HELPERS
+// These keep the admin app and the worker portal in sync. The portal reads
+// payslips / leave decisions / announcements straight from the worker's own
+// DB row (and from app_config), so the admin app must write to those places.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// The "from" identity used for all automated emails. The send-email Edge
+// Function decides the actual sender; this is passed through so it can be set
+// centrally without hunting through the code.
+const BM_EMAIL_FROM = "noreply@bright-group.org";
+const BM_EMAIL_SIG  = "\n\nBright Metalwork Ltd\nlucian@bright-group.org\n+44 (0)771 078 3500";
+
+// Send a branded email via the Supabase Edge Function. Never throws — email is
+// best-effort and must not block the UI. Returns true/false for optional UX.
+async function sendBMEmail({to, subject, text, replyTo}){
+  if(!to) return false;
+  try{
+    const r = await fetch(`${SB_URL}/functions/v1/send-email`,{
+      method:"POST",
+      headers:{...SB_H,"Content-Type":"application/json"},
+      body:JSON.stringify({ to, from:BM_EMAIL_FROM, replyTo:replyTo||"lucian@bright-group.org", subject, text:text+BM_EMAIL_SIG }),
+    });
+    return r.ok;
+  }catch(_){ return false; }
+}
+
+// Fetch the freshest copy of a single worker row (so we never overwrite GPS
+// attendance the worker just logged from their phone).
+async function fetchWorkerRow(workerId){
+  try{
+    const rows = await sbGet("workers",`select=id,data&id=eq.${encodeURIComponent(workerId)}`);
+    if(rows.length>0) return {...rows[0].data, id:rows[0].id};
+  }catch(e){ console.warn("fetchWorkerRow failed:",e.message); }
+  return null;
+}
+
+// Merge a partial update into a worker's row WITHOUT clobbering portal-written
+// fields. Reads the live row first, applies `mutate(liveData)`, writes back.
+async function patchWorkerRow(workerId, mutate){
+  const live = await fetchWorkerRow(workerId);
+  if(!live) throw new Error("Worker row not found: "+workerId);
+  const next = mutate({...live});
+  await sbUpsert("workers",[{id:workerId, data:next}]);
+  return next;
+}
+
+// Push (or update) a payslip into the worker's own row so it appears in the
+// portal's Records → Payslips tab. Keyed by id so re-issuing replaces cleanly.
+async function pushPayslipToWorker(workerId, payslip){
+  return patchWorkerRow(workerId, w=>{
+    const list = Array.isArray(w.payslips)?w.payslips:[];
+    const i = list.findIndex(p=>p.id===payslip.id);
+    const next = i>=0 ? list.map(p=>p.id===payslip.id?payslip:p) : [...list, payslip];
+    return {...w, payslips: next};
+  });
+}
+
+// Record an admin decision (approved/declined) on a worker's leave request,
+// writing it back into the worker's row so the portal reflects the outcome.
+async function decideLeaveRequest(workerId, requestId, status, reviewNote){
+  return patchWorkerRow(workerId, w=>{
+    const list = Array.isArray(w.leaveRequests)?w.leaveRequests:[];
+    return {...w, leaveRequests: list.map(r=>r.id===requestId
+      ? {...r, status, reviewNote:reviewNote||"", reviewedAt:new Date().toISOString()}
+      : r)};
+  });
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BASE_DAYS=["Mon","Tue","Wed","Thu","Fri"];
 const WEEKEND_DAYS=["Sat","Sun"];
@@ -3101,6 +3170,11 @@ const DASH_NAV=[
   {id:"payslips",       icon:"💷", label:"Payroll & Payslips",group:"labour"},
   {id:"timesheets",     icon:"⏱", label:"Timesheets",         group:"labour"},
   {id:"weekly_records", icon:"📅", label:"Weekly Records",    group:"labour"},
+  // ── Worker Portal (links to the worker-facing app)
+  {id:"pending_reg",    icon:"🆕", label:"Pending Sign-ups",  group:"portal"},
+  {id:"leave_requests", icon:"🏖", label:"Leave Requests",    group:"portal"},
+  {id:"announcements",  icon:"📢", label:"Announcements",     group:"portal"},
+  {id:"worker_docs",    icon:"📁", label:"Worker Documents",  group:"portal"},
   // ── Projects
   {id:"sites",          icon:"🏗", label:"Sites",             group:"projects"},
   {id:"clients",        icon:"👔", label:"Clients",           group:"projects"},
@@ -3164,7 +3238,27 @@ function DStatusBadge({status}){
 function DashSidebar({page,setPage,workers,allSites,clients,invoices,bankTransactions,setModal,activeDays,siteHours,weekLabel,role,setAuthState}){
   const expiring=workers.flatMap(w=>Object.values(w.certs||{}).filter(c=>{if(!c.held||!c.expiry)return false;const d=(new Date(c.expiry)-new Date())/86400000;return d>=0&&d<30;})).length;
   const expenseCount=(bankTransactions||[]).filter(t=>t.type==="expense").length;
-  const badges={certs:expiring,invoices:invoices.filter(i=>i.status==="pending").length,expenses:expenseCount};
+  // Live counts from the worker portal: pending sign-ups + pending leave
+  const [portalCounts,setPortalCounts]=useState({pending_reg:0,leave_requests:0});
+  useEffect(()=>{
+    let alive=true;
+    const poll=async()=>{
+      try{
+        const [pend,wRows]=await Promise.all([
+          sbGet("pending_workers","select=status&status=eq.pending"),
+          sbGet("workers","select=data"),
+        ]);
+        if(!alive) return;
+        let leave=0;
+        wRows.forEach(r=>{(r.data?.leaveRequests||[]).forEach(req=>{if(req.status==="pending")leave++;});});
+        setPortalCounts({pending_reg:pend.length,leave_requests:leave});
+      }catch(_){}
+    };
+    poll();
+    const t=setInterval(poll,60000);
+    return()=>{alive=false;clearInterval(t);};
+  },[]);
+  const badges={certs:expiring,invoices:invoices.filter(i=>i.status==="pending").length,expenses:expenseCount,pending_reg:portalCounts.pending_reg,leave_requests:portalCounts.leave_requests};
   const isActive=(id)=>page===id||page.startsWith(id+"_");
 
   return <div style={DS.sidebar}>
@@ -3923,7 +4017,7 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
                   📄 Export PDF
                 </button>
                 {ts.status!=="approved"&&<button
-                  onClick={()=>{
+                  onClick={async()=>{
                     // 1 — Approve timesheet
                     const updated=timesheetRecords.map(t=>t.id===ts.id?{...t,status:"approved",approvedAt:new Date().toISOString(),approvedBy:"Admin"}:t);
                     setTimesheetRecords(updated);
@@ -3941,16 +4035,27 @@ function DWorkerDetail({workers,allSites,clients,activeDays,siteHours,workerId,t
                       stdH:ts.stdHours||0,otH:ts.otHours||0,
                       rate:w.agreedRate||0,otRate:otR,taxRate:w.taxRate||0,
                       gross,taxAmt,net,
+                      status:"issued", issuedAt:new Date().toISOString(),
                       createdAt:new Date().toISOString(),source:"auto",
                     };
                     setPayslipRecords(prev=>{
                       const i=prev.findIndex(p=>p.id===newPS.id);
                       return i>=0?prev.map(p=>p.id===newPS.id?newPS:p):[...prev,newPS];
                     });
-                    // 3 — Send email via Supabase Edge Function
-                    if(w.email){
-                      try{fetch(`${SB_URL}/functions/v1/send-email`,{method:"POST",headers:{...SB_H,"Content-Type":"application/json"},body:JSON.stringify({to:w.email,subject:"Bright Metalwork — Payslip WC "+ts.weekLabel,text:"Hi "+w.name+",\n\nYour payslip for the week commencing "+ts.weekLabel+" has been issued.\nNet pay: £"+net.toFixed(2)+"\n\nPlease log in to the worker portal to view and download your payslip.\n\nBright Metalwork Ltd\nlucian@bright-group.org\n+44 (0)771 078 3500"})});}catch(_){}
-                      alert("✓ Timesheet approved. Payslip generated and sent to "+w.email+".");
+                    // 3 — Push the payslip into the worker's own row so the
+                    //     portal's Records → Payslips tab shows it immediately.
+                    try{ await pushPayslipToWorker(w.id,newPS); }
+                    catch(e){ console.warn("Payslip portal sync failed:",e.message); }
+                    // 4 — Email the worker that the payslip is ready.
+                    if(w.email||w.authEmail){
+                      sendBMEmail({
+                        to:w.email||w.authEmail,
+                        subject:"Bright Metalwork — Payslip WC "+ts.weekLabel,
+                        text:"Hi "+(w.name||"")+",\n\nYour payslip for the week commencing "+ts.weekLabel+" has been issued.\nNet pay: £"+net.toFixed(2)+"\n\nPlease log in to the Worker Portal to view and download your payslip.",
+                      });
+                      alert("✓ Timesheet approved. Payslip generated, synced to the worker portal, and emailed to "+(w.email||w.authEmail)+".");
+                    } else {
+                      alert("✓ Timesheet approved. Payslip generated and synced to the worker portal.\n\n⚠ No email on file — worker not notified by email.");
                     }
                   }}
                   style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
@@ -4196,7 +4301,7 @@ function PendingWorkersView({workers,onApprove}){
   const [expanded,setExpanded]=useState(null);
   const [rejectNote,setRejectNote]=useState({});
   const CERT_LABELS=Object.fromEntries(CERTS.map(c=>[c.key,c.label]));
-  const load=async()=>{setLoading(true);try{const rows=await sbGet("pending_workers","select=id,created_at,status,data&order=created_at.desc");setPending(rows);}catch(e){console.error(e);}setLoading(false);};
+  const load=async()=>{setLoading(true);try{const rows=await sbGet("pending_workers","select=id,created_at,submitted_at,status,data");rows.sort((a,b)=>new Date(b.created_at||b.submitted_at||0)-new Date(a.created_at||a.submitted_at||0));setPending(rows);}catch(e){console.error(e);}setLoading(false);};
   useEffect(()=>{load();},[]);
   const approve=async(row)=>{
     if(!window.confirm(`Approve ${row.data.name} and add them as an active worker?`))return;
@@ -4205,6 +4310,15 @@ function PendingWorkersView({workers,onApprove}){
       await sbUpsert("workers",[{id:row.data.id,data:{...row.data,approvedAt:new Date().toISOString()}}]);
       await fetch(`${SB_URL}/rest/v1/pending_workers?id=eq.${row.id}`,{method:"PATCH",headers:{...SB_H,"Prefer":"return=minimal"},body:JSON.stringify({status:"approved"})});
       setPending(p=>p.map(x=>x.id===row.id?{...x,status:"approved"}:x));
+      // Welcome email — tell the worker they can now log in
+      const to=row.data.email||row.data.authEmail;
+      if(to){
+        sendBMEmail({
+          to,
+          subject:"Bright Metalwork — Your Worker Portal account is approved",
+          text:"Hi "+(row.data.name||"")+",\n\nGood news — your registration has been approved. You can now log in to the Bright Metalwork Worker Portal with the email and password you registered with.\n\nFrom the portal you can sign in/out on site by GPS, view your week ahead, submit leave requests, manage your certifications and view your payslips.",
+        });
+      }
       if(onApprove)onApprove();
     }catch(e){alert("Approval failed: "+e.message);}
     setActioning(a=>({...a,[row.id]:null}));
@@ -4228,7 +4342,7 @@ function PendingWorkersView({workers,onApprove}){
         <div style={{width:38,height:38,borderRadius:"50%",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:"#fff",flexShrink:0}}>{d.name?.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()||"?"}</div>
         <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:"#f1f5f9"}}>{d.name||"Unknown"}</div><div style={{fontSize:11,color:"#64748b",marginTop:1}}>{d.position||"—"} · {d.company||"—"} · {d.email||"—"}</div></div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:11,color:"#64748b"}}>{new Date(row.created_at).toLocaleDateString("en-GB")}</span>
+          <span style={{fontSize:11,color:"#64748b"}}>{new Date(row.created_at||row.submitted_at||Date.now()).toLocaleDateString("en-GB")}</span>
           <span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:isPend?"#f59e0b22":isApp?"#34d39922":"#ef444422",color:isPend?"#fbbf24":isApp?"#34d399":"#f87171",border:`1px solid ${isPend?"#f59e0b44":isApp?"#34d39944":"#ef444444"}`}}>{isPend?"⏳ Pending":isApp?"✓ Approved":"✕ Rejected"}</span>
           <span style={{color:"#64748b",fontSize:13}}>{isOpen?"▲":"▼"}</span>
         </div>
@@ -4273,6 +4387,292 @@ function PendingWorkersView({workers,onApprove}){
     {!loading&&pendingRows.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}><div style={{fontSize:32,marginBottom:10}}>✅</div>No pending registrations.</div>}
     {pendingRows.map(row=><WorkerCard key={row.id} row={row}/>)}
     {doneRows.length>0&&<div style={{marginTop:20}}><div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Previously Processed ({doneRows.length})</div>{doneRows.map(row=><WorkerCard key={row.id} row={row}/>)}</div>}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LEAVE REQUESTS (admin) — reads worker.leaveRequests[] from every worker row,
+// lets admin approve/decline, writes the decision back so the portal reflects it.
+// ═══════════════════════════════════════════════════════════════════════════
+function WorkerLeaveView(){
+  const [rows,setRows]=useState([]);      // [{worker, request}]
+  const [loading,setLoading]=useState(true);
+  const [acting,setActing]=useState({});
+  const [note,setNote]=useState({});
+  const [filter,setFilter]=useState("pending");
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const wRows=await sbGet("workers","select=id,data");
+      const all=[];
+      wRows.forEach(r=>{
+        const w={...r.data,id:r.id};
+        (w.leaveRequests||[]).forEach(req=>all.push({worker:w,request:req}));
+      });
+      all.sort((a,b)=>new Date(b.request.submittedAt||0)-new Date(a.request.submittedAt||0));
+      setRows(all);
+    }catch(e){console.error("Leave load failed:",e);}
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const decide=async(worker,request,status)=>{
+    const verb=status==="approved"?"Approve":"Decline";
+    if(!window.confirm(`${verb} ${worker.name}'s ${request.type} request (${request.fromDate} → ${request.toDate})?`)) return;
+    setActing(a=>({...a,[request.id]:status}));
+    try{
+      await decideLeaveRequest(worker.id,request.id,status,note[request.id]||"");
+      setRows(rs=>rs.map(x=>x.request.id===request.id?{...x,request:{...x.request,status,reviewNote:note[request.id]||""}}:x));
+      const to=worker.email||worker.authEmail;
+      if(to){
+        sendBMEmail({
+          to,
+          subject:`Bright Metalwork — Leave request ${status}`,
+          text:`Hi ${worker.name||""},\n\nYour ${request.type} request for ${request.fromDate}${request.fromDate!==request.toDate?" to "+request.toDate:""} has been ${status}.`+(note[request.id]?`\n\nNote: ${note[request.id]}`:"")+`\n\nYou can view the status in the Worker Portal.`,
+        });
+      }
+    }catch(e){alert("Failed: "+e.message);}
+    setActing(a=>({...a,[request.id]:null}));
+  };
+
+  const STATUS_C={pending:["#fbbf24","#1a1500","#92400e"],approved:["#34d399","#0d2218","#065f46"],declined:["#f87171","#2d1515","#7f1d1d"]};
+  const TYPE_IC={Sick:"🤒",Holiday:"🏖",Personal:"📋",Other:"📄"};
+  const counts={pending:0,approved:0,declined:0};
+  rows.forEach(r=>{counts[r.request.status]=(counts[r.request.status]||0)+1;});
+  const shown=rows.filter(r=>filter==="all"?true:r.request.status===filter);
+
+  return <div style={{padding:"16px 20px"}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:18}}>
+      {[["Pending",counts.pending,"#fbbf24"],["Approved",counts.approved,"#34d399"],["Declined",counts.declined,"#f87171"]].map(([l,v,c])=>
+        <div key={l} style={{background:"#1a1f2e",border:`1px solid ${c}44`,borderRadius:10,padding:"10px 14px"}}><div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase"}}>{l}</div><div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div></div>
+      )}
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <div style={{display:"flex",gap:6}}>
+        {[["pending","Pending"],["approved","Approved"],["declined","Declined"],["all","All"]].map(([v,l])=>
+          <button key={v} onClick={()=>setFilter(v)} style={{padding:"5px 13px",background:filter===v?"#1e3a5f":"#1a1f2e",border:"1px solid "+(filter===v?"#3b82f6":"#2d3555"),borderRadius:7,color:filter===v?"#60a5fa":"#64748b",cursor:"pointer",fontSize:12,fontWeight:filter===v?700:400}}>{l}</button>
+        )}
+      </div>
+      <button onClick={load} style={{padding:"5px 13px",background:"#1e2535",border:"1px solid #2d3555",borderRadius:7,color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:600}}>↻ Refresh</button>
+    </div>
+    {loading&&<div style={{textAlign:"center",padding:40,color:"#64748b"}}>Loading leave requests…</div>}
+    {!loading&&shown.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}><div style={{fontSize:32,marginBottom:10}}>🏖</div>No {filter==="all"?"":filter} leave requests.</div>}
+    {shown.map(({worker,request})=>{
+      const [c,bg,bd]=STATUS_C[request.status]||["#94a3b8","#1e2535","#374151"];
+      const act=acting[request.id];const isPend=request.status==="pending";
+      const days=Math.max(1,Math.round((new Date(request.toDate)-new Date(request.fromDate))/86400000)+1);
+      return <div key={request.id} style={{background:"#111827",border:`1px solid ${c}44`,borderRadius:12,marginBottom:10,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+          <div style={{width:38,height:38,borderRadius:"50%",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:"#fff",flexShrink:0}}>{worker.name?.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()||"?"}</div>
+          <div style={{flex:1}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:14,fontWeight:800,color:"#f1f5f9"}}>{worker.name}</span>
+              <span style={{fontSize:18}}>{TYPE_IC[request.type]||"📄"}</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#94a3b8"}}>{request.type}</span>
+              <span style={{display:"inline-block",padding:"2px 9px",borderRadius:20,fontSize:11,fontWeight:700,background:bg,color:c,border:`1px solid ${bd}`}}>{request.status.charAt(0).toUpperCase()+request.status.slice(1)}</span>
+            </div>
+            <div style={{fontSize:12,color:"#64748b",marginTop:3}}>
+              {fmtDate(request.fromDate)}{request.fromDate!==request.toDate?` → ${fmtDate(request.toDate)}`:""} · {days} day{days!==1?"s":""} · {worker.position||"—"}
+            </div>
+            {request.reason&&<div style={{fontSize:12,color:"#94a3b8",marginTop:5,fontStyle:"italic"}}>"{request.reason}"</div>}
+            {request.reviewNote&&<div style={{fontSize:12,color:c,marginTop:5,fontWeight:600}}>Admin note: {request.reviewNote}</div>}
+            <div style={{fontSize:10,color:"#374151",marginTop:5}}>Submitted {fmtDate(request.submittedAt)}</div>
+            {isPend&&<div style={{marginTop:11,paddingTop:11,borderTop:"1px solid #1e2535"}}>
+              <input value={note[request.id]||""} onChange={e=>setNote(n=>({...n,[request.id]:e.target.value}))} placeholder="Optional note to worker…" style={{width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:7,padding:"8px 11px",color:"#e2e8f0",fontSize:12,outline:"none",boxSizing:"border-box",marginBottom:9}}/>
+              <div style={{display:"flex",gap:9}}>
+                <button onClick={()=>decide(worker,request,"declined")} disabled={!!act} style={{flex:1,padding:"9px",background:"#2d1515",border:"1px solid #ef4444",borderRadius:8,color:"#f87171",cursor:"pointer",fontSize:12,fontWeight:700,opacity:act?0.6:1}}>{act==="declined"?"Declining…":"✕ Decline"}</button>
+                <button onClick={()=>decide(worker,request,"approved")} disabled={!!act} style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"1px solid #34d399",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:800,opacity:act?0.6:1}}>{act==="approved"?"Approving…":"✓ Approve Leave"}</button>
+              </div>
+            </div>}
+          </div>
+        </div>
+      </div>;
+    })}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ANNOUNCEMENTS (admin) — CRUD on app_config.announcements, read by the portal.
+// ═══════════════════════════════════════════════════════════════════════════
+function AnnouncementsAdminView(){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [editing,setEditing]=useState(null); // announcement being edited (or "new")
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const rows=await sbGet("app_config","select=value&key=eq.announcements");
+      setItems(rows[0]?.value||[]);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const persist=async(next)=>{
+    setSaving(true);
+    try{ await sbUpsert("app_config",[{key:"announcements",value:next}]); setItems(next); }
+    catch(e){ alert("Save failed: "+e.message); }
+    setSaving(false);
+  };
+
+  const TYPE_META={info:["#60a5fa","📢","Info"],warning:["#fbbf24","⚠️","Warning"],urgent:["#f87171","🚨","Urgent"]};
+  const blank=()=>({id:"ann_"+Date.now(),title:"",body:"",type:"info",date:new Date().toISOString().slice(0,10),active:true});
+
+  const saveOne=async(a)=>{
+    if(!a.title.trim()){alert("Title is required.");return;}
+    const exists=items.find(x=>x.id===a.id);
+    const next=exists?items.map(x=>x.id===a.id?a:x):[a,...items];
+    await persist(next);
+    setEditing(null);
+  };
+  const removeOne=async(id)=>{ if(!window.confirm("Delete this announcement?"))return; await persist(items.filter(x=>x.id!==id)); };
+  const toggleActive=async(id)=>{ await persist(items.map(x=>x.id===id?{...x,active:!x.active}:x)); };
+
+  const IN={width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:8,padding:"9px 12px",color:"#f1f5f9",fontSize:13,outline:"none",boxSizing:"border-box"};
+  const LB={fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5,display:"block"};
+
+  if(editing) return <div style={{padding:"16px 20px",maxWidth:560}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
+      <button onClick={()=>setEditing(null)} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:8,padding:"7px 12px",color:"#94a3b8",cursor:"pointer",fontSize:13}}>← Back</button>
+      <h3 style={{margin:0,color:"#f1f5f9",fontSize:16,fontWeight:800}}>{items.find(x=>x.id===editing.id)?"Edit":"New"} Announcement</h3>
+    </div>
+    <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:18}}>
+      <div style={{marginBottom:13}}><label style={LB}>Title</label><input value={editing.title} onChange={e=>setEditing({...editing,title:e.target.value})} placeholder="e.g. Bank Holiday — 25 Aug" style={IN}/></div>
+      <div style={{marginBottom:13}}><label style={LB}>Message</label><textarea value={editing.body} onChange={e=>setEditing({...editing,body:e.target.value})} placeholder="Full details for workers…" style={{...IN,minHeight:80,resize:"vertical",fontFamily:"inherit"}}/></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:13}}>
+        <div><label style={LB}>Type</label><select value={editing.type} onChange={e=>setEditing({...editing,type:e.target.value})} style={{...IN,cursor:"pointer"}}><option value="info">📢 Info (blue)</option><option value="warning">⚠️ Warning (yellow)</option><option value="urgent">🚨 Urgent (red)</option></select></div>
+        <div><label style={LB}>Date</label><input type="date" value={editing.date} onChange={e=>setEditing({...editing,date:e.target.value})} style={IN}/></div>
+      </div>
+      <label style={{display:"flex",alignItems:"center",gap:9,cursor:"pointer",marginBottom:16}}>
+        <div onClick={()=>setEditing({...editing,active:!editing.active})} style={{width:22,height:22,borderRadius:6,background:editing.active?"#3b82f6":"#0f1421",border:`2px solid ${editing.active?"#3b82f6":"#2d3555"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{editing.active&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}</div>
+        <span style={{fontSize:13,color:"#e2e8f0"}}>Active (visible to workers)</span>
+      </label>
+      <button onClick={()=>saveOne(editing)} disabled={saving} style={{width:"100%",padding:"11px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:9,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",opacity:saving?0.7:1}}>{saving?"Saving…":"💾 Save Announcement"}</button>
+    </div>
+  </div>;
+
+  return <div style={{padding:"16px 20px",maxWidth:680}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div><div style={{fontSize:11,color:"#64748b"}}>Shown in the Worker Portal — Attendance tab. Workers can dismiss individually.</div></div>
+      <button onClick={()=>setEditing(blank())} style={{padding:"7px 15px",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>+ New Announcement</button>
+    </div>
+    {loading&&<div style={{textAlign:"center",padding:40,color:"#64748b"}}>Loading…</div>}
+    {!loading&&items.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}><div style={{fontSize:32,marginBottom:10}}>📢</div>No announcements yet. Create one to notify all workers.</div>}
+    {items.map(a=>{
+      const [c,ic,lbl]=TYPE_META[a.type]||TYPE_META.info;
+      return <div key={a.id} style={{background:"#111827",border:`1px solid ${a.active?c+"44":"#1e2535"}`,borderRadius:12,marginBottom:10,padding:"13px 16px",opacity:a.active?1:0.55}}>
+        <div style={{display:"flex",alignItems:"flex-start",gap:11}}>
+          <span style={{fontSize:18,flexShrink:0}}>{ic}</span>
+          <div style={{flex:1}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:14,fontWeight:800,color:"#f1f5f9"}}>{a.title}</span>
+              <span style={{display:"inline-block",padding:"2px 9px",borderRadius:20,fontSize:10,fontWeight:700,background:c+"22",color:c,border:`1px solid ${c}44`}}>{lbl}</span>
+              {!a.active&&<span style={{fontSize:10,color:"#64748b",fontWeight:700}}>HIDDEN</span>}
+            </div>
+            {a.body&&<div style={{fontSize:12,color:"#94a3b8",marginTop:4,lineHeight:1.5}}>{a.body}</div>}
+            <div style={{fontSize:10,color:"#374151",marginTop:5}}>{fmtDate(a.date)}</div>
+          </div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <button onClick={()=>toggleActive(a.id)} title={a.active?"Hide":"Show"} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,padding:"5px 9px",color:a.active?"#fbbf24":"#34d399",cursor:"pointer",fontSize:11,fontWeight:700}}>{a.active?"Hide":"Show"}</button>
+            <button onClick={()=>setEditing({...a})} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,padding:"5px 9px",color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:700}}>Edit</button>
+            <button onClick={()=>removeOne(a.id)} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,padding:"5px 9px",color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>×</button>
+          </div>
+        </div>
+      </div>;
+    })}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKER DOCUMENTS (admin) — CRUD on app_config.worker_documents.
+// ═══════════════════════════════════════════════════════════════════════════
+function WorkerDocsAdminView(){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [editing,setEditing]=useState(null);
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const rows=await sbGet("app_config","select=value&key=eq.worker_documents");
+      setItems(rows[0]?.value||[]);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const persist=async(next)=>{
+    setSaving(true);
+    try{ await sbUpsert("app_config",[{key:"worker_documents",value:next}]); setItems(next); }
+    catch(e){ alert("Save failed: "+e.message); }
+    setSaving(false);
+  };
+
+  const CAT_META={induction:["📚","Induction"],method:["🔧","Method Statement"],risk:["⚠️","Risk Assessment"],policy:["📋","Policy"],other:["📄","Other"]};
+  const blank=()=>({id:"doc_"+Date.now(),title:"",url:"",category:"policy",size:"",updatedAt:new Date().toISOString().slice(0,10)});
+
+  const saveOne=async(d)=>{
+    if(!d.title.trim()){alert("Title is required.");return;}
+    if(!d.url.trim()){alert("A document URL is required.");return;}
+    const exists=items.find(x=>x.id===d.id);
+    const next=exists?items.map(x=>x.id===d.id?d:x):[d,...items];
+    await persist(next);
+    setEditing(null);
+  };
+  const removeOne=async(id)=>{ if(!window.confirm("Remove this document?"))return; await persist(items.filter(x=>x.id!==id)); };
+
+  const IN={width:"100%",background:"#0f1421",border:"1px solid #2d3555",borderRadius:8,padding:"9px 12px",color:"#f1f5f9",fontSize:13,outline:"none",boxSizing:"border-box"};
+  const LB={fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5,display:"block"};
+
+  if(editing) return <div style={{padding:"16px 20px",maxWidth:560}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
+      <button onClick={()=>setEditing(null)} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:8,padding:"7px 12px",color:"#94a3b8",cursor:"pointer",fontSize:13}}>← Back</button>
+      <h3 style={{margin:0,color:"#f1f5f9",fontSize:16,fontWeight:800}}>{items.find(x=>x.id===editing.id)?"Edit":"New"} Document</h3>
+    </div>
+    <div style={{background:"#111827",border:"1px solid #1e2535",borderRadius:12,padding:18}}>
+      <div style={{marginBottom:13}}><label style={LB}>Title</label><input value={editing.title} onChange={e=>setEditing({...editing,title:e.target.value})} placeholder="e.g. Site Induction Pack" style={IN}/></div>
+      <div style={{marginBottom:13}}><label style={LB}>Document URL</label><input value={editing.url} onChange={e=>setEditing({...editing,url:e.target.value})} placeholder="https://… (Google Drive, Dropbox, Supabase Storage)" style={IN}/><div style={{fontSize:11,color:"#374151",marginTop:5}}>Any public link. Upload the file to your storage of choice, then paste the share link here.</div></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div><label style={LB}>Category</label><select value={editing.category} onChange={e=>setEditing({...editing,category:e.target.value})} style={{...IN,cursor:"pointer"}}><option value="induction">📚 Induction</option><option value="method">🔧 Method Statement</option><option value="risk">⚠️ Risk Assessment</option><option value="policy">📋 Policy</option><option value="other">📄 Other</option></select></div>
+        <div><label style={LB}>Size (optional)</label><input value={editing.size} onChange={e=>setEditing({...editing,size:e.target.value})} placeholder="e.g. 1.2 MB" style={IN}/></div>
+      </div>
+      <button onClick={()=>saveOne(editing)} disabled={saving} style={{width:"100%",padding:"11px",background:"linear-gradient(135deg,#14532d,#16a34a)",border:"none",borderRadius:9,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",opacity:saving?0.7:1}}>{saving?"Saving…":"💾 Save Document"}</button>
+    </div>
+  </div>;
+
+  const grouped={};
+  items.forEach(d=>{const c=d.category||"other";(grouped[c]=grouped[c]||[]).push(d);});
+  const ORDER=["induction","method","risk","policy","other"];
+
+  return <div style={{padding:"16px 20px",maxWidth:680}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div style={{fontSize:11,color:"#64748b"}}>Shown in the Worker Portal — Profile → Documents. Workers tap to view or download.</div>
+      <button onClick={()=>setEditing(blank())} style={{padding:"7px 15px",background:"linear-gradient(135deg,#1e3a5f,#3b82f6)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>+ Add Document</button>
+    </div>
+    {loading&&<div style={{textAlign:"center",padding:40,color:"#64748b"}}>Loading…</div>}
+    {!loading&&items.length===0&&<div style={{textAlign:"center",padding:40,color:"#374151",fontSize:13}}><div style={{fontSize:32,marginBottom:10}}>📂</div>No documents yet. Add inductions, RAMS, policies for your workers.</div>}
+    {ORDER.filter(c=>grouped[c]).map(cat=>{
+      const [ic,lbl]=CAT_META[cat]||["📄",cat];
+      return <div key={cat} style={{marginBottom:18}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#60a5fa",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>{ic} {lbl}</div>
+        {grouped[cat].map(d=><div key={d.id} style={{background:"#111827",border:"1px solid #1e2535",borderRadius:10,marginBottom:7,padding:"11px 14px",display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:20,flexShrink:0}}>📄</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:600,color:"#f1f5f9"}}>{d.title}</div>
+            <div style={{fontSize:10,color:"#374151",marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.size?d.size+" · ":""}{d.updatedAt?"Updated "+fmtDate(d.updatedAt)+" · ":""}{d.url}</div>
+          </div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <a href={d.url} target="_blank" rel="noreferrer" style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,padding:"5px 9px",color:"#34d399",cursor:"pointer",fontSize:11,fontWeight:700,textDecoration:"none"}}>↗ Open</a>
+            <button onClick={()=>setEditing({...d})} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,padding:"5px 9px",color:"#60a5fa",cursor:"pointer",fontSize:11,fontWeight:700}}>Edit</button>
+            <button onClick={()=>removeOne(d.id)} style={{background:"#1e2535",border:"1px solid #2d3555",borderRadius:6,padding:"5px 9px",color:"#f87171",cursor:"pointer",fontSize:11,fontWeight:700}}>×</button>
+          </div>
+        </div>)}
+      </div>;
+    })}
   </div>;
 }
 
@@ -5517,19 +5917,55 @@ function DPayslips({workers,allSites,activeDays,siteHours,weekLabel,payslipRecor
   const totNet=shown.reduce((a,p)=>a+p.net,0);
   const totTax=shown.reduce((a,p)=>a+p.tax,0);
 
-  function issueAll(){
-    if(!window.confirm("Mark all payslips for WC "+selWeek+" as issued to workers?\n\nThis simulates sending to the worker portal.")) return;
+  async function issueAll(){
+    const pending=shown.filter(p=>p.status==="pending");
+    if(pending.length===0) return;
+    if(!window.confirm("Issue "+pending.length+" payslip(s) for WC "+selWeek+" to the worker portal?\n\nEach worker's portal will show the payslip and they'll be emailed.")) return;
+    const issuedAt=new Date().toISOString();
+    // Optimistic local update
     setPayslipRecords(recs=>recs.map(p=>
       p.weekLabel===selWeek&&p.status==="pending"
-        ?{...p,status:"issued",issuedAt:new Date().toISOString()}:p
+        ?{...p,status:"issued",issuedAt}:p
     ));
-    alert("✓ "+shown.filter(p=>p.status==="pending").length+" payslips marked as issued.");
+    // Real sync: write each payslip into its worker's row + email them
+    let synced=0, emailed=0;
+    for(const p of pending){
+      const ps={...p,status:"issued",issuedAt};
+      try{ await pushPayslipToWorker(p.workerId,ps); synced++; }
+      catch(e){ console.warn("Sync failed for",p.workerName,e.message); }
+      const w=workers.find(x=>x.id===p.workerId);
+      const to=w?.email||w?.authEmail;
+      if(to){
+        const ok=await sendBMEmail({
+          to,
+          subject:"Bright Metalwork — Payslip WC "+p.weekLabel,
+          text:"Hi "+(p.workerName||"")+",\n\nYour payslip for the week commencing "+p.weekLabel+" has been issued.\nNet pay: £"+(p.net||0).toFixed(2)+"\n\nPlease log in to the Worker Portal to view and download your payslip.",
+        });
+        if(ok) emailed++;
+      }
+    }
+    alert("✓ "+synced+" payslip(s) synced to the worker portal"+(emailed>0?", "+emailed+" worker(s) emailed.":"."));
   }
 
-  function issueOne(id){
-    setPayslipRecords(recs=>recs.map(p=>
-      p.id===id?{...p,status:"issued",issuedAt:new Date().toISOString()}:p
+  async function issueOne(id){
+    const p=payslipRecords.find(x=>x.id===id);
+    if(!p) return;
+    const issuedAt=new Date().toISOString();
+    setPayslipRecords(recs=>recs.map(x=>
+      x.id===id?{...x,status:"issued",issuedAt}:x
     ));
+    const ps={...p,status:"issued",issuedAt};
+    try{ await pushPayslipToWorker(p.workerId,ps); }
+    catch(e){ console.warn("Sync failed:",e.message); }
+    const w=workers.find(x=>x.id===p.workerId);
+    const to=w?.email||w?.authEmail;
+    if(to){
+      sendBMEmail({
+        to,
+        subject:"Bright Metalwork — Payslip WC "+p.weekLabel,
+        text:"Hi "+(p.workerName||"")+",\n\nYour payslip for the week commencing "+p.weekLabel+" has been issued.\nNet pay: £"+(p.net||0).toFixed(2)+"\n\nPlease log in to the Worker Portal to view and download your payslip.",
+      });
+    }
   }
 
   // Worker Portal preview - opens a printable payslip with portal styling
@@ -6610,6 +7046,9 @@ function DashboardView({workers,allSites,clients,weekLabel,activeDays,siteHours,
       case "bank":          return <DBankFull {...SP}/>;
       case "expenses":      return <DExpenses bankTransactions={bankTransactions} allSites={allSites} clients={clients} workers={workers} activeDays={activeDays} siteHours={siteHours} setPage={setDashPage}/>;
       case "pending_reg":   return <PendingWorkersView workers={workers} onApprove={()=>window.location.reload()}/>;
+      case "leave_requests":return <WorkerLeaveView/>;
+      case "announcements": return <AnnouncementsAdminView/>;
+      case "worker_docs":   return <WorkerDocsAdminView/>;
       case "app_sitemanager":  return <SiteManagerView/>;
       case "app_sitedocs":    return <SiteDocGeneratorView/>;
       case "app_assets":      return <AssetRegisterView/>;
